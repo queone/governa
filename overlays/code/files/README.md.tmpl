@@ -1,0 +1,42 @@
+# {{REPO_NAME}}
+
+{{PROJECT_PURPOSE}}
+
+## Overview
+
+This is a governed `CODE` repo bootstrapped from `repo-governance-template`.
+
+Current stack or platform:
+
+- {{STACK_OR_PLATFORM}}
+
+## Core Repo Files
+
+- `AGENTS.md`: base governance contract
+- `arch.md`: current architecture and major design decisions
+- `plan.md`: prioritized roadmap and approved direction
+- `build.sh`: convenience wrapper for Unix, Linux, and Git-Bash environments
+- `cmd/build/main.go`: Go build helper, included only for Go-based repos
+- `docs/development-cycle.md`: workflow from roadmap through release
+- `docs/ac-template.md`: acceptance-criteria template for new work
+- `docs/build-release.md`: build, test, and release rules
+- `cmd/rel/main.go`: Go release helper, included only for Go-based repos
+
+## Working Agreement
+
+- use `AGENTS.md` as the repo governance contract
+- keep `arch.md` current when the architecture materially changes
+- keep `plan.md` current when priorities or approved work change
+- use `docs/` for acceptance criteria, critiques, and supporting reference material
+
+## Workflow Summary
+
+1. clarify the next approved work item in `plan.md`
+2. draft an acceptance-criteria doc from `docs/ac-template.md`
+3. implement with tests and direct doc updates
+4. run the build and test workflow in `docs/build-release.md`
+5. trigger release work only when explicitly requested
+
+## Replace Me
+
+Replace this starter content with project-specific setup, run, test, and release instructions.
