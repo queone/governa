@@ -1,6 +1,12 @@
 package buildtool
 
-import "testing"
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestParseArgsNoArgs(t *testing.T) {
 	t.Parallel()
@@ -114,5 +120,203 @@ func TestNextPatchTagSortsSemver(t *testing.T) {
 	}
 	if max.minor != 10 {
 		t.Fatalf("max version = %#v, want minor 10", max)
+	}
+}
+
+// --- Usage test ---
+
+func TestUsageContainsBasicInfo(t *testing.T) {
+	t.Parallel()
+	usage := Usage()
+	if !strings.Contains(usage, "build") {
+		t.Fatal("usage should mention build command")
+	}
+	if !strings.Contains(usage, "verbose") {
+		t.Fatal("usage should mention verbose option")
+	}
+	if !strings.Contains(usage, "targets") {
+		t.Fatal("usage should mention target scoping behavior")
+	}
+}
+
+// --- ParseArgs edge cases ---
+
+func TestParseArgsHelpMixedWithOther(t *testing.T) {
+	t.Parallel()
+	_, _, err := ParseArgs([]string{"-v", "--help"})
+	if err == nil {
+		t.Fatal("expected error for help mixed with other args")
+	}
+}
+
+func TestParseArgsUnknownFlag(t *testing.T) {
+	t.Parallel()
+	_, _, err := ParseArgs([]string{"--unknown"})
+	if err == nil {
+		t.Fatal("expected error for unknown flag")
+	}
+}
+
+// --- nextPatchTagFromOutput tests ---
+
+func TestNextPatchTagFromOutputMultipleTags(t *testing.T) {
+	t.Parallel()
+
+	output := "v0.1.0\nv0.1.1\nv0.2.0\nsome-other-tag\n"
+	tag, ok, err := nextPatchTagFromOutput(output)
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if !ok {
+		t.Fatal("expected a tag suggestion")
+	}
+	if tag != "v0.2.1" {
+		t.Fatalf("got %q, want v0.2.1", tag)
+	}
+}
+
+func TestNextPatchTagFromOutputNoTags(t *testing.T) {
+	t.Parallel()
+
+	_, ok, err := nextPatchTagFromOutput("")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if ok {
+		t.Fatal("expected no tag suggestion for empty output")
+	}
+}
+
+func TestNextPatchTagFromOutputNonSemverTags(t *testing.T) {
+	t.Parallel()
+
+	_, ok, err := nextPatchTagFromOutput("release-1\nlatest\nbeta\n")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if ok {
+		t.Fatal("expected no tag suggestion for non-semver tags")
+	}
+}
+
+func TestNextPatchTagFromOutputSingleTag(t *testing.T) {
+	t.Parallel()
+
+	tag, ok, err := nextPatchTagFromOutput("v1.0.0\n")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if !ok {
+		t.Fatal("expected a tag suggestion")
+	}
+	if tag != "v1.0.1" {
+		t.Fatalf("got %q, want v1.0.1", tag)
+	}
+}
+
+// --- domainCoverage tests ---
+
+func TestDomainCoverage(t *testing.T) {
+	t.Parallel()
+
+	coverData := `mode: set
+example.com/internal/foo/foo.go:10.1,12.1 3 1
+example.com/internal/foo/foo.go:14.1,16.1 2 0
+example.com/internal/bar/bar.go:5.1,8.1 4 1
+example.com/cmd/main.go:3.1,5.1 2 1
+`
+	dir := t.TempDir()
+	coverPath := filepath.Join(dir, "cover.out")
+	if err := os.WriteFile(coverPath, []byte(coverData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pct, err := domainCoverage(coverPath, "example.com/internal/")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	// 3 + 4 = 7 covered statements out of 3 + 2 + 4 = 9 total
+	expected := float64(7) / float64(9) * 100
+	if pct < expected-0.1 || pct > expected+0.1 {
+		t.Fatalf("got %.1f%%, want %.1f%%", pct, expected)
+	}
+}
+
+func TestDomainCoverageEmpty(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	coverPath := filepath.Join(dir, "cover.out")
+	if err := os.WriteFile(coverPath, []byte("mode: set\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pct, err := domainCoverage(coverPath, "example.com/internal/")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if pct != 0 {
+		t.Fatalf("got %.1f%%, want 0%%", pct)
+	}
+}
+
+// --- writeIndented tests ---
+
+func TestWriteIndented(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writeIndented(&buf, "line one\nline two\n")
+	output := buf.String()
+	if !strings.Contains(output, "    line one") {
+		t.Fatal("expected indented output")
+	}
+	if !strings.Contains(output, "    line two") {
+		t.Fatal("expected second line indented")
+	}
+}
+
+func TestWriteIndentedFAILColoring(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	writeIndented(&buf, "ok test\nFAIL test_bad\n")
+	output := buf.String()
+	if !strings.Contains(output, "ok test") {
+		t.Fatal("expected ok line in output")
+	}
+	// FAIL line should still appear (colored or not depending on TTY)
+	if !strings.Contains(output, "FAIL") && !strings.Contains(output, "test_bad") {
+		t.Fatal("expected FAIL line in output")
+	}
+}
+
+// --- binaryExt test ---
+
+func TestBinaryExt(t *testing.T) {
+	t.Parallel()
+
+	ext := binaryExt()
+	// We can't control runtime.GOOS in a unit test, but we can verify it returns
+	// a consistent value
+	if ext != "" && ext != ".exe" {
+		t.Fatalf("unexpected extension %q", ext)
+	}
+}
+
+// --- isHelpArg test ---
+
+func TestIsHelpArg(t *testing.T) {
+	t.Parallel()
+
+	for _, arg := range []string{"-h", "-?", "--help"} {
+		if !isHelpArg(arg) {
+			t.Fatalf("expected %q to be help arg", arg)
+		}
+	}
+	for _, arg := range []string{"-v", "help", "--version"} {
+		if isHelpArg(arg) {
+			t.Fatalf("did not expect %q to be help arg", arg)
+		}
 	}
 }

@@ -1,4 +1,4 @@
-# repo-governance-template Architecture
+# repokit Architecture
 
 ## Purpose
 

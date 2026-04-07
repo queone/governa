@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"repo-governance-template/internal/reltool"
+	"repokit/internal/reltool"
 )
 
 func main() {

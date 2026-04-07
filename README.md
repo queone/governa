@@ -1,4 +1,4 @@
-# repo-governance-template
+# repokit
 
 Template repo for generating governed repositories from:
 

@@ -1,4 +1,4 @@
-# repo-governance-template Plan
+# repokit Plan
 
 ## Project Direction
 

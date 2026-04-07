@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"repo-governance-template/internal/bootstrap"
+	"repokit/internal/bootstrap"
 )
 
 func main() {

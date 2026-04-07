@@ -722,6 +722,568 @@ func findACDoc(t *testing.T, docsDir string) string {
 	return ""
 }
 
+// --- summarizeFileContent / truncateForSummary / candidateRank tests ---
+
+func TestSummarizeFileContentWithHeadings(t *testing.T) {
+	t.Parallel()
+	got := summarizeFileContent("test.md", "# Title\n\n## Section One\n\nBody.\n")
+	if !strings.Contains(got, "Title") {
+		t.Fatalf("expected heading in summary, got %q", got)
+	}
+}
+
+func TestSummarizeFileContentEmpty(t *testing.T) {
+	t.Parallel()
+	got := summarizeFileContent("test.md", "")
+	if !strings.Contains(got, "mostly empty") {
+		t.Fatalf("expected mostly empty note, got %q", got)
+	}
+}
+
+func TestSummarizeFileContentNoHeadings(t *testing.T) {
+	t.Parallel()
+	got := summarizeFileContent("test.md", "Just some text without headings.\n")
+	if !strings.Contains(got, "starts with") {
+		t.Fatalf("expected 'starts with' in summary, got %q", got)
+	}
+}
+
+func TestTruncateForSummaryShort(t *testing.T) {
+	t.Parallel()
+	input := "short string"
+	if got := truncateForSummary(input); got != input {
+		t.Fatalf("got %q, want %q", got, input)
+	}
+}
+
+func TestTruncateForSummaryLong(t *testing.T) {
+	t.Parallel()
+	input := strings.Repeat("a", 100)
+	got := truncateForSummary(input)
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("expected truncation with ..., got %q", got)
+	}
+	if len(got) > 75 {
+		t.Fatalf("truncated result too long: %d chars", len(got))
+	}
+}
+
+func TestCandidateRankAllTiers(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		disposition string
+		portability string
+		wantRank    int
+	}{
+		{"accept", "portable", 1},
+		{"accept", "needs-review", 2},
+		{"adapt", "portable", 3},
+		{"adapt", "needs-review", 4},
+		{"defer", "project-specific", 99},
+		{"reject", "portable", 99},
+	}
+	for _, tc := range cases {
+		c := EnhancementCandidate{Disposition: tc.disposition, Portability: tc.portability}
+		if got := candidateRank(c); got != tc.wantRank {
+			t.Fatalf("candidateRank(%s+%s) = %d, want %d", tc.disposition, tc.portability, got, tc.wantRank)
+		}
+	}
+}
+
+func TestProposalPathNoExtension(t *testing.T) {
+	t.Parallel()
+	got := proposalPath(filepath.Join("tmp", "TEMPLATE_VERSION"))
+	want := filepath.Join("tmp", "TEMPLATE_VERSION.template-proposed")
+	if got != want {
+		t.Fatalf("proposalPath() = %q, want %q", got, want)
+	}
+}
+
+func TestDisplayReferencePathRelative(t *testing.T) {
+	t.Parallel()
+	got := displayReferencePath("/tmp/ref", "/tmp/ref/AGENTS.md")
+	if got != "<reference-root>/AGENTS.md" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestDisplayReferencePathOutside(t *testing.T) {
+	t.Parallel()
+	got := displayReferencePath("/tmp/ref", "/other/path/file.md")
+	if strings.Contains(got, "<reference-root>") {
+		t.Fatalf("should not use placeholder for outside path, got %q", got)
+	}
+}
+
+func TestDisplayReferencePathEmpty(t *testing.T) {
+	t.Parallel()
+	got := displayReferencePath("", "/some/path")
+	if got != "/some/path" {
+		t.Fatalf("got %q, want raw path", got)
+	}
+}
+
+// --- validateConfig tests ---
+
+func TestValidateConfigNewCodeValid(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, RepoName: "r", Purpose: "p", Stack: "Go CLI"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateConfigNewDocValid(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", PublishingPlatform: "Hugo", Style: "concise"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateConfigNewMissingName(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, Purpose: "p", Stack: "Go"})
+	if err == nil {
+		t.Fatal("expected error for missing repo name")
+	}
+}
+
+func TestValidateConfigNewMissingPurpose(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, RepoName: "r", Stack: "Go"})
+	if err == nil {
+		t.Fatal("expected error for missing purpose")
+	}
+}
+
+func TestValidateConfigNewBadType(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: "INVALID", RepoName: "r", Purpose: "p"})
+	if err == nil {
+		t.Fatal("expected error for invalid type")
+	}
+}
+
+func TestValidateConfigNewCodeMissingStack(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, RepoName: "r", Purpose: "p"})
+	if err == nil {
+		t.Fatal("expected error for missing stack")
+	}
+}
+
+func TestValidateConfigNewDocMissingPlatform(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", Style: "concise"})
+	if err == nil {
+		t.Fatal("expected error for missing publishing platform")
+	}
+}
+
+func TestValidateConfigNewDocMissingStyle(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", PublishingPlatform: "Hugo"})
+	if err == nil {
+		t.Fatal("expected error for missing style")
+	}
+}
+
+func TestValidateConfigAdoptAllowsEmptyType(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeAdopt, RepoName: "r", Purpose: "p"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateConfigAdoptRejectsBadType(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeAdopt, Type: "WRONG", RepoName: "r", Purpose: "p"})
+	if err == nil {
+		t.Fatal("expected error for invalid adopt type")
+	}
+}
+
+func TestValidateConfigEnhanceValid(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeEnhance, Reference: "/tmp/ref"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateConfigEnhanceMissingRef(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeEnhance})
+	if err == nil {
+		t.Fatal("expected error for missing reference")
+	}
+}
+
+func TestValidateConfigNoMode(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{})
+	if err == nil {
+		t.Fatal("expected error for missing mode")
+	}
+}
+
+// --- readAndRender tests ---
+
+func TestReadAndRender(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "template.md")
+	mustWrite(t, path, "# {{REPO_NAME}}\n\nPurpose: {{PROJECT_PURPOSE}}\nStack: {{STACK_OR_PLATFORM}}\n")
+
+	result, err := readAndRender(path, map[string]string{
+		"{{REPO_NAME}}":         "my-repo",
+		"{{PROJECT_PURPOSE}}":   "test purpose",
+		"{{STACK_OR_PLATFORM}}": "Go CLI",
+	})
+	if err != nil {
+		t.Fatalf("readAndRender() error = %v", err)
+	}
+	if !strings.Contains(result, "# my-repo") {
+		t.Fatal("expected repo name substitution")
+	}
+	if !strings.Contains(result, "Purpose: test purpose") {
+		t.Fatal("expected purpose substitution")
+	}
+	if !strings.Contains(result, "Stack: Go CLI") {
+		t.Fatal("expected stack substitution")
+	}
+}
+
+func TestReadAndRenderMissingFile(t *testing.T) {
+	t.Parallel()
+	_, err := readAndRender("/nonexistent/file.md", nil)
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+// --- valueOrDefault / joinOrNone tests ---
+
+func TestValueOrDefault(t *testing.T) {
+	t.Parallel()
+	if got := valueOrDefault("hello", "fallback"); got != "hello" {
+		t.Fatalf("got %q, want hello", got)
+	}
+	if got := valueOrDefault("", "fallback"); got != "fallback" {
+		t.Fatalf("got %q, want fallback", got)
+	}
+	if got := valueOrDefault("  ", "fallback"); got != "fallback" {
+		t.Fatalf("got %q, want fallback for whitespace", got)
+	}
+}
+
+func TestJoinOrNone(t *testing.T) {
+	t.Parallel()
+	if got := joinOrNone(nil); got != "none" {
+		t.Fatalf("got %q, want none", got)
+	}
+	if got := joinOrNone([]string{"a", "b"}); got != "a, b" {
+		t.Fatalf("got %q, want a, b", got)
+	}
+}
+
+// --- formatAction tests ---
+
+func TestFormatAction(t *testing.T) {
+	t.Parallel()
+	if got := formatAction(false, "write"); got != "write" {
+		t.Fatalf("got %q, want write", got)
+	}
+	if got := formatAction(true, "write"); got != "dry-run write" {
+		t.Fatalf("got %q, want dry-run write", got)
+	}
+}
+
+// --- compactOperations tests ---
+
+func TestCompactOperations(t *testing.T) {
+	t.Parallel()
+	ops := []operation{
+		{kind: "write", path: "a"},
+		{kind: "skip"},
+		{kind: "symlink", path: "b"},
+		{kind: "skip"},
+	}
+	result := compactOperations(ops)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 operations, got %d", len(result))
+	}
+	if result[0].path != "a" || result[1].path != "b" {
+		t.Fatal("unexpected operation paths after compaction")
+	}
+}
+
+// --- proposeIfExists / skipIfExists tests ---
+
+func TestProposeIfExistsFileExists(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "README.md")
+	mustWrite(t, existing, "content")
+
+	op := operation{kind: "write", path: existing, note: "overlay file"}
+	result := proposeIfExists(op)
+	if result.path != filepath.Join(dir, "README.template-proposed.md") {
+		t.Fatalf("got path %q, expected proposal path", result.path)
+	}
+	if !strings.Contains(result.note, "existing target preserved") {
+		t.Fatal("expected note to mention existing target preserved")
+	}
+}
+
+func TestProposeIfExistsFileDoesNotExist(t *testing.T) {
+	t.Parallel()
+	op := operation{kind: "write", path: "/nonexistent/README.md", note: "overlay file"}
+	result := proposeIfExists(op)
+	if result.path != "/nonexistent/README.md" {
+		t.Fatalf("path should be unchanged, got %q", result.path)
+	}
+}
+
+func TestSkipIfExistsFileExists(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "file.md")
+	mustWrite(t, existing, "content")
+
+	op := operation{kind: "write", path: existing}
+	result := skipIfExists(op)
+	if result.kind != "skip" {
+		t.Fatalf("expected skip, got %q", result.kind)
+	}
+}
+
+func TestSkipIfExistsFileDoesNotExist(t *testing.T) {
+	t.Parallel()
+	op := operation{kind: "write", path: "/nonexistent/file.md"}
+	result := skipIfExists(op)
+	if result.kind != "write" {
+		t.Fatalf("expected write, got %q", result.kind)
+	}
+}
+
+// --- applyOperations tests ---
+
+func TestApplyOperationsWrite(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "sub", "file.md")
+	ops := []operation{{kind: "write", path: target, content: "hello", note: "test"}}
+
+	if err := applyOperations(ops, false); err != nil {
+		t.Fatalf("applyOperations() error = %v", err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(content) != "hello" {
+		t.Fatalf("got %q, want hello", string(content))
+	}
+}
+
+func TestApplyOperationsWriteShellExecutable(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "build.sh")
+	ops := []operation{{kind: "write", path: target, content: "#!/bin/bash", note: "test"}}
+
+	if err := applyOperations(ops, false); err != nil {
+		t.Fatalf("applyOperations() error = %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatal("expected .sh file to be executable")
+	}
+}
+
+func TestApplyOperationsSymlink(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "CLAUDE.md")
+	ops := []operation{{kind: "symlink", path: target, linkTo: "AGENTS.md", note: "test"}}
+
+	if err := applyOperations(ops, false); err != nil {
+		t.Fatalf("applyOperations() error = %v", err)
+	}
+	linkTarget, err := os.Readlink(target)
+	if err != nil {
+		t.Fatalf("Readlink() error = %v", err)
+	}
+	if linkTarget != "AGENTS.md" {
+		t.Fatalf("got link target %q, want AGENTS.md", linkTarget)
+	}
+}
+
+func TestApplyOperationsDryRun(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "should-not-exist.md")
+	ops := []operation{
+		{kind: "write", path: target, content: "hello", note: "test"},
+		{kind: "symlink", path: filepath.Join(dir, "link.md"), linkTo: "x", note: "test"},
+		{kind: "mkdir", path: filepath.Join(dir, "newdir"), note: "test"},
+	}
+
+	if err := applyOperations(ops, true); err != nil {
+		t.Fatalf("applyOperations() error = %v", err)
+	}
+	if _, err := os.Stat(target); err == nil {
+		t.Fatal("dry-run should not create files")
+	}
+}
+
+func TestApplyOperationsMkdir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "newdir", "subdir")
+	ops := []operation{{kind: "mkdir", path: target, note: "test"}}
+
+	if err := applyOperations(ops, false); err != nil {
+		t.Fatalf("applyOperations() error = %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("directory not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected a directory")
+	}
+}
+
+func TestApplyOperationsUnsupportedKind(t *testing.T) {
+	t.Parallel()
+	ops := []operation{{kind: "bogus"}}
+	if err := applyOperations(ops, false); err == nil {
+		t.Fatal("expected error for unsupported operation kind")
+	}
+}
+
+// --- planRender integration test ---
+
+func TestPlanRenderCodeOverlay(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	targetRoot := t.TempDir()
+
+	mustWrite(t, filepath.Join(root, "base", "AGENTS.md"), "# {{REPO_NAME}} governance\n")
+	mustWrite(t, filepath.Join(root, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "README.md.tmpl"), "# {{REPO_NAME}}\n\n{{PROJECT_PURPOSE}}\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "build.sh.tmpl"), "#!/bin/bash\necho {{REPO_NAME}}\n")
+
+	cfg := Config{
+		Mode:     ModeNew,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+	}
+
+	ops, err := planRender(root, cfg, targetRoot, false)
+	if err != nil {
+		t.Fatalf("planRender() error = %v", err)
+	}
+	if len(ops) == 0 {
+		t.Fatal("expected at least one operation")
+	}
+
+	// Check AGENTS.md write operation has rendered content
+	found := false
+	for _, op := range ops {
+		if strings.HasSuffix(op.path, "AGENTS.md") && op.kind == "write" {
+			found = true
+			if !strings.Contains(op.content, "test-repo") {
+				t.Fatal("AGENTS.md should have repo name rendered")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected AGENTS.md write operation")
+	}
+}
+
+func TestPlanRenderAdoptProposesExistingFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	targetRoot := t.TempDir()
+
+	mustWrite(t, filepath.Join(root, "base", "AGENTS.md"), "# governance\n")
+	mustWrite(t, filepath.Join(root, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "README.md.tmpl"), "# Template README\n")
+
+	// Pre-existing file in target
+	mustWrite(t, filepath.Join(targetRoot, "AGENTS.md"), "# Existing governance\n")
+
+	cfg := Config{
+		Mode:     ModeAdopt,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+	}
+
+	ops, err := planRender(root, cfg, targetRoot, true)
+	if err != nil {
+		t.Fatalf("planRender() error = %v", err)
+	}
+
+	// AGENTS.md should be proposed, not overwritten
+	for _, op := range ops {
+		if strings.Contains(op.path, "AGENTS") && op.kind == "write" {
+			if !strings.Contains(op.path, "template-proposed") {
+				t.Fatalf("existing AGENTS.md should get proposal path, got %q", op.path)
+			}
+		}
+	}
+}
+
+func TestPlanRenderNonGoStackSkipsGoFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	targetRoot := t.TempDir()
+
+	mustWrite(t, filepath.Join(root, "base", "AGENTS.md"), "# governance\n")
+	mustWrite(t, filepath.Join(root, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "README.md.tmpl"), "# README\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "cmd", "build", "main.go.tmpl"), "package main\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "cmd", "build", "color.go.tmpl"), "package main\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "cmd", "rel", "main.go.tmpl"), "package main\n")
+	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "cmd", "rel", "color.go.tmpl"), "package main\n")
+
+	cfg := Config{
+		Mode:     ModeNew,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Rust service",
+	}
+
+	ops, err := planRender(root, cfg, targetRoot, false)
+	if err != nil {
+		t.Fatalf("planRender() error = %v", err)
+	}
+
+	for _, op := range ops {
+		if strings.HasSuffix(op.path, "main.go") || strings.HasSuffix(op.path, "color.go") {
+			t.Fatalf("non-Go stack should not include Go files, found %q", op.path)
+		}
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

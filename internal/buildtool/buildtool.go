@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"repo-governance-template/internal/color"
+	"repokit/internal/color"
 )
 
 type Config struct {
@@ -382,6 +382,10 @@ func nextPatchTag() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
+	return nextPatchTagFromOutput(output)
+}
+
+func nextPatchTagFromOutput(output string) (string, bool, error) {
 	var versions []semver
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {

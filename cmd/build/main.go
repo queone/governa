@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"repo-governance-template/internal/buildtool"
+	"repokit/internal/buildtool"
 )
 
 func main() {

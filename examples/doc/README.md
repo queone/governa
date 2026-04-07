@@ -4,7 +4,7 @@ Example governed documentation repository rendered from the template.
 
 ## Overview
 
-This is a governed `DOC` repo bootstrapped from `repo-governance-template`.
+This is a governed `DOC` repo bootstrapped from `repokit`.
 
 Publishing platform:
 

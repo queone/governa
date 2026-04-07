@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"repo-governance-template/internal/color"
+	"repokit/internal/color"
 )
 
 var semverTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
