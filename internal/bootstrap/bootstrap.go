@@ -164,7 +164,7 @@ func Run(cfg Config) error {
 	case ModeAdopt:
 		return runNewOrAdopt(root, cfg, true)
 	case ModeEnhance:
-		return runEnhance(root, cfg)
+		return RunEnhance(root, cfg)
 	default:
 		return fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}
@@ -280,7 +280,8 @@ func runNewOrAdopt(root string, cfg Config, adopt bool) error {
 	return nil
 }
 
-func runEnhance(root string, cfg Config) error {
+// RunEnhance runs enhance mode against a reference repo. Exported for testing.
+func RunEnhance(root string, cfg Config) error {
 	refAbs, err := filepath.Abs(cfg.Reference)
 	if err != nil {
 		return fmt.Errorf("resolve reference path: %w", err)
@@ -289,22 +290,37 @@ func runEnhance(root string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	printEnhancementReport(report)
-	reportPath := filepath.Join(root, "docs", "enhance-report.md")
-	reportContent := renderEnhancementReport(report)
+	printEnhancementSummary(report)
+
+	selected, deferred, ok := selectActionableCandidates(report.Candidates)
+	if !ok {
+		fmt.Println("no actionable improvements found; no AC doc created")
+		return nil
+	}
+
+	docsDir := filepath.Join(root, "docs")
+	acNum, err := nextACNumber(docsDir)
+	if err != nil {
+		return err
+	}
+	slug := acSlug(selected)
+	acFileName := fmt.Sprintf("ac-%03d-%s.md", acNum, slug)
+	acPath := filepath.Join(docsDir, acFileName)
+	acContent := renderACDoc(selected, deferred, report, acNum)
+
 	if cfg.DryRun {
-		fmt.Printf("dry-run write %s (enhancement review report)\n", reportPath)
+		fmt.Printf("dry-run write %s (enhancement AC doc)\n", acPath)
 		fmt.Println("dry-run: no template changes applied")
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(reportPath), 0o755); err != nil {
-		return fmt.Errorf("create report directory: %w", err)
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		return fmt.Errorf("create docs directory: %w", err)
 	}
-	if err := os.WriteFile(reportPath, []byte(reportContent), 0o644); err != nil {
-		return fmt.Errorf("write enhancement report: %w", err)
+	if err := os.WriteFile(acPath, []byte(acContent), 0o644); err != nil {
+		return fmt.Errorf("write AC doc: %w", err)
 	}
-	fmt.Printf("write %s (enhancement review report)\n", reportPath)
-	fmt.Println("enhance mode is report-first: no template changes applied")
+	fmt.Printf("write %s (enhancement AC doc)\n", acPath)
+	fmt.Println("enhance mode is review-first: no template changes applied")
 	return nil
 }
 
@@ -708,14 +724,16 @@ func printAssessment(mode Mode, target string, a Assessment) {
 	}
 }
 
-func printEnhancementReport(report EnhancementReport) {
+func printEnhancementSummary(report EnhancementReport) {
 	fmt.Printf("mode: enhance\n")
 	fmt.Printf("reference: %s\n", displayReferenceRoot())
 	if len(report.Candidates) == 0 {
 		fmt.Println("candidates: none")
 		return
 	}
-	fmt.Printf("candidates: %d\n", len(report.Candidates))
+	counts := countEnhancementCandidates(report.Candidates)
+	fmt.Printf("candidates: %d (accept=%d adapt=%d defer=%d reject=%d)\n",
+		len(report.Candidates), counts["accept"], counts["adapt"], counts["defer"], counts["reject"])
 	for _, c := range report.Candidates {
 		fmt.Printf("- area=%s path=%s disposition=%s portability=%s", c.Area, displayReferencePath(report.ReferenceRoot, c.Path), c.Disposition, c.Portability)
 		if c.Section != "" {
@@ -1071,42 +1089,169 @@ func truncateForSummary(value string) string {
 	return strings.TrimSpace(value[:69]) + "..."
 }
 
-func renderEnhancementReport(report EnhancementReport) string {
-	var b strings.Builder
-	b.WriteString("# Enhance Report\n\n")
-	b.WriteString(fmt.Sprintf("Reference repo: `%s`\n\n", displayReferenceRoot()))
-	b.WriteString(fmt.Sprintf("Candidate count: %d\n\n", len(report.Candidates)))
-	counts := countEnhancementCandidates(report.Candidates)
-	b.WriteString("## Summary\n\n")
-	b.WriteString(fmt.Sprintf("- `accept`: %d\n", counts["accept"]))
-	b.WriteString(fmt.Sprintf("- `adapt`: %d\n", counts["adapt"]))
-	b.WriteString(fmt.Sprintf("- `defer`: %d\n", counts["defer"]))
-	b.WriteString(fmt.Sprintf("- `reject`: %d\n\n", counts["reject"]))
+func candidateRank(c EnhancementCandidate) int {
+	switch {
+	case c.Disposition == "accept" && c.Portability == "portable":
+		return 1
+	case c.Disposition == "accept" && c.Portability == "needs-review":
+		return 2
+	case c.Disposition == "adapt" && c.Portability == "portable":
+		return 3
+	case c.Disposition == "adapt" && c.Portability == "needs-review":
+		return 4
+	default:
+		return 99
+	}
+}
 
-	if len(report.Candidates) == 0 {
-		b.WriteString("## Candidates\n\nNo enhancement candidates were found.\n")
-		return b.String()
+func isActionable(c EnhancementCandidate) bool {
+	return c.Disposition == "accept" || c.Disposition == "adapt"
+}
+
+func selectActionableCandidates(candidates []EnhancementCandidate) (selected EnhancementCandidate, deferred []EnhancementCandidate, ok bool) {
+	var actionable []EnhancementCandidate
+	for _, c := range candidates {
+		if isActionable(c) {
+			actionable = append(actionable, c)
+		}
+	}
+	if len(actionable) == 0 {
+		return EnhancementCandidate{}, nil, false
+	}
+	best := 0
+	for i := 1; i < len(actionable); i++ {
+		if candidateRank(actionable[i]) < candidateRank(actionable[best]) {
+			best = i
+		}
+	}
+	selected = actionable[best]
+	for i, c := range actionable {
+		if i != best {
+			deferred = append(deferred, c)
+		}
+	}
+	return selected, deferred, true
+}
+
+func nextACNumber(docsDir string) (int, error) {
+	entries, err := os.ReadDir(docsDir)
+	if err != nil {
+		return 1, nil
+	}
+	max := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "ac-") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		if name == "ac-template.md" {
+			continue
+		}
+		trimmed := strings.TrimPrefix(name, "ac-")
+		before, _, ok := strings.Cut(trimmed, "-")
+		if !ok {
+			continue
+		}
+		numStr := before
+		num := 0
+		for _, ch := range numStr {
+			if ch < '0' || ch > '9' {
+				num = -1
+				break
+			}
+			num = num*10 + int(ch-'0')
+		}
+		if num > max {
+			max = num
+		}
+	}
+	return max + 1, nil
+}
+
+func acSlug(c EnhancementCandidate) string {
+	base := c.Area
+	if c.Section != "" {
+		base = c.Section
+	}
+	slug := strings.ToLower(base)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	var clean []byte
+	for _, ch := range []byte(slug) {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' {
+			clean = append(clean, ch)
+		}
+	}
+	result := string(clean)
+	if len(result) > 40 {
+		result = result[:40]
+	}
+	return strings.TrimRight(result, "-")
+}
+
+func renderACDoc(selected EnhancementCandidate, deferred []EnhancementCandidate, report EnhancementReport, acNumber int) string {
+	var b strings.Builder
+
+	title := fmt.Sprintf("Enhance: %s", selected.Area)
+	if selected.Section != "" {
+		title = fmt.Sprintf("Enhance: %s — %s", selected.Area, selected.Section)
+	}
+	fmt.Fprintf(&b, "# AC-%03d %s\n\n", acNumber, title)
+
+	b.WriteString("## Objective Fit\n\n")
+	b.WriteString("1. Improve the template based on a governed reference repo review.\n")
+	b.WriteString("2. This is the highest-priority actionable enhancement from the latest enhance run.\n")
+	fmt.Fprintf(&b, "3. The enhance review classified this candidate as `%s` with portability `%s`.\n", selected.Disposition, selected.Portability)
+	b.WriteString("4. Direct roadmap work — aligns with R3 (safe refresh path).\n\n")
+
+	b.WriteString("## Summary\n\n")
+	fmt.Fprintf(&b, "%s\n\n", selected.Reason)
+	if selected.Summary != "" {
+		fmt.Fprintf(&b, "Evidence: %s\n\n", selected.Summary)
 	}
 
-	b.WriteString("## Candidates\n\n")
-	for i, c := range report.Candidates {
-		b.WriteString(fmt.Sprintf("### %d. %s\n\n", i+1, c.Area))
-		b.WriteString(fmt.Sprintf("- Source: `%s`\n", displayReferencePath(report.ReferenceRoot, c.Path)))
-		if c.Section != "" {
-			b.WriteString(fmt.Sprintf("- Section: `%s`\n", c.Section))
-		}
-		if c.TemplateTarget != "" {
-			b.WriteString(fmt.Sprintf("- Template target: `%s`\n", c.TemplateTarget))
-		}
-		b.WriteString(fmt.Sprintf("- Portability: `%s`\n", c.Portability))
-		b.WriteString(fmt.Sprintf("- Recommendation: `%s`\n", c.Disposition))
-		b.WriteString(fmt.Sprintf("- Collision impact: `%s`\n", c.CollisionImpact))
-		b.WriteString(fmt.Sprintf("- Reason: %s\n", c.Reason))
-		if c.Summary != "" {
-			b.WriteString(fmt.Sprintf("- Evidence: %s\n", c.Summary))
+	b.WriteString("## In Scope\n\n")
+	if selected.TemplateTarget != "" {
+		fmt.Fprintf(&b, "- Review and update `%s`\n", selected.TemplateTarget)
+	}
+	if selected.Section != "" {
+		fmt.Fprintf(&b, "- Section: `%s`\n", selected.Section)
+	}
+	fmt.Fprintf(&b, "- Area: %s\n", selected.Area)
+	fmt.Fprintf(&b, "- Disposition: `%s`, Portability: `%s`\n\n", selected.Disposition, selected.Portability)
+
+	b.WriteString("## Out Of Scope\n\n")
+	b.WriteString("- Auto-applying template changes\n")
+	b.WriteString("- Changes unrelated to this specific enhancement candidate\n\n")
+
+	b.WriteString("## Implementation Notes\n\n")
+	fmt.Fprintf(&b, "- Source: `%s`\n", displayReferencePath(report.ReferenceRoot, selected.Path))
+	fmt.Fprintf(&b, "- Collision impact: `%s`\n\n", selected.CollisionImpact)
+
+	b.WriteString("## Acceptance Tests\n\n")
+	b.WriteString("- [Manual] Verify the template target reflects the enhancement\n")
+	b.WriteString("- [Manual] Verify generated repos benefit from the change\n\n")
+
+	b.WriteString("## Documentation Updates\n\n")
+	b.WriteString("- Update any docs affected by the template target change\n\n")
+
+	if len(deferred) > 0 {
+		b.WriteString("## Deferred Candidates\n\n")
+		b.WriteString("The following actionable candidates were identified but not selected for this AC:\n\n")
+		for _, d := range deferred {
+			fmt.Fprintf(&b, "- **%s**", d.Area)
+			if d.Section != "" {
+				fmt.Fprintf(&b, " — %s", d.Section)
+			}
+			fmt.Fprintf(&b, ": `%s` (%s, %s)", d.Disposition, d.Portability, d.CollisionImpact)
+			if d.TemplateTarget != "" {
+				fmt.Fprintf(&b, " target=`%s`", d.TemplateTarget)
+			}
+			b.WriteString("\n")
 		}
 		b.WriteString("\n")
 	}
+
+	b.WriteString("## Status\n\nPENDING\n")
 	return b.String()
 }
 

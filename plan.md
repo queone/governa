@@ -20,7 +20,7 @@ Every new roadmap item should answer:
 
 ## Priorities
 
-- ~~`R1` Release readiness: keep this repo passing as a governed `CODE` repo and prepare for `v0.1.0`~~ (ready -- v0.1.0 release prep complete)
+- ~~`R1` Release readiness: keep this repo passing as a governed `CODE` repo and prepare for `v0.1.0`~~ (done -- v0.1.0 shipped 2026-04-06)
 - `R2` Operator guidance: tighten the root docs so maintainers can run `new`, `adopt`, and `enhance` without re-explaining the model
 - `R3` Safe refresh path: keep improving owned-section refresh behavior without letting `AGENTS.md` or overlay files drift
 

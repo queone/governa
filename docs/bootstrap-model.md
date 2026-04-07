@@ -289,12 +289,12 @@ One useful first version is report-first behavior:
 2. extract candidate deltas
 3. compare `AGENTS.md` by named governed sections
 4. compare overlay and workflow artifacts by deterministic file mapping
-5. write a review artifact such as `docs/enhance-report.md`
+5. create an AC doc under `docs/` for the highest-priority actionable candidate, if any
 6. classify each delta as portable, needs-review, or project-specific
 7. recommend accept, adapt, defer, or reject
 8. only then patch this template repo
 
-The current implementation stops at the report stage, writes `docs/enhance-report.md`, and does not auto-apply enhancements.
+The current implementation stops at the review stage and, when actionable improvements are found, creates an AC doc under `docs/` for the highest-priority candidate. It does not auto-apply enhancements.
 
 ## Why This Fits The Template Repo
 

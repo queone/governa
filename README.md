@@ -100,7 +100,7 @@ go run <template-root>/cmd/bootstrap \
   -d
 ```
 
-`enhance` is report-first. It prints the review summary to stdout and writes `docs/enhance-report.md` when not running in dry-run mode.
+`enhance` is review-first. It prints the review summary to stdout and, when actionable improvements are found, creates an AC doc under `docs/` using the repo's acceptance-criteria conventions. When no actionable improvements are found, no file is created.
 The current review logic is section-aware for `AGENTS.md` and uses deterministic file mappings for overlay and workflow artifacts.
 
 ## Rendered Examples
