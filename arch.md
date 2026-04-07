@@ -32,7 +32,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 
 For `new` and `adopt`, an agent runs from inside a target repo, points at this repo as read-only source material, and invokes `cmd/bootstrap` to assess the target, render base plus overlay files, and write concrete output.
 
-For `enhance`, a maintainer runs from inside this repo, points at another governed repo, and generates a review report that compares governed sections and mapped overlay artifacts before any template change is considered.
+For `enhance`, a maintainer runs from inside this repo, points at another governed repo, and reviews governed sections and mapped overlay artifacts. If actionable improvements are found, enhance creates an AC doc under `docs/` for the highest-priority candidate. No template changes are applied automatically.
 
 ## Architecture Notes
 

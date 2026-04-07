@@ -15,7 +15,4 @@ Current contents:
 - `cmd/rel/color.go`
 - `rel.sh`
 
-Still to add:
-
-- richer platform-specific publishing examples
-- optional alternate `voice.md` or `calendar.md` variants
+See `plan.md` for future overlay improvements.

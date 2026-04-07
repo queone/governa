@@ -6,12 +6,52 @@ Template repo for generating governed repositories from:
 - a repo-type overlay in `overlays/code/` or `overlays/doc/`
 - a deterministic Go bootstrap command that renders concrete files into a target repo
 
-Current milestone:
+Shipped in v0.1.1:
 
-- base `AGENTS.md` contract
-- `CODE` versus `DOC` overlay boundaries
-- first working `bootstrap` command with `new`, `adopt`, and `enhance` modes
-- self-hosted root governance artifacts so this repo can operate as a governed `CODE` repo
+- base `AGENTS.md` governance contract with governed-section update model
+- `CODE` and `DOC` overlays with rendered examples
+- deterministic `bootstrap` command supporting `new`, `adopt`, and `enhance` modes
+- Go-based `build` and `rel` tooling with strict static analysis
+- AC-driven enhance workflow (no standing report files)
+- self-hosted as a governed `CODE` repo
+
+## Quick Start
+
+Bootstrap a new **CODE** repo:
+
+```bash
+go run <template-root>/cmd/bootstrap \
+  -m new -y CODE \
+  -n my-service \
+  -p "API gateway for internal services" \
+  -s "Go CLI"
+```
+
+Bootstrap a new **DOC** repo:
+
+```bash
+go run <template-root>/cmd/bootstrap \
+  -m new -y DOC \
+  -n my-docs \
+  -p "Public developer documentation" \
+  -u "Static site generator" \
+  -v "Clear, factual, concise"
+```
+
+Review another governed repo for template improvements (**enhance**):
+
+```bash
+go run <template-root>/cmd/bootstrap \
+  -m enhance \
+  -r <reference-root> \
+  -d
+```
+
+Run `--help` for all flags:
+
+```bash
+go run <template-root>/cmd/bootstrap --help
+```
 
 ## Intended Use
 
@@ -26,7 +66,7 @@ In both cases, the user starts their coding agent in the target directory and po
 
 For template maintainers, a third maintenance mode is also needed:
 
-- `enhance`: inspect another governed repo that may contain methodology improvements and write a deterministic review artifact before any template changes are considered
+- `enhance`: inspect another governed repo for portable methodology improvements and create an AC doc for the highest-priority actionable candidate before any template changes are considered
 
 ## Operating Model
 
@@ -52,7 +92,7 @@ Use `new` when the target directory is empty or nearly empty and you want a full
 
 Use `adopt` when the target repo already exists and you want conservative application behavior, fit assessment, and proposal files instead of broad overwrites.
 
-Use `enhance` only from inside this template repo when you want to inspect another governed repo for portable improvements and generate a review artifact before making template changes.
+Use `enhance` only from inside this template repo when you want to inspect another governed repo for portable improvements. If actionable improvements are found, enhance creates an AC doc under `docs/`. No template changes are applied automatically.
 
 ## Self-Hosting Status
 

@@ -19,7 +19,4 @@ Current contents:
 - `cmd/rel/main.go` for Go-based repos only
 - `cmd/rel/color.go` for Go-based repos only
 
-Still to add:
-
-- deeper release and upgrade guidance
-- richer example acceptance-criteria docs
+See `plan.md` for future overlay improvements.

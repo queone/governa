@@ -83,11 +83,11 @@ Behavior:
 - infer whether that repo appears to derive from this methodology
 - extract candidate improvements in governance, overlays, workflow, or bootstrap behavior
 - compare those candidates against this template's current files
-- produce a deterministic review report before changing anything
+- create an AC doc for the highest-priority actionable candidate, if any
 - patch this template repo only after explicit approval
 
 `enhance` is not a blind sync operation.
-It is a review-driven proposal flow for template maintainers.
+It is a review-driven, AC-first proposal flow for template maintainers.
 
 ## Implementation Constraints
 
@@ -283,16 +283,16 @@ Rules:
 - require explicit maintainer approval before applying accepted enhancements
 - keep rejected or deferred ideas out of the template baseline unless intentionally added as optional patterns
 
-One useful first version is report-first behavior:
+The current enhance workflow:
 
 1. inspect reference repo
 2. extract candidate deltas
 3. compare `AGENTS.md` by named governed sections
 4. compare overlay and workflow artifacts by deterministic file mapping
-5. create an AC doc under `docs/` for the highest-priority actionable candidate, if any
-6. classify each delta as portable, needs-review, or project-specific
-7. recommend accept, adapt, defer, or reject
-8. only then patch this template repo
+5. classify each delta as portable, needs-review, or project-specific
+6. recommend accept, adapt, defer, or reject
+7. create an AC doc under `docs/` for the highest-priority actionable candidate, if any
+8. only then patch this template repo after AC approval
 
 The current implementation stops at the review stage and, when actionable improvements are found, creates an AC doc under `docs/` for the highest-priority candidate. It does not auto-apply enhancements.
 
