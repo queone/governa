@@ -18,6 +18,7 @@ For deterministic role selection, assign the role explicitly at session start ra
 |------|------|-------|
 | `dev.md` | DEV | Implementation, testing, build process |
 | `qa.md` | QA | Review, verification, finding-first reporting |
+| `maintainer.md` | Maintainer | Combined implementation and review for single-agent repos |
 
 ## Adding Custom Roles
 

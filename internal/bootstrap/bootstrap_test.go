@@ -2592,6 +2592,7 @@ func TestBootstrapNewProducesAgentRoles(t *testing.T) {
 		filepath.Join("docs", "agent-roles", "README.md"),
 		filepath.Join("docs", "agent-roles", "dev.md"),
 		filepath.Join("docs", "agent-roles", "qa.md"),
+		filepath.Join("docs", "agent-roles", "maintainer.md"),
 	} {
 		path := filepath.Join(targetDir, rel)
 		if _, err := os.Stat(path); err != nil {
@@ -2607,6 +2608,16 @@ func TestBootstrapNewProducesAgentRoles(t *testing.T) {
 	if !strings.Contains(string(qaContent), "QA says") {
 		t.Fatal("qa.md should state the QA says prefix requirement")
 	}
+	maintContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "maintainer.md"))
+	if !strings.Contains(string(maintContent), "MAINT says:") {
+		t.Fatal("maintainer.md should state the MAINT says: prefix")
+	}
+	if !strings.Contains(string(maintContent), "self-review") {
+		t.Fatal("maintainer.md should require self-review")
+	}
+	if !strings.Contains(string(maintContent), "Propagate fixes") {
+		t.Fatal("maintainer.md should require propagation discipline")
+	}
 }
 
 func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
@@ -2619,6 +2630,7 @@ func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "README.md"), "# Existing roles index\n")
 	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "dev.md"), "# Existing dev role\n")
 	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "qa.md"), "# Existing qa role\n")
+	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "maintainer.md"), "# Existing maintainer role\n")
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# Existing AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n")
 
 	cfg := Config{
@@ -2639,11 +2651,12 @@ func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
 		t.Fatal("adopt should preserve existing dev.md")
 	}
 
-	// Proposals should exist for all three files
+	// Proposals should exist for all four files
 	for _, rel := range []string{
 		filepath.Join("docs", "agent-roles", "README.md"),
 		filepath.Join("docs", "agent-roles", "dev.md"),
 		filepath.Join("docs", "agent-roles", "qa.md"),
+		filepath.Join("docs", "agent-roles", "maintainer.md"),
 	} {
 		proposal := proposalPath(filepath.Join(targetDir, rel))
 		if _, err := os.Stat(proposal); err != nil {

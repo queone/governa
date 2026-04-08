@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.2.1 | AC-009: maintainer role for single-agent repos combining DEV and QA with self-review requirement |
 | 0.2.0 | AC-008: agent role bootstrap pattern with `docs/agent-roles/` for DEV and QA roles; bootstrap `--help` exits cleanly; consistent CLI usage formatting across all commands; `-?` alias for bootstrap |
 | 0.1.8 | AC-007: adopt mode section-level patching for AGENTS.md; missing governed sections appended in template order; existing content never modified; domain coverage 71.4% |
 | 0.1.7 | Release message 60-char limit enforced in reltool, overlay templates, and rendered examples; docs updated |

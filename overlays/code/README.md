@@ -21,6 +21,7 @@ Current contents:
 - `docs/agent-roles/README.md`
 - `docs/agent-roles/dev.md`
 - `docs/agent-roles/qa.md`
+- `docs/agent-roles/maintainer.md`
 - `cmd/rel/main.go` for Go-based repos only
 - `cmd/rel/color.go` for Go-based repos only
 
