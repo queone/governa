@@ -20,13 +20,12 @@ Every new roadmap item should answer:
 
 ## Priorities
 
-- (all current priorities shipped)
+- active work items only; remove when shipped
 
 ## Deferred
 
 | ID | Description | Reason |
 |----|-------------|--------|
-| ~~D1~~ | ~~Adopt mode section-level patching~~ | Shipped in AC-007 |
 
 ## Constraints
 
