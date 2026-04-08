@@ -59,7 +59,9 @@ func IsHelpArg(arg string) bool {
 }
 
 func Usage() string {
-	return "usage: rel vX.Y.Z \"release message\"\n\nRelease message must be 60 characters or fewer.\n\nOptions:\n  -h, -?, --help   Show this help\n"
+	return color.FormatUsage("rel vX.Y.Z \"release message\"", []color.UsageLine{
+		{Flag: "-h, -?, --help", Desc: "show this help"},
+	}, "Release message must be 60 characters or fewer.")
 }
 
 func Run(cfg Config, in io.Reader, out io.Writer, errOut io.Writer) error {

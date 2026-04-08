@@ -20,6 +20,10 @@ Every new roadmap item should answer:
 
 ## Priorities
 
+- Audit adopt/enhance safety: review proposal generation, manifest logic, and section-patching edge cases
+- Audit build validation flow: review staticcheck/tooling assumptions and error propagation in cmd/build and internal/buildtool
+- Audit release git behavior: review confirmation handling, git step sequencing, and failure recovery in cmd/rel and internal/reltool
+- Audit docs drift: verify docs/build-release.md, README.md CLI examples, and overlay docs match actual CLI behavior
 - CODE overlay: deeper release and upgrade guidance
 - CODE overlay: richer example acceptance-criteria docs
 - DOC overlay: richer platform-specific publishing examples

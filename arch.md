@@ -40,6 +40,7 @@ For `enhance`, a maintainer runs from inside this repo, points at another govern
 - this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `new` or `adopt`
 - `enhance` is report-first and intentionally conservative
 - shell wrappers are conveniences only; the canonical implementation lives in Go
+- `docs/agent-roles/` provides role-specific behavior docs (DEV, QA) that supplement the shared governance contract; role selection is instruction-driven and defined in `Interaction Mode`
 
 ## Conventions
 

@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+
+	"repokit/internal/color"
 )
 
 type Mode string
@@ -109,7 +111,7 @@ type flagValues struct {
 	apply              bool
 }
 
-func ParseArgs(args []string) (Config, error) {
+func ParseArgs(args []string) (Config, bool, error) {
 	values := flagValues{}
 	fs := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -138,18 +140,38 @@ func ParseArgs(args []string) (Config, error) {
 	fs.BoolVar(&values.apply, "a", false, "write .template-proposed files for actionable candidates (enhance only)")
 	fs.BoolVar(&values.apply, "apply", false, "write .template-proposed files for actionable candidates (enhance only)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: bootstrap -m, --mode new|adopt|enhance [options]\n")
-		fs.PrintDefaults()
+		fmt.Fprint(fs.Output(), color.FormatUsage("bootstrap -m, --mode new|adopt|enhance [options]", []color.UsageLine{
+			{Flag: "-m, --mode string", Desc: "mode: new|adopt|enhance"},
+			{Flag: "-t, --target string", Desc: "target directory (default: cwd)"},
+			{Flag: "-r, --reference string", Desc: "reference repo for enhance"},
+			{Flag: "-y, --type string", Desc: "repo type: CODE|DOC"},
+			{Flag: "-n, --repo-name string", Desc: "repo name"},
+			{Flag: "-p, --purpose string", Desc: "project purpose"},
+			{Flag: "-s, --stack string", Desc: "stack or platform for CODE repos"},
+			{Flag: "-u, --publishing-platform string", Desc: "publishing platform for DOC repos"},
+			{Flag: "-v, --style string", Desc: "style or voice for DOC repos"},
+			{Flag: "-g, --init-git", Desc: "initialize git if target is not already a repo"},
+			{Flag: "-d, --dry-run", Desc: "preview changes without writing"},
+			{Flag: "-a, --apply", Desc: "write .template-proposed files (enhance only)"},
+			{Flag: "-h, -?, --help", Desc: "show this help"},
+		}, ""))
+	}
+	if slices.Contains(args, "-?") {
+		fs.Usage()
+		return Config{}, true, nil
 	}
 	if err := fs.Parse(args); err != nil {
-		return Config{}, err
+		if errors.Is(err, flag.ErrHelp) {
+			return Config{}, true, nil
+		}
+		return Config{}, false, err
 	}
 
 	target := strings.TrimSpace(values.target)
 	if target == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return Config{}, fmt.Errorf("resolve current working directory: %w", err)
+			return Config{}, false, fmt.Errorf("resolve current working directory: %w", err)
 		}
 		target = cwd
 	}
@@ -168,7 +190,7 @@ func ParseArgs(args []string) (Config, error) {
 		DryRun:             values.dryRun,
 		Apply:              values.apply,
 	}
-	return cfg, validateConfig(cfg)
+	return cfg, false, validateConfig(cfg)
 }
 
 func Run(cfg Config) error {

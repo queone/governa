@@ -18,6 +18,9 @@ Current contents:
 - `docs/build-release.md`
 - `docs/development-guidelines.md`
 - `docs/knowledge/README.md`
+- `docs/agent-roles/README.md`
+- `docs/agent-roles/dev.md`
+- `docs/agent-roles/qa.md`
 - `cmd/rel/main.go` for Go-based repos only
 - `cmd/rel/color.go` for Go-based repos only
 

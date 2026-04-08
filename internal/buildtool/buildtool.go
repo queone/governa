@@ -61,7 +61,10 @@ func ParseArgs(args []string) (Config, bool, error) {
 }
 
 func Usage() string {
-	return "usage: build [target ...] [-v|--verbose]\n\nOptions:\n  -h, -?, --help      Show this help\n  -v, --verbose       Run go test in verbose mode\n\nWhen targets are specified, validation (vet, fmt, test, staticcheck) runs\nonly against those cmd packages. To validate the full repo, run with no targets.\n"
+	return color.FormatUsage("build [target ...] [-v|--verbose]", []color.UsageLine{
+		{Flag: "-v, --verbose", Desc: "run go test in verbose mode"},
+		{Flag: "-h, -?, --help", Desc: "show this help"},
+	}, "When targets are specified, validation (vet, fmt, test, staticcheck) runs\nonly against those cmd packages. To validate the full repo, run with no targets.")
 }
 
 func Run(cfg Config, out io.Writer, errOut io.Writer) error {

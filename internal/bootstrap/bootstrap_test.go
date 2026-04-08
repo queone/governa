@@ -825,6 +825,30 @@ func TestDisplayReferencePathEmpty(t *testing.T) {
 	}
 }
 
+// --- ParseArgs help/error tests ---
+
+func TestParseArgsHelpReturnsCleanExit(t *testing.T) {
+	t.Parallel()
+	_, help, err := ParseArgs([]string{"--help"})
+	if err != nil {
+		t.Fatalf("ParseArgs(--help) error = %v, want nil", err)
+	}
+	if !help {
+		t.Fatal("ParseArgs(--help) help = false, want true")
+	}
+}
+
+func TestParseArgsInvalidFlagReturnsError(t *testing.T) {
+	t.Parallel()
+	_, help, err := ParseArgs([]string{"--bogus-flag"})
+	if err == nil {
+		t.Fatal("ParseArgs(--bogus-flag) expected error")
+	}
+	if help {
+		t.Fatal("ParseArgs(--bogus-flag) help = true, want false")
+	}
+}
+
 // --- validateConfig tests ---
 
 func TestValidateConfigNewCodeValid(t *testing.T) {
@@ -2541,6 +2565,90 @@ func TestAdoptNoExistingAgentsWritesDirectly(t *testing.T) {
 	proposal := proposalPath(filepath.Join(targetDir, "AGENTS.md"))
 	if _, err := os.Stat(proposal); err == nil {
 		t.Fatal("should not create proposal when no existing AGENTS.md")
+	}
+}
+
+// --- AC-008: agent role bootstrap ---
+
+func TestBootstrapNewProducesAgentRoles(t *testing.T) {
+	t.Parallel()
+
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	cfg := Config{
+		Mode:     ModeNew,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+	}
+	if err := runNewOrAdopt(templateRoot, cfg, false); err != nil {
+		t.Fatalf("runNewOrAdopt() error = %v", err)
+	}
+
+	for _, rel := range []string{
+		filepath.Join("docs", "agent-roles", "README.md"),
+		filepath.Join("docs", "agent-roles", "dev.md"),
+		filepath.Join("docs", "agent-roles", "qa.md"),
+	} {
+		path := filepath.Join(targetDir, rel)
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected %s to exist, got error: %v", rel, err)
+		}
+	}
+
+	devContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "dev.md"))
+	if !strings.Contains(string(devContent), "test coverage") {
+		t.Fatal("dev.md should state the test coverage requirement")
+	}
+	qaContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "qa.md"))
+	if !strings.Contains(string(qaContent), "QA says") {
+		t.Fatal("qa.md should state the QA says prefix requirement")
+	}
+}
+
+func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
+	t.Parallel()
+
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	// Pre-create agent-roles files so adopt proposes them
+	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "README.md"), "# Existing roles index\n")
+	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "dev.md"), "# Existing dev role\n")
+	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "qa.md"), "# Existing qa role\n")
+	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# Existing AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n")
+
+	cfg := Config{
+		Mode:     ModeAdopt,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+	}
+	if err := runNewOrAdopt(templateRoot, cfg, true); err != nil {
+		t.Fatalf("runNewOrAdopt() error = %v", err)
+	}
+
+	// Existing files should be preserved
+	devContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "dev.md"))
+	if !strings.Contains(string(devContent), "Existing dev role") {
+		t.Fatal("adopt should preserve existing dev.md")
+	}
+
+	// Proposals should exist for all three files
+	for _, rel := range []string{
+		filepath.Join("docs", "agent-roles", "README.md"),
+		filepath.Join("docs", "agent-roles", "dev.md"),
+		filepath.Join("docs", "agent-roles", "qa.md"),
+	} {
+		proposal := proposalPath(filepath.Join(targetDir, rel))
+		if _, err := os.Stat(proposal); err != nil {
+			t.Fatalf("expected proposal for %s at %s, got error: %v", rel, proposal, err)
+		}
 	}
 }
 

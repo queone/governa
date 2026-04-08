@@ -45,6 +45,16 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 - After any module rename, grep all `.go` files and `.go.tmpl` files for stale import paths
 - Shell wrappers (`build.sh`) are convenience only; canonical implementation lives in Go under `cmd/`
 
+## CLI Usage Formatting
+
+- All commands must accept `-h`, `-?`, and `--help` as help flags
+- Help output uses `color.FormatUsage` from `internal/color` for consistent formatting
+- "Usage:" is rendered in bold white (`color.BoldW`)
+- Each flag line is indented 2 spaces; descriptions align at column 38
+- Short and long flag forms are combined on one line (e.g. `-m, --mode string`)
+- Footer text (constraints, notes) appears after a blank line following the flag list
+- When adding new flags to any command, add the entry to the `FormatUsage` call — do not use `flag.PrintDefaults`
+
 ## Documentation Alignment
 
 - Docs ship with the code change that introduces the behavior

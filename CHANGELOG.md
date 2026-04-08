@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.2.0 | AC-008: agent role bootstrap pattern with `docs/agent-roles/` for DEV and QA roles; bootstrap `--help` exits cleanly; consistent CLI usage formatting across all commands; `-?` alias for bootstrap |
 | 0.1.8 | AC-007: adopt mode section-level patching for AGENTS.md; missing governed sections appended in template order; existing content never modified; domain coverage 71.4% |
 | 0.1.7 | Release message 60-char limit enforced in reltool, overlay templates, and rendered examples; docs updated |
 | 0.1.6 | AC-006: safe refresh path improvements — Phase 1: constraint-level governance comparison and section-level file diffing replace keyword signals and whole-file diffs; Phase 2: `.repokit-manifest` written at bootstrap with dual checksums enables three-way enhance comparison (user vs template vs both changed); Phase 3: classification, marker, and signal logic refactored to data-driven rule tables; Phase 4: `--apply` flag writes `.template-proposed` files for assisted merge without overwriting live targets; `planRender` refactored into `planCanonical` + `applyAdoptTransforms`; domain coverage 63% → 70.7% |

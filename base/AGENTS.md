@@ -29,6 +29,7 @@ When asked to update it, propose the exact section names to change and keep edit
 - Do not create artifacts or make changes unless the user explicitly authorizes them.
 - When the user authorizes changes, make the smallest concrete change that satisfies the request.
 - Surface assumptions, ambiguities, and missing context plainly before taking action that could change project direction.
+- If `docs/agent-roles/` exists and the user has not explicitly assigned a role, the agent's first substantive response must ask which role to assume. Role assignment requires an explicit instruction such as "act as DEV", "use docs/agent-roles/qa.md", or "you are QA". After assignment, read `docs/agent-roles/<role>.md` (case-insensitive lookup) and follow it alongside this file. If the requested role file does not exist, say so and continue under shared governance only.
 
 ## Approval Boundaries
 

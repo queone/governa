@@ -155,6 +155,7 @@ Recommended initial ownership model:
   - `plan.md`
   - `style.md` or `voice.md`
   - `content-plan.md` or `calendar.md`
+  - `docs/agent-roles/` (DEV, QA, and custom role docs)
 - user-owned unless explicitly mapped:
   - source code
   - app content

@@ -47,6 +47,15 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 - When adding a dependency, justify it — convenience alone is not sufficient
 - Keep import paths consistent after renames or reorganizations; grep for stale references
 
+## CLI Usage Formatting
+
+- All commands must accept `-h`, `-?`, and `--help` as help flags
+- Help output uses a shared formatting function for consistent layout
+- "Usage:" is rendered in bold white
+- Each flag line is indented 2 spaces; descriptions align at column 38
+- Short and long flag forms are combined on one line (e.g. `-v, --verbose`)
+- When adding new flags, add the entry to the shared usage formatter — do not rely on framework defaults
+
 ## Documentation Alignment
 
 - Docs ship with the code change that introduces the behavior
