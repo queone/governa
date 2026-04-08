@@ -61,7 +61,7 @@ When asked to update it, propose the exact section names to change and keep edit
 - Bootstrap and maintain a root `CHANGELOG.md` for release-bearing repos. Keep it current as the human-readable release history.
 - Do not start release-prep bookkeeping early. Only begin the repo's documented pre-release checklist when the user explicitly asks to prep for release or equivalent.
 - Version bumps, changelog/release-note updates, tag prep, and publish workflows are release-scoped work, not routine edits.
-- When release prep is explicitly requested, run the documented pre-release checklist, prepare the exact version and release message, and then present the canonical release command for the user to run or approve.
+- When release prep is explicitly requested, run the documented pre-release checklist, prepare the exact version and a concrete release message derived from the actual changes, and then present only the canonical release command for the user to run or approve. Show the full git sequence only if the user explicitly asks for it.
 - When the user does trigger a release or publish flow, update the required release artifacts in the same pass.
 
 ## Documentation Update Expectations
