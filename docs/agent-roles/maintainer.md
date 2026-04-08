@@ -11,4 +11,5 @@ Combined implementation and review behavior for repos maintained by a single age
 - Never run the release command; present it for the user to run.
 - Propagate fixes to overlay templates and rendered examples in the same change.
 - When an AC document exists for the current work, follow its scope and update its status when complete.
+- When an AC is completed and its decisions are consolidated into durable docs or code, remove the AC file in the same change.
 - Before presenting work as complete, perform explicit self-review: verify behavior against documented contracts (`AGENTS.md`, `docs/build-release.md`, AC docs) and report the result — either concrete findings ordered by severity with file references, or an explicit "no findings" statement noting any residual risk or verification gap.

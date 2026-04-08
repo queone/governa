@@ -28,6 +28,22 @@ Only perform release work when the user explicitly asks for release, publish, or
 3. update release notes or changelog if the repo uses them
 4. prepare version or publish artifacts only within the explicit release request
 
+## Pre-Release Checklist
+
+Do not start this checklist unless the user explicitly asks to prep for release or equivalent.
+
+Before offering a release commit or release command:
+
+1. run the canonical build and validation flow and fix failures until clean
+2. ask the user whether any required manual or live acceptance checks were run
+3. audit `arch.md` and any affected reference docs against the actual behavior
+4. update `CHANGELOG.md` or the repo's release-history artifact
+5. confirm the repo's version artifact matches the intended release version
+6. remove or reprioritize completed roadmap items in `plan.md`
+7. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md` and designated teaching artifacts such as `ac-example.md`)
+8. prepare the exact tag and release message — the release message should be a single concise line, 60 characters or fewer
+9. present the canonical release command for the user to run or approve
+
 ## Go Build Tool
 
 If this repo includes `cmd/build/main.go`, the expected build invocation is:

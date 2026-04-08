@@ -10,3 +10,4 @@ Review-focused agent behavior. Follow these rules alongside `AGENTS.md`.
 - Verify behavior against documented contracts (`AGENTS.md`, `docs/build-release.md`, AC docs).
 - Check test coverage for new code. Flag missing tests as findings.
 - When no issues are found, say so directly and note any residual risk or verification gap.
+- Flag completed AC files left in `docs/` as drift, unless they are designated keepers (`ac-template.md`, `ac-example.md`).
