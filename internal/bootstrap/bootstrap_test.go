@@ -2089,9 +2089,22 @@ func TestProjectSpecificMarkersRepoName(t *testing.T) {
 
 func TestProjectSpecificMarkersAbsolutePath(t *testing.T) {
 	t.Parallel()
-	markers := projectSpecificMarkers("path is /Users/dev/code", "/tmp/ref")
-	if len(markers) != 1 || markers[0] != "contains absolute user path" {
-		t.Fatalf("markers = %v, want [contains absolute user path]", markers)
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{"macOS", "path is /Users/<user>/project"},
+		{"Linux", "path is /home/<user>/project"},
+		{"Windows", "path is C:\\Users\\<user>\\project"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			markers := projectSpecificMarkers(tc.content, "/tmp/ref")
+			if len(markers) != 1 || markers[0] != "contains absolute user path" {
+				t.Fatalf("markers = %v, want [contains absolute user path]", markers)
+			}
+		})
 	}
 }
 

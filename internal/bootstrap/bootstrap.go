@@ -1381,7 +1381,9 @@ var defaultMarkerRules = []markerRule{
 		return refName != "" && strings.Contains(lower, refName)
 	}},
 	{"contains absolute user path", func(content, _ string) bool {
-		return strings.Contains(content, "/Users/") || strings.Contains(content, "\\Users\\")
+		return strings.Contains(content, "/Users/") ||
+			strings.Contains(content, "/home/") ||
+			strings.Contains(content, "\\Users\\")
 	}},
 }
 

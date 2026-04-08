@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.2.7 | Cross-platform absolute-path detection in enhance marker rules (added Linux /home/ coverage) |
 | 0.2.6 | README cleanup: current-state wording, single Quick Start command reference, removed stale v0.1.1 block |
 | 0.2.5 | AC cleanup: completed AC files removed; hard-gate cleanup rule in dev cycle, pre-release checklist, and role docs |
 | 0.2.4 | AC-012: DOC overlay enrichment — platform-specific publishing notes, voice.md and calendar.md variants, DOC-specific agent roles |
