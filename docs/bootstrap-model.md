@@ -71,6 +71,8 @@ Behavior:
 `adopt` must be conservative by default.
 It should prefer adding missing files or appending clearly labeled sections over replacing existing docs wholesale.
 
+For `AGENTS.md` specifically, adopt performs section-level patching: it parses the existing file and the template into `##` sections, identifies which governed sections are missing, and appends only those sections in the template's governed-section order. Existing content (governed or not) is never modified. If all governed sections are already present, no proposal is created. If sections are missing, the patched result is written as a `.template-proposed` file for review.
+
 Before writing files, `adopt` should also assess how well the template fits the target repo and report that result to the user.
 
 ### Mode: `enhance`

@@ -2332,6 +2332,218 @@ func TestRunEnhanceApplyGovernanceProposesWholeFile(t *testing.T) {
 	}
 }
 
+// --- AC-007: adopt section-level patching ---
+
+func TestPatchGovernedSectionsMissingSections(t *testing.T) {
+	t.Parallel()
+	existing := "# AGENTS.md\n\n## Purpose\n\nExisting purpose.\n"
+	template := "# AGENTS.md\n\n## Purpose\n\nTemplate purpose.\n\n## Interaction Mode\n\n- Default to discussion.\n\n## Review Style\n\n- Findings first.\n"
+
+	patched, changed := patchGovernedSections(existing, template)
+	if !changed {
+		t.Fatal("expected patching to add missing sections")
+	}
+	if !strings.Contains(patched, "## Interaction Mode") {
+		t.Fatal("patched content should include missing Interaction Mode")
+	}
+	if !strings.Contains(patched, "## Review Style") {
+		t.Fatal("patched content should include missing Review Style")
+	}
+	// Existing section content should be preserved
+	if !strings.Contains(patched, "Existing purpose.") {
+		t.Fatal("patched content should preserve existing Purpose body")
+	}
+	if strings.Contains(patched, "Template purpose.") {
+		t.Fatal("patched content should NOT replace existing Purpose with template version")
+	}
+}
+
+func TestPatchGovernedSectionsAllPresent(t *testing.T) {
+	t.Parallel()
+	existing := "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n"
+	template := "# AGENTS.md\n\n## Purpose\n\nDifferent.\n"
+
+	_, changed := patchGovernedSections(existing, template)
+	if changed {
+		t.Fatal("expected no patching when all governed sections present")
+	}
+}
+
+func TestPatchGovernedSectionsPreservesNonGoverned(t *testing.T) {
+	t.Parallel()
+	existing := "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Custom Section\n\nUser content.\n"
+	template := "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Interaction Mode\n\n- Default.\n"
+
+	patched, changed := patchGovernedSections(existing, template)
+	if !changed {
+		t.Fatal("expected patching")
+	}
+	if !strings.Contains(patched, "## Custom Section") {
+		t.Fatal("patched content should preserve non-governed sections")
+	}
+	if !strings.Contains(patched, "User content.") {
+		t.Fatal("patched content should preserve non-governed section body")
+	}
+}
+
+func TestPatchGovernedSectionsPreservesPreamble(t *testing.T) {
+	t.Parallel()
+	existing := "# My Custom Title\n\nSome intro text.\n\n## Purpose\n\nP.\n"
+	template := "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Interaction Mode\n\n- Default.\n"
+
+	patched, changed := patchGovernedSections(existing, template)
+	if !changed {
+		t.Fatal("expected patching")
+	}
+	if !strings.HasPrefix(patched, "# My Custom Title\n\nSome intro text.") {
+		t.Fatalf("patched content should preserve preamble, got:\n%s", patched)
+	}
+}
+
+func TestPatchGovernedSectionsAppendsInTemplateOrder(t *testing.T) {
+	t.Parallel()
+	existing := "# AGENTS.md\n\n## Purpose\n\nP.\n"
+	template := "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Documentation Update Expectations\n\nD.\n\n## Interaction Mode\n\nI.\n\n## Review Style\n\nR.\n"
+
+	patched, changed := patchGovernedSections(existing, template)
+	if !changed {
+		t.Fatal("expected patching")
+	}
+	// Should appear in governedSectionNames order: Interaction Mode before Review Style before Documentation Update Expectations
+	imIdx := strings.Index(patched, "## Interaction Mode")
+	rsIdx := strings.Index(patched, "## Review Style")
+	duIdx := strings.Index(patched, "## Documentation Update Expectations")
+	if imIdx < 0 || rsIdx < 0 || duIdx < 0 {
+		t.Fatalf("missing sections in patched output:\n%s", patched)
+	}
+	if imIdx > rsIdx || rsIdx > duIdx {
+		t.Fatalf("missing sections should be in template governed order, got IM=%d RS=%d DU=%d", imIdx, rsIdx, duIdx)
+	}
+}
+
+func TestPatchGovernedSectionsNeverModifiesExisting(t *testing.T) {
+	t.Parallel()
+	existing := "# AGENTS.md\n\n## Purpose\n\nUser custom purpose.\n\n## Interaction Mode\n\n- User custom rule.\n"
+	template := "# AGENTS.md\n\n## Purpose\n\nTemplate purpose.\n\n## Interaction Mode\n\n- Template rule.\n\n## Review Style\n\n- Findings first.\n"
+
+	patched, changed := patchGovernedSections(existing, template)
+	if !changed {
+		t.Fatal("expected patching for missing Review Style")
+	}
+	if !strings.Contains(patched, "User custom purpose.") {
+		t.Fatal("should not modify existing Purpose")
+	}
+	if !strings.Contains(patched, "User custom rule.") {
+		t.Fatal("should not modify existing Interaction Mode")
+	}
+	if strings.Contains(patched, "Template purpose.") || strings.Contains(patched, "Template rule.") {
+		t.Fatal("should not inject template content over existing sections")
+	}
+}
+
+func TestAdoptPatchesMissingSections(t *testing.T) {
+	t.Parallel()
+
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	// Pre-create AGENTS.md with only Purpose section
+	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting purpose.\n")
+
+	cfg := Config{
+		Mode:     ModeAdopt,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+	}
+	if err := runNewOrAdopt(templateRoot, cfg, true); err != nil {
+		t.Fatalf("runNewOrAdopt() error = %v", err)
+	}
+
+	// Original file should be untouched
+	original, _ := os.ReadFile(filepath.Join(targetDir, "AGENTS.md"))
+	if !strings.Contains(string(original), "Existing purpose.") {
+		t.Fatal("original AGENTS.md should be preserved")
+	}
+
+	// Proposal should exist with patched content
+	proposal := proposalPath(filepath.Join(targetDir, "AGENTS.md"))
+	content, err := os.ReadFile(proposal)
+	if err != nil {
+		t.Fatalf("expected patched proposal at %s, got error: %v", proposal, err)
+	}
+	if !strings.Contains(string(content), "Existing purpose.") {
+		t.Fatal("proposal should preserve existing Purpose")
+	}
+	if !strings.Contains(string(content), "## Interaction Mode") {
+		t.Fatal("proposal should include missing governed sections")
+	}
+}
+
+func TestAdoptSkipsWhenAllSectionsPresent(t *testing.T) {
+	t.Parallel()
+
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	// Read the template AGENTS.md to get all governed sections
+	templateAgents, _ := os.ReadFile(filepath.Join(templateRoot, "base", "AGENTS.md"))
+	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), string(templateAgents))
+
+	cfg := Config{
+		Mode:     ModeAdopt,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+	}
+	if err := runNewOrAdopt(templateRoot, cfg, true); err != nil {
+		t.Fatalf("runNewOrAdopt() error = %v", err)
+	}
+
+	// No proposal should be created
+	proposal := proposalPath(filepath.Join(targetDir, "AGENTS.md"))
+	if _, err := os.Stat(proposal); err == nil {
+		t.Fatal("should not create proposal when all governed sections present")
+	}
+}
+
+func TestAdoptNoExistingAgentsWritesDirectly(t *testing.T) {
+	t.Parallel()
+
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	cfg := Config{
+		Mode:     ModeAdopt,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+	}
+	if err := runNewOrAdopt(templateRoot, cfg, true); err != nil {
+		t.Fatalf("runNewOrAdopt() error = %v", err)
+	}
+
+	// AGENTS.md should be written directly (no proposal)
+	content, err := os.ReadFile(filepath.Join(targetDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("expected AGENTS.md to be written directly, got error: %v", err)
+	}
+	if !strings.Contains(string(content), "## Interaction Mode") {
+		t.Fatal("directly written AGENTS.md should have full template content")
+	}
+
+	proposal := proposalPath(filepath.Join(targetDir, "AGENTS.md"))
+	if _, err := os.Stat(proposal); err == nil {
+		t.Fatal("should not create proposal when no existing AGENTS.md")
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -30,6 +30,17 @@ const (
 	RepoTypeDoc  RepoType = "DOC"
 )
 
+var governedSectionNames = []string{
+	"Purpose",
+	"Governed Sections",
+	"Interaction Mode",
+	"Approval Boundaries",
+	"Review Style",
+	"File-Change Discipline",
+	"Release Or Publish Triggers",
+	"Documentation Update Expectations",
+}
+
 type Config struct {
 	Mode               Mode
 	Target             string
@@ -714,7 +725,7 @@ func applyAdoptTransforms(ops []operation) []operation {
 	for i, op := range ops {
 		switch {
 		case op.kind == "write" && op.note == "base governance contract":
-			out[i] = proposeIfExists(op)
+			out[i] = patchOrProposeGovernance(op)
 		case op.kind == "write" && op.note == "template version marker":
 			out[i] = skipIfExists(op)
 		case op.kind == "symlink":
@@ -906,19 +917,8 @@ func reviewGovernedSections(templateRoot, referenceRoot string, mmap map[string]
 
 	templateSections := sectionMap(parseLevel2Sections(string(templateContent)))
 	refSections := sectionMap(parseLevel2Sections(string(refContent)))
-	governed := []string{
-		"Purpose",
-		"Governed Sections",
-		"Interaction Mode",
-		"Approval Boundaries",
-		"Review Style",
-		"File-Change Discipline",
-		"Release Or Publish Triggers",
-		"Documentation Update Expectations",
-	}
-
 	var candidates []EnhancementCandidate
-	for _, section := range governed {
+	for _, section := range governedSectionNames {
 		refBody, ok := refSections[section]
 		if !ok {
 			continue
@@ -1061,6 +1061,39 @@ func parseLevel2Sections(content string) []markdownSection {
 		sections = append(sections, current)
 	}
 	return sections
+}
+
+// patchGovernedSections merges missing governed sections from templateContent into existingContent.
+// Returns the patched content and true if any sections were added, or the original content and false
+// if all governed sections are already present.
+func patchGovernedSections(existingContent, templateContent string) (string, bool) {
+	existingSections := sectionMap(parseLevel2Sections(existingContent))
+	templateSections := sectionMap(parseLevel2Sections(templateContent))
+
+	var missing []markdownSection
+	for _, name := range governedSectionNames {
+		if _, exists := existingSections[name]; exists {
+			continue
+		}
+		if body, inTemplate := templateSections[name]; inTemplate {
+			missing = append(missing, markdownSection{Name: name, Body: body})
+		}
+	}
+
+	if len(missing) == 0 {
+		return existingContent, false
+	}
+
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(existingContent, "\n"))
+	for _, section := range missing {
+		b.WriteString("\n\n## ")
+		b.WriteString(section.Name)
+		b.WriteString("\n\n")
+		b.WriteString(section.Body)
+	}
+	b.WriteString("\n")
+	return b.String(), true
 }
 
 func sectionMap(sections []markdownSection) map[string]string {
@@ -1683,6 +1716,21 @@ func skipIfExists(op operation) operation {
 	if _, err := os.Stat(op.path); err == nil {
 		return operation{kind: "skip"}
 	}
+	return op
+}
+
+func patchOrProposeGovernance(op operation) operation {
+	existingContent, err := os.ReadFile(op.path)
+	if err != nil {
+		return op // file doesn't exist, write directly
+	}
+	patched, changed := patchGovernedSections(string(existingContent), op.content)
+	if !changed {
+		return operation{kind: "skip"}
+	}
+	op.content = patched
+	op.path = proposalPath(op.path)
+	op.note = op.note + "; patched with missing governed sections"
 	return op
 }
 

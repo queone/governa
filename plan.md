@@ -29,7 +29,7 @@ Every new roadmap item should answer:
 
 | ID | Description | Reason |
 |----|-------------|--------|
-| D1 | Adopt mode section-level patching | Needs design work on safe merge semantics for existing governed sections |
+| ~~D1~~ | ~~Adopt mode section-level patching~~ | Shipped in AC-007 |
 
 ## Constraints
 
