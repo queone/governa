@@ -41,7 +41,7 @@ Before offering a release commit or release command:
 5. confirm the repo's version artifact matches the intended release version
 6. remove or reprioritize completed roadmap items in `plan.md`
 7. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md` and designated teaching artifacts such as `ac-example.md`)
-8. prepare the exact tag and release message — the release message should be a single concise line, 60 characters or fewer
+8. prepare the exact tag and release message — the release message should be a single concise line, 80 characters or fewer
 9. present the canonical release command for the user to run or approve
 
 ## Go Build Tool

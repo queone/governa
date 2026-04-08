@@ -48,8 +48,8 @@ func ParseArgs(args []string) (Config, bool, error) {
 	if cfg.Message == "" {
 		return Config{}, false, errors.New("release message must be non-empty")
 	}
-	if len(cfg.Message) > 60 {
-		return Config{}, false, errors.New("release message must be 60 characters or fewer")
+	if len(cfg.Message) > 80 {
+		return Config{}, false, errors.New("release message must be 80 characters or fewer")
 	}
 	return cfg, false, nil
 }
@@ -61,7 +61,7 @@ func IsHelpArg(arg string) bool {
 func Usage() string {
 	return color.FormatUsage("rel vX.Y.Z \"release message\"", []color.UsageLine{
 		{Flag: "-h, -?, --help", Desc: "show this help"},
-	}, "Release message must be 60 characters or fewer.")
+	}, "Release message must be 80 characters or fewer.")
 }
 
 func Run(cfg Config, in io.Reader, out io.Writer, errOut io.Writer) error {

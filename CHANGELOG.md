@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.2.9 | Release message limit raised from 60 to 80 characters |
 | 0.2.8 | Release governance: concrete change-based messages, canonical command only by default |
 | 0.2.7 | Cross-platform absolute-path detection in enhance marker rules (added Linux /home/ coverage) |
 | 0.2.6 | README cleanup: current-state wording, single Quick Start command reference, removed stale v0.1.1 block |

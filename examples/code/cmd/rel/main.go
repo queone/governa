@@ -63,8 +63,8 @@ func parseRelArgs(args []string) (relConfig, bool, error) {
 	if cfg.message == "" {
 		return relConfig{}, false, errors.New("release message must be non-empty")
 	}
-	if len(cfg.message) > 60 {
-		return relConfig{}, false, errors.New("release message must be 60 characters or fewer")
+	if len(cfg.message) > 80 {
+		return relConfig{}, false, errors.New("release message must be 80 characters or fewer")
 	}
 	return cfg, false, nil
 }

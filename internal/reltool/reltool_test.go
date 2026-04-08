@@ -102,25 +102,25 @@ func TestParseArgsWhitespaceTag(t *testing.T) {
 
 func TestParseArgsMessageExactly60Chars(t *testing.T) {
 	t.Parallel()
-	msg := strings.Repeat("a", 60)
+	msg := strings.Repeat("a", 80)
 	cfg, _, err := ParseArgs([]string{"v1.0.0", msg})
 	if err != nil {
 		t.Fatalf("ParseArgs() error = %v", err)
 	}
 	if cfg.Message != msg {
-		t.Fatalf("message = %q, want 60-char string", cfg.Message)
+		t.Fatalf("message = %q, want 80-char string", cfg.Message)
 	}
 }
 
 func TestParseArgsMessageTooLong(t *testing.T) {
 	t.Parallel()
-	msg := strings.Repeat("a", 61)
+	msg := strings.Repeat("a", 81)
 	_, _, err := ParseArgs([]string{"v1.0.0", msg})
 	if err == nil {
-		t.Fatal("expected error for 61-char message")
+		t.Fatal("expected error for 81-char message")
 	}
-	if !strings.Contains(err.Error(), "60 characters or fewer") {
-		t.Fatalf("error should mention 60-char limit, got: %v", err)
+	if !strings.Contains(err.Error(), "80 characters or fewer") {
+		t.Fatalf("error should mention 80-char limit, got: %v", err)
 	}
 }
 
