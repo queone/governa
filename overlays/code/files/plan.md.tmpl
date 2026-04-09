@@ -21,6 +21,10 @@ Every new roadmap item should answer:
 
 - active work items only; remove when shipped
 
+## Ideas To Explore
+
+Pre-rubric ideas captured for future discussion. These are not commitments and have not passed the Objective-Fit Rubric. Remove items that are no longer interesting; this section should not grow indefinitely.
+
 ## Deferred
 
 | ID | Description | Reason |

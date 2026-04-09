@@ -2923,3 +2923,135 @@ func mustWrite(t *testing.T, path, content string) {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
 	}
 }
+
+// --- AC14: Ideas To Explore structural contract ---
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find repo root (no go.mod found walking up)")
+		}
+		dir = parent
+	}
+}
+
+func readRepoFile(t *testing.T, relPath string) string {
+	t.Helper()
+	full := filepath.Join(repoRoot(t), relPath)
+	content, err := os.ReadFile(full)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", full, err)
+	}
+	return string(content)
+}
+
+func assertSectionOrdering(t *testing.T, content, label string, sections ...string) {
+	t.Helper()
+	prev := -1
+	prevName := ""
+	for _, section := range sections {
+		idx := strings.Index(content, section)
+		if idx < 0 {
+			t.Fatalf("%s: section %q not found", label, section)
+		}
+		if idx <= prev {
+			t.Fatalf("%s: section %q (at %d) must come after %q (at %d)", label, section, idx, prevName, prev)
+		}
+		prev = idx
+		prevName = section
+	}
+}
+
+func TestPlanMdHasIdeasToExploreSection(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "plan.md")
+	assertSectionOrdering(t, content, "plan.md",
+		"## Priorities",
+		"## Ideas To Explore",
+		"## Deferred",
+	)
+	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
+		t.Fatal("plan.md: Ideas To Explore preamble missing")
+	}
+	if !strings.Contains(content, "should not grow indefinitely") {
+		t.Fatal("plan.md: pruning guidance missing")
+	}
+}
+
+func TestPlanMdNonGitItemMigratedToIdeas(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "plan.md")
+	prioritiesIdx := strings.Index(content, "## Priorities")
+	ideasIdx := strings.Index(content, "## Ideas To Explore")
+	if prioritiesIdx < 0 || ideasIdx < 0 {
+		t.Fatal("plan.md: required sections missing")
+	}
+	prioritiesSection := content[prioritiesIdx:ideasIdx]
+	if strings.Contains(prioritiesSection, "non-git target") {
+		t.Fatal("plan.md: 'non-git target' should NOT appear in Priorities (must be migrated to Ideas To Explore)")
+	}
+	deferredIdx := strings.Index(content, "## Deferred")
+	if deferredIdx < 0 {
+		t.Fatal("plan.md: ## Deferred missing")
+	}
+	ideasSection := content[ideasIdx:deferredIdx]
+	if !strings.Contains(ideasSection, "non-git target") {
+		t.Fatal("plan.md: 'non-git target' should appear in Ideas To Explore section")
+	}
+}
+
+func TestCodeOverlayPlanTemplateHasIdeasToExploreSection(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "overlays/code/files/plan.md.tmpl")
+	assertSectionOrdering(t, content, "overlays/code/files/plan.md.tmpl",
+		"## Priorities",
+		"## Ideas To Explore",
+		"## Deferred",
+	)
+	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
+		t.Fatal("CODE plan template: Ideas To Explore preamble missing")
+	}
+}
+
+func TestCodeRenderedExamplePlanHasIdeasToExploreSection(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "examples/code/plan.md")
+	assertSectionOrdering(t, content, "examples/code/plan.md",
+		"## Priorities",
+		"## Ideas To Explore",
+		"## Deferred",
+	)
+	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
+		t.Fatal("CODE rendered example plan: Ideas To Explore preamble missing")
+	}
+}
+
+func TestDevelopmentCycleMentionsPriorities(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"docs/development-cycle.md",
+		"overlays/code/files/docs/development-cycle.md.tmpl",
+		"examples/code/docs/development-cycle.md",
+	}
+	for _, path := range paths {
+		content := readRepoFile(t, path)
+		if !strings.Contains(content, "`Priorities`") {
+			t.Errorf("%s: should reference `Priorities` to make the source of approved items explicit", path)
+		}
+		if !strings.Contains(content, "`Ideas To Explore`") {
+			t.Errorf("%s: should reference `Ideas To Explore` to name the boundary in the workflow doc", path)
+		}
+		if !strings.Contains(content, "pre-rubric follow-on ideas") {
+			t.Errorf("%s: should direct pre-rubric follow-on ideas to Ideas To Explore", path)
+		}
+	}
+}
