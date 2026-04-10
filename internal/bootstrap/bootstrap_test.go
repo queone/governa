@@ -3602,3 +3602,83 @@ func TestEnhanceMappingDoesNotReferenceCmdBootstrap(t *testing.T) {
 		t.Fatal("bootstrap.go enhance mappings still reference cmd/bootstrap")
 	}
 }
+
+func TestACTemplateEnrichedStructure(t *testing.T) {
+	t.Parallel()
+	templatePaths := []string{
+		"docs/ac-template.md",
+		"internal/templates/overlays/code/files/docs/ac-template.md.tmpl",
+		"examples/code/docs/ac-template.md",
+	}
+	for _, path := range templatePaths {
+		content := readRepoFile(t, path)
+
+		// Summary before Objective Fit (ordering).
+		summaryIdx := strings.Index(content, "## Summary")
+		objFitIdx := strings.Index(content, "## Objective Fit")
+		if summaryIdx < 0 {
+			t.Errorf("%s: missing ## Summary", path)
+		} else if objFitIdx < 0 {
+			t.Errorf("%s: missing ## Objective Fit", path)
+		} else if summaryIdx >= objFitIdx {
+			t.Errorf("%s: ## Summary (at %d) must appear before ## Objective Fit (at %d)", path, summaryIdx, objFitIdx)
+		}
+
+		// Numbered AT format.
+		if !strings.Contains(content, "**AT1**") {
+			t.Errorf("%s: should contain numbered AT format (**AT1**)", path)
+		}
+
+		// Sub-headed In Scope.
+		if !strings.Contains(content, "### New files") {
+			t.Errorf("%s: should contain ### New files sub-heading", path)
+		}
+
+		// Cross-reference to development-cycle.md.
+		if !strings.Contains(content, "development-cycle.md") {
+			t.Errorf("%s: should cross-reference development-cycle.md", path)
+		}
+
+		// Status states.
+		if !strings.Contains(content, "PENDING") || !strings.Contains(content, "DEFERRED") {
+			t.Errorf("%s: should document PENDING and DEFERRED status states", path)
+		}
+
+		// Filename convention preserved.
+		if !strings.Contains(content, "acN-short-slug.md") {
+			t.Errorf("%s: should contain filename convention acN-short-slug.md", path)
+		}
+	}
+}
+
+func TestACExampleEnrichedStructure(t *testing.T) {
+	t.Parallel()
+	examplePaths := []string{
+		"internal/templates/overlays/code/files/docs/ac-example.md.tmpl",
+		"examples/code/docs/ac-example.md",
+	}
+	for _, path := range examplePaths {
+		content := readRepoFile(t, path)
+
+		// Summary before Objective Fit (ordering matches template).
+		summaryIdx := strings.Index(content, "## Summary")
+		objFitIdx := strings.Index(content, "## Objective Fit")
+		if summaryIdx < 0 {
+			t.Errorf("%s: missing ## Summary", path)
+		} else if objFitIdx < 0 {
+			t.Errorf("%s: missing ## Objective Fit", path)
+		} else if summaryIdx >= objFitIdx {
+			t.Errorf("%s: ## Summary (at %d) must appear before ## Objective Fit (at %d)", path, summaryIdx, objFitIdx)
+		}
+
+		// Numbered AT format.
+		if !strings.Contains(content, "**AT1**") {
+			t.Errorf("%s: should contain numbered AT format (**AT1**)", path)
+		}
+
+		// Sub-headings under In Scope.
+		if !strings.Contains(content, "### New files") {
+			t.Errorf("%s: should contain ### New files sub-heading under In Scope", path)
+		}
+	}
+}
