@@ -3,7 +3,7 @@ Template repo that bootstraps and adopts governed repositories, and maintains it
 
 - a common base contract in `internal/templates/base/`
 - a repo-type overlay in `internal/templates/overlays/code/` or `internal/templates/overlays/doc/`
-- a deterministic Go bootstrap command that renders concrete files into a target repo
+- a deterministic Go CLI that renders and reviews governed repo structure
 
 ## Why
 Most AI-assisted repository work fails not due to model limits, but because the collaboration contract is implicit, inconsistent, and non-reproducible. **repokit** makes this contract explicit by defining a governance and workflow framework for deterministic human–AI collaboration. It provides a stable, versioned structure for proposing, reviewing, documenting, and maintaining work, ensuring both human and agent follow the same transparent rules instead of transient session context. The goal is not more process, but less coordination drift, reduced prompt-bound state, and more repeatable project outcomes.
@@ -47,9 +47,9 @@ repokit adopt \
 ```
 
 ### `enhance`
-Template-maintenance mode, run from inside this repo. The only mode that runs from repokit itself and the only mode that can propose changes back into the template.
+Template-maintenance mode, run from inside this repo. The only mode that runs from repokit itself and the only mode that can propose changes back into the template. Its purpose is to improve the entire templating set — base governance contract, overlays, and workflow patterns — that ships into all generated repos, as well as repokit's own self-hosted governance.
 
-With `-r`, enhance inspects another governed repo by reference path, comparing at the constraint level for governance sections and per-section for structured markdown files. When a `.repokit-manifest` exists in the reference repo, enhance uses three-way comparison to distinguish user customizations from stale template content. With `--apply`, it writes `.template-proposed` files for assisted merge. No template files are overwritten automatically.
+With `-r`, enhance inspects another governed repo for portable improvements: patterns that every governed repo should benefit from, not project-specific local choices. It compares at the constraint level for governance sections and per-section for structured markdown files. When a `.repokit-manifest` exists in the reference repo, enhance uses three-way comparison to distinguish user customizations from stale template content. With `--apply`, it writes `.template-proposed` files for assisted merge. No template files are overwritten automatically.
 
 ```bash
 repokit enhance \

@@ -17,7 +17,7 @@ import (
 	"github.com/kquo/repokit/internal/templates"
 )
 
-const programVersion = "0.6.1"
+const programVersion = "0.6.2"
 
 const sourceRepo = "github.com/kquo/repokit"
 
