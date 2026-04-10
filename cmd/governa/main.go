@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kquo/repokit/internal/bootstrap"
-	"github.com/kquo/repokit/internal/color"
-	"github.com/kquo/repokit/internal/templates"
+	"github.com/kquo/governa/internal/bootstrap"
+	"github.com/kquo/governa/internal/color"
+	"github.com/kquo/governa/internal/templates"
 )
 
-const programVersion = "0.6.4"
+const programVersion = "0.7.0"
 
-const sourceRepo = "github.com/kquo/repokit"
+const sourceRepo = "github.com/kquo/governa"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -32,7 +32,7 @@ func main() {
 
 	switch subcmd {
 	case "version", "ver":
-		fmt.Printf("repokit v%s (template %s)\nsource: %s\n", programVersion, templates.TemplateVersion, sourceRepo)
+		fmt.Printf("governa v%s (template %s)\nsource: %s\n", programVersion, templates.TemplateVersion, sourceRepo)
 		return
 	case "new", "adopt", "enhance":
 		// handled below
@@ -64,7 +64,7 @@ func main() {
 	var repoRoot string
 
 	if mode == bootstrap.ModeEnhance {
-		root, err := detectRepokitCheckout()
+		root, err := detectGovernaCheckout()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -101,17 +101,17 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprint(os.Stderr, color.FormatUsage("repokit <command> [options]", []color.UsageLine{
+	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
 		{Flag: "new", Desc: "bootstrap a new governed repo"},
 		{Flag: "adopt", Desc: "adopt governance into an existing repo"},
 		{Flag: "enhance", Desc: "review a reference repo for template improvements"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help", Desc: "show this help"},
-	}, "Run 'repokit <command> --help' for command-specific flags."))
+	}, "Run 'governa <command> --help' for command-specific flags."))
 }
 
-// detectRepokitCheckout verifies the working directory is a repokit checkout.
-func detectRepokitCheckout() (string, error) {
+// detectGovernaCheckout verifies the working directory is a governa checkout.
+func detectGovernaCheckout() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("resolve working directory: %w", err)
@@ -119,13 +119,13 @@ func detectRepokitCheckout() (string, error) {
 
 	gomod, err := os.ReadFile(filepath.Join(cwd, "go.mod"))
 	if err != nil {
-		return "", fmt.Errorf("enhance must be run from inside a repokit checkout (no go.mod found)")
+		return "", fmt.Errorf("enhance must be run from inside a governa checkout (no go.mod found)")
 	}
-	if !strings.Contains(string(gomod), "module github.com/kquo/repokit") {
-		return "", fmt.Errorf("enhance must be run from inside a repokit checkout (go.mod module is not github.com/kquo/repokit)")
+	if !strings.Contains(string(gomod), "module github.com/kquo/governa") {
+		return "", fmt.Errorf("enhance must be run from inside a governa checkout (go.mod module is not github.com/kquo/governa)")
 	}
 	if _, err := os.Stat(filepath.Join(cwd, "internal", "templates", "base")); err != nil {
-		return "", fmt.Errorf("enhance must be run from inside a repokit checkout (internal/templates/base not found)")
+		return "", fmt.Errorf("enhance must be run from inside a governa checkout (internal/templates/base not found)")
 	}
 	return cwd, nil
 }
@@ -164,7 +164,7 @@ func checkLatestVersion(result chan<- string) {
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://raw.githubusercontent.com/kquo/repokit/main/TEMPLATE_VERSION", nil)
+		"https://raw.githubusercontent.com/kquo/governa/main/TEMPLATE_VERSION", nil)
 	if err != nil {
 		return
 	}
@@ -190,7 +190,7 @@ func checkLatestVersion(result chan<- string) {
 
 	if remote.newerThan(local) {
 		remoteStr := fmt.Sprintf("%d.%d.%d", remote.major, remote.minor, remote.patch)
-		result <- fmt.Sprintf("%s repokit v%s available (you have v%s) — go install %s/cmd/repokit@latest",
+		result <- fmt.Sprintf("%s governa v%s available (you have v%s) — go install %s/cmd/governa@latest",
 			color.Yel("notice:"), remoteStr, templates.TemplateVersion, sourceRepo)
 	}
 }

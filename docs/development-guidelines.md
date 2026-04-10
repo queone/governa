@@ -16,7 +16,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 
 ## External Integration Patterns
 
-- Generated repos must be fully self-contained with no runtime dependence on repokit
+- Generated repos must be fully self-contained with no runtime dependence on governa
 - When bootstrap reads a target repo, it treats the target as read-only input; all output goes to the target's own tree
 
 ## Generated Artifact Propagation

@@ -12,8 +12,10 @@ import (
 	"strings"
 )
 
-const manifestFormatVersion = "repokit-manifest-v1"
-const manifestFileName = ".repokit-manifest"
+const manifestFormatVersion = "governa-manifest-v1"
+const manifestFileName = ".governa-manifest"
+const legacyManifestFileName = ".repokit-manifest"
+const legacyManifestFormatVersion = "repokit-manifest-v1"
 
 type Manifest struct {
 	FormatVersion   string
@@ -110,11 +112,15 @@ func formatManifest(m Manifest) string {
 
 func parseManifest(content string) (Manifest, error) {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != manifestFormatVersion {
+	if len(lines) == 0 {
+		return Manifest{}, fmt.Errorf("unrecognized manifest format: expected %s", manifestFormatVersion)
+	}
+	formatLine := strings.TrimSpace(lines[0])
+	if formatLine != manifestFormatVersion && formatLine != legacyManifestFormatVersion {
 		return Manifest{}, fmt.Errorf("unrecognized manifest format: expected %s", manifestFormatVersion)
 	}
 
-	m := Manifest{FormatVersion: manifestFormatVersion}
+	m := Manifest{FormatVersion: formatLine}
 	i := 1
 	for i < len(lines) {
 		line := strings.TrimSpace(lines[i])
@@ -172,20 +178,24 @@ func parseManifest(content string) (Manifest, error) {
 }
 
 func readManifest(root string) (Manifest, bool, error) {
-	path := filepath.Join(root, manifestFileName)
-	content, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return Manifest{}, false, nil
+	// Try current name first, then legacy fallback for repos bootstrapped before the rename.
+	for _, name := range []string{manifestFileName, legacyManifestFileName} {
+		path := filepath.Join(root, name)
+		content, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return Manifest{}, false, fmt.Errorf("read manifest %s: %w", path, err)
+		}
+		m, err := parseManifest(string(content))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: ignoring malformed manifest at %s: %v\n", path, err)
+			return Manifest{}, false, nil
+		}
+		return m, true, nil
 	}
-	if err != nil {
-		return Manifest{}, false, fmt.Errorf("read manifest %s: %w", path, err)
-	}
-	m, err := parseManifest(string(content))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: ignoring malformed manifest at %s: %v\n", path, err)
-		return Manifest{}, false, nil
-	}
-	return m, true, nil
+	return Manifest{}, false, nil
 }
 
 func manifestEntryMap(m Manifest) map[string]ManifestEntry {

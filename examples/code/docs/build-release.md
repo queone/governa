@@ -102,6 +102,6 @@ This repo was generated from a governance template. To check for template update
 
 1. Compare `TEMPLATE_VERSION` in this repo against the source template's current version.
 2. Diff changed files manually against the template's current overlays.
-3. `.repokit-manifest`, if present, records SHA-256 checksums of each file at bootstrap time. This enables tooling-assisted comparison to distinguish your customizations from stale template content.
+3. `.governa-manifest`, if present, records SHA-256 checksums of each file at bootstrap time. This enables tooling-assisted comparison to distinguish your customizations from stale template content.
 
 Template refresh is an operator-driven review process. The template maintainer may use enhance mode from the template repo to identify improvements, but generated repos do not run enhance directly.

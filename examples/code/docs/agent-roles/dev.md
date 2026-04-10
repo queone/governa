@@ -14,6 +14,6 @@ Implementation-focused agent behavior. Follow these rules alongside `AGENTS.md`.
 
 ## Using Adopt
 
-- Run `repokit adopt` periodically to check if the governance template has evolved.
+- Run `governa adopt` periodically to check if the governance template has evolved.
 - Review `.template-proposed` files and governance patch proposals before integrating.
 - The drift summary at the end of the output shows whether governance patches or overlay file proposals were generated.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kquo/repokit/internal/reltool"
+	"github.com/kquo/governa/internal/reltool"
 )
 
 func main() {

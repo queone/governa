@@ -4,7 +4,7 @@ Expands on: **Generated Artifact Propagation** in `development-guidelines.md`
 
 ## The Three-Layer Problem
 
-repokit maintains three copies of the same logic:
+governa maintains three copies of the same logic:
 
 1. **Source of truth** — `internal/` (Go packages) and root files (`build.sh`)
 2. **Overlay templates** — `internal/templates/overlays/code/files/` and `internal/templates/overlays/doc/files/` (`.tmpl` copies with placeholders)

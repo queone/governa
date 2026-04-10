@@ -1,7 +1,7 @@
 package bootstrap
 
 import (
-	"github.com/kquo/repokit/internal/templates"
+	"github.com/kquo/governa/internal/templates"
 	"io"
 	"io/fs"
 	"os"
@@ -3124,20 +3124,20 @@ func TestReadmeConsolidatedStructure(t *testing.T) {
 	}
 
 	// All mode command examples present (subcommand form)
-	for _, marker := range []string{"repokit new", "repokit adopt", "repokit enhance"} {
+	for _, marker := range []string{"governa new", "governa adopt", "governa enhance"} {
 		if !strings.Contains(content, marker) {
 			t.Errorf("README.md: missing command example containing %q", marker)
 		}
 	}
 
 	// Install section
-	if !strings.Contains(content, "go install github.com/kquo/repokit/cmd/repokit@latest") {
+	if !strings.Contains(content, "go install github.com/kquo/governa/cmd/governa@latest") {
 		t.Error("README.md: should contain go install command")
 	}
 
 	// Help pointer
-	if !strings.Contains(content, "repokit help") {
-		t.Error("README.md: should contain `repokit help` pointer")
+	if !strings.Contains(content, "governa help") {
+		t.Error("README.md: should contain `governa help` pointer")
 	}
 }
 
@@ -3407,8 +3407,8 @@ func TestModulePathIsGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read go.mod: %v", err)
 	}
-	if !strings.Contains(string(content), "module github.com/kquo/repokit") {
-		t.Fatal("go.mod module path must be github.com/kquo/repokit")
+	if !strings.Contains(string(content), "module github.com/kquo/governa") {
+		t.Fatal("go.mod module path must be github.com/kquo/governa")
 	}
 }
 
@@ -3418,15 +3418,15 @@ func TestImportPathsUseGitHub(t *testing.T) {
 	// Check a representative set of files
 	for _, rel := range []string{
 		"cmd/build/main.go",
-		"cmd/repokit/main.go",
+		"cmd/governa/main.go",
 		"internal/bootstrap/bootstrap.go",
 	} {
 		content, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			t.Fatalf("read %s: %v", rel, err)
 		}
-		if strings.Contains(string(content), `"repokit/internal/`) {
-			t.Errorf("%s: import path uses old module name \"repokit/internal/\" instead of \"github.com/kquo/repokit/internal/\"", rel)
+		if strings.Contains(string(content), `"governa/internal/`) {
+			t.Errorf("%s: import path uses old module name \"governa/internal/\" instead of \"github.com/kquo/governa/internal/\"", rel)
 		}
 	}
 }
@@ -3731,10 +3731,10 @@ func TestGovernanceImprovementsFromSkout(t *testing.T) {
 func TestDevRoleDocEnhanceWorkflow(t *testing.T) {
 	t.Parallel()
 	content := readRepoFile(t, "docs/agent-roles/dev.md")
-	if !strings.Contains(content, "repokit enhance -r") {
+	if !strings.Contains(content, "governa enhance -r") {
 		t.Fatal("docs/agent-roles/dev.md should contain enhance workflow instructions")
 	}
-	if !strings.Contains(content, "repokit enhance") {
+	if !strings.Contains(content, "governa enhance") {
 		t.Fatal("docs/agent-roles/dev.md should mention self-review mode")
 	}
 }
@@ -3749,14 +3749,14 @@ func TestCodeOverlayDevRoleUsingAdopt(t *testing.T) {
 		if !strings.Contains(content, "## Using Adopt") {
 			t.Errorf("%s: should contain ## Using Adopt section", path)
 		}
-		if !strings.Contains(content, "repokit adopt") {
-			t.Errorf("%s: should reference repokit adopt", path)
+		if !strings.Contains(content, "governa adopt") {
+			t.Errorf("%s: should reference governa adopt", path)
 		}
 	}
-	// Self-hosted DEV role must NOT have "Using Adopt" — repokit uses enhance.
+	// Self-hosted DEV role must NOT have "Using Adopt" — governa uses enhance.
 	selfHosted := readRepoFile(t, "docs/agent-roles/dev.md")
 	if strings.Contains(selfHosted, "## Using Adopt") {
-		t.Fatal("docs/agent-roles/dev.md should NOT contain Using Adopt (repokit uses enhance, not adopt)")
+		t.Fatal("docs/agent-roles/dev.md should NOT contain Using Adopt (governa uses enhance, not adopt)")
 	}
 }
 

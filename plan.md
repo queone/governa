@@ -1,4 +1,4 @@
-# repokit Plan
+# governa Plan
 
 ## Product Direction
 
@@ -27,8 +27,7 @@ Every new roadmap item should answer:
 Pre-rubric ideas captured for future discussion. Prefix each with `IE<N>:` (sequential N) for stable references. These are not commitments and have not passed the Objective-Fit Rubric. Remove entries when promoted to an AC, completed, or no longer interesting; this section is pre-rubric staging, not a historical record.
 
 - IE1: non-git target support: bootstrap into directories that are not git repos, for security/privacy use cases where git may be added later or never
-- IE7: rename repokit to governa: evaluate whether a governance-centered name better reflects the project's purpose as a deterministic human-agent repo collaboration framework and CLI, and define the full rename scope if adopted
-- IE8: build-time drift check: add an optional step to `./build.sh` (or the build tool) that runs `repokit adopt -d` when `repokit` is installed, printing a drift notice if the repo's governance or overlay files are behind the current template — surfaces drift passively without requiring agent initiative or human memory to governa: evaluate whether a governance-centered name better reflects the project's purpose as a deterministic human-agent repo collaboration framework and CLI, and define the full rename scope if adopted
+- IE8: build-time drift check: add an optional step to `./build.sh` (or the build tool) that runs `governa adopt -d` when `governa` is installed, printing a drift notice if the repo's governance or overlay files are behind the current template — surfaces drift passively without requiring agent initiative or human memory
 
 ## Deferred
 
@@ -38,6 +37,6 @@ Pre-rubric ideas captured for future discussion. Prefix each with `IE<N>:` (sequ
 ## Constraints
 
 - Pure stdlib; no external Go dependencies
-- Generated repos must be self-contained with no runtime dependence on repokit
+- Generated repos must be self-contained with no runtime dependence on governa
 - Templates use `{{PLACEHOLDER}}` substitution, not a templating engine
 - Overlays are additive; they must not conflict with the base governance contract

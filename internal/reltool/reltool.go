@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kquo/repokit/internal/color"
+	"github.com/kquo/governa/internal/color"
 )
 
 var semverTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)

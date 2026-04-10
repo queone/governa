@@ -53,7 +53,7 @@ func TestFormatParseManifestRoundTrip(t *testing.T) {
 
 func TestParseManifestRejectsBadVersion(t *testing.T) {
 	t.Parallel()
-	_, err := parseManifest("repokit-manifest-v99\ntemplate-version: 1.0\n")
+	_, err := parseManifest("governa-manifest-v99\ntemplate-version: 1.0\n")
 	if err == nil {
 		t.Fatal("expected error for unrecognized format version")
 	}

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.7.0 | AC24: renamed repokit to governa — module path, binary, docs, templates; legacy manifest backward compatible |
 | 0.6.4 | AC23: Using Adopt workflow in CODE overlay DEV role, drift summary for enhance and adopt output |
 | 0.6.3 | AC22: portable governance rules from skout, enhance workflow in DEV role doc, fixed dangling AGENTS.md symlink |
 | 0.6.2 | README: enhance purpose clarified (templating set + self-hosted governance), CLI description updated |

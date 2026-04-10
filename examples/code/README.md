@@ -8,7 +8,7 @@ State why this repo exists — not just what it does, but why it matters and wha
 
 ## Overview
 
-This is a governed `CODE` repo bootstrapped from `repokit`.
+This is a governed `CODE` repo bootstrapped from `governa`.
 
 Current stack or platform:
 

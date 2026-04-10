@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kquo/repokit/internal/color"
+	"github.com/kquo/governa/internal/color"
 )
 
 type Config struct {

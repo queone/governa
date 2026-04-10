@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kquo/repokit/internal/color"
-	"github.com/kquo/repokit/internal/templates"
+	"github.com/kquo/governa/internal/color"
+	"github.com/kquo/governa/internal/templates"
 )
 
 type Mode string
@@ -125,14 +125,14 @@ func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
 }
 
 // ParseModeArgs parses flags for a given mode without the -m flag.
-// Used by cmd/repokit where the mode is determined by the subcommand.
+// Used by cmd/governa where the mode is determined by the subcommand.
 func ParseModeArgs(mode Mode, args []string) (Config, bool, error) {
 	return parseFlags(mode, args)
 }
 
 func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	values := flagValues{}
-	fset := flag.NewFlagSet("repokit", flag.ContinueOnError)
+	fset := flag.NewFlagSet("governa", flag.ContinueOnError)
 	fset.SetOutput(os.Stderr)
 	fset.StringVar(&values.target, "t", "", "target directory")
 	fset.StringVar(&values.target, "target", "", "target directory")

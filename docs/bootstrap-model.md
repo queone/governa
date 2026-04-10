@@ -104,7 +104,7 @@ Reasons:
 - requiring Go is acceptable for the target audience
 - argument parsing, file operations, and dry-run reporting are easier to keep deterministic in Go
 
-The canonical entrypoint is `cmd/repokit/main.go`, installed via `go install github.com/kquo/repokit/cmd/repokit@latest`.
+The canonical entrypoint is `cmd/governa/main.go`, installed via `go install github.com/kquo/governa/cmd/governa@latest`.
 
 ## CLI Convention
 
@@ -116,11 +116,10 @@ Every bootstrap argument should have:
 The short flag is required.
 The long form exists as the readable alias.
 
-Recommended initial mapping:
+Recommended flag mapping (mode is determined by subcommand, not a flag):
 
 ```text
 -t, --target
--m, --mode
 -y, --type
 -n, --repo-name
 -p, --purpose
@@ -130,9 +129,10 @@ Recommended initial mapping:
 -r, --reference
 -g, --init-git
 -d, --dry-run
+-a, --apply
 ```
 
-This convention should be documented and kept consistent across bootstrap commands and future companion tools.
+This convention should be documented and kept consistent across governa subcommands.
 
 ## Ownership Model
 
@@ -148,7 +148,7 @@ Recommended initial ownership model:
   - `AGENTS.md`
   - `CLAUDE.md` symlink
   - `TEMPLATE_VERSION`
-  - `.repokit-manifest`
+  - `.governa-manifest`
 - overlay-owned by default when newly created:
   - `README.md`
   - `arch.md`
@@ -167,38 +167,31 @@ For adoption mode, template-owned sections should be narrow and explicit.
 
 ## Bootstrap Entry Point
 
-The template should provide one deterministic entrypoint:
+The canonical entrypoint is an installable binary:
 
-- a Go-based bootstrap command exposed through a stable repo-local entrypoint
-
-Recommended arguments:
-
-```text
-bootstrap \
-  [-t, --target <target-root>] \
-  -m, --mode new|adopt|enhance \
-  -y, --type CODE|DOC \
-  -n, --repo-name "<name>" \
-  -p, --purpose "<purpose>" \
-  [-s, --stack "<stack/platform>"] \
-  [-u, --publishing-platform "<platform>"] \
-  [-v, --style "<voice/style>"] \
-  [-r, --reference <reference-root>] \
-  [-g, --init-git] \
-  [-d, --dry-run] \
-  [-a, --apply]
+```
+go install github.com/kquo/governa/cmd/governa@latest
 ```
 
-The agent may gather these interactively, but the script itself should accept explicit inputs so runs are reproducible.
-If `target` is omitted for `new` or `adopt`, the command should default to the current working directory.
+Subcommand interface:
+
+```text
+governa new [-t <target>] -y CODE|DOC -n "<name>" -p "<purpose>" [-s "<stack>"] [-g] [-d]
+governa adopt [-t <target>] [-y CODE|DOC] -n "<name>" -p "<purpose>" [-s "<stack>"] [-d]
+governa enhance [-r <reference>] [-d] [-a]
+governa version
+```
+
+The agent may gather inputs interactively, but the command itself accepts explicit flags so runs are reproducible. If `target` is omitted for `new` or `adopt`, the command defaults to the current working directory.
 
 Mode-specific expectations:
 
 - `new`: requires `type`, `repo-name`, `purpose`, plus overlay-specific metadata
 - `adopt`: requires `type` unless inferred confidently, `repo-name`, and `purpose`; when type is specified, overlay-specific metadata also becomes required (`stack` for CODE, `publishing-platform` and `style` for DOC)
-- `enhance`: requires `reference` and should normally run with this template repo as the current working tree
+- `enhance` with `-r`: inspects a reference repo for portable improvements
+- `enhance` without `-r`: self-review comparing on-disk templates against the embedded baseline
 
-The implementation lives in `cmd/repokit/`, installed via `go install github.com/kquo/repokit/cmd/repokit@latest`.
+The implementation lives in `cmd/governa/`.
 
 ## Agent Responsibilities
 
@@ -293,7 +286,7 @@ Rules:
 The current enhance workflow:
 
 1. inspect reference repo
-2. read `.repokit-manifest` from reference if present (enables three-way comparison)
+2. read `.governa-manifest` from reference if present (enables three-way comparison)
 3. extract candidate deltas
 4. compare `AGENTS.md` by named governed sections using constraint-level comparison (each bullet is a distinct constraint; signal matching acts as a fast pre-filter, then normalized constraint sets are compared so two sections with the same keywords but different rules still produce a candidate)
 5. compare overlay and workflow artifacts by deterministic file mapping with section-level diffing (structured markdown files with `##` headings are compared per-section; the candidate reports which specific sections changed rather than flagging the whole file; unstructured files fall back to whole-file comparison)
@@ -307,7 +300,7 @@ The current implementation stops at the review stage and, when actionable improv
 
 ### Bootstrap Manifest
 
-During `new` and `adopt` bootstrap, repokit writes a `.repokit-manifest` file into the generated repo. This file records:
+During `new` and `adopt` bootstrap, governa writes a `.governa-manifest` file into the generated repo. This file records:
 
 - the template version used at bootstrap time
 - SHA-256 checksums of each generated file (after placeholder substitution)
@@ -322,7 +315,7 @@ To support the workflow above, this repo should contain:
 - `internal/templates/base/` for cross-repo governance
 - `internal/templates/overlays/code/` for code-repo-specific files
 - `internal/templates/overlays/doc/` for doc-repo-specific files
-- `cmd/repokit/` as the single deterministic renderer
+- `cmd/governa/` as the single deterministic renderer
 - `examples/` showing one bootstrapped `CODE` repo and one bootstrapped `DOC` repo
 
 This structure lets an agent use the template repo as a stable frame of reference while keeping every generated repo self-contained.

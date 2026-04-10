@@ -15,8 +15,8 @@ Implementation-focused agent behavior. Follow these rules alongside `AGENTS.md`.
 
 ## Using Enhance
 
-- Run `repokit enhance -r <reference-repo>` to review another governed repo for portable improvements.
+- Run `governa enhance -r <reference-repo>` to review another governed repo for portable improvements.
 - Interpret the output: accepted candidates are portable and worth upstreaming; deferred candidates are project-specific.
 - For each accepted candidate, assess whether the improvement belongs in the base template, an overlay, or a workflow doc.
 - Draft an AC for the improvements worth adopting.
-- Run `repokit enhance` (no `-r`) for a pre-release self-review of template changes.
+- Run `governa enhance` (no `-r`) for a pre-release self-review of template changes.

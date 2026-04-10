@@ -48,8 +48,8 @@ func TestParseArgsVerboseAndTargets(t *testing.T) {
 func TestPackageScopes(t *testing.T) {
 	t.Parallel()
 
-	got := packageScopes([]string{"repokit", "rel"})
-	want := []string{"./cmd/repokit", "./cmd/rel"}
+	got := packageScopes([]string{"governa", "rel"})
+	want := []string{"./cmd/governa", "./cmd/rel"}
 	if len(got) != len(want) {
 		t.Fatalf("packageScopes() len = %d, want %d", len(got), len(want))
 	}
