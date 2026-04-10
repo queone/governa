@@ -27,6 +27,7 @@ Every new roadmap item should answer:
 Pre-rubric ideas captured for future discussion. These are not commitments and have not passed the Objective-Fit Rubric. Remove items that are no longer interesting; this section should not grow indefinitely.
 
 - non-git target support: bootstrap into directories that are not git repos, for security/privacy use cases where git may be added later or never
+- optional LLM assistance in enhance: evaluate additive LLM roles (candidate summarization, rationale drafting, second-opinion review) on top of the deterministic core; deterministic logic stays as the enforcement layer, LLM output is informational only and opt-in
 
 ## Deferred
 

@@ -3101,3 +3101,39 @@ func TestACDocsReadmeUsesCurrentConvention(t *testing.T) {
 		t.Error("docs/README.md: should NOT use stale glob `ac-*.md` (matches keepers but not working AC files post-AC13)")
 	}
 }
+
+func TestReadmeConsolidatedStructure(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "README.md")
+
+	// New headers must be present
+	for _, header := range []string{"## Modes", "## Design", "## Self-Hosting Status", "## Rendered Examples"} {
+		if !strings.Contains(content, header) {
+			t.Errorf("README.md: missing required section %q", header)
+		}
+	}
+
+	// Old headers must be gone
+	for _, header := range []string{"## Quick Start", "## Intended Use", "## Operating Model", "## Operator Guide"} {
+		if strings.Contains(content, header) {
+			t.Errorf("README.md: should NOT contain removed section %q", header)
+		}
+	}
+
+	// Enhance example uses local path
+	if !strings.Contains(content, "go run ./cmd/bootstrap") {
+		t.Error("README.md: enhance example should use `go run ./cmd/bootstrap` (local path)")
+	}
+
+	// All four command examples present
+	for _, marker := range []string{"-m new -y CODE", "-m new -y DOC", "-m adopt", "-m enhance"} {
+		if !strings.Contains(content, marker) {
+			t.Errorf("README.md: missing command example containing %q", marker)
+		}
+	}
+
+	// Neutral help pointer
+	if !strings.Contains(content, "bootstrap --help") {
+		t.Error("README.md: should contain neutral `bootstrap --help` pointer")
+	}
+}

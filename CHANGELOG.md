@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.3.3 | AC16: README consolidated — Quick Start, Intended Use, Operating Model, Operator Guide collapsed into Modes and Design |
 | 0.3.2 | AC15: AC filename convention surfaced in ac-template.md, development-cycle.md, and docs/README.md files (stale ac_<id> guidance corrected) |
 | 0.3.1 | AC14: Ideas To Explore section in plan.md, pre-rubric vs Priorities boundary |
 | 0.3.0 | AC13: AC naming convention simplified to acN-slug.md and # ACN titles (hard cutover) |
