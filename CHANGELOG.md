@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.6.3 | AC22: portable governance rules from skout, enhance workflow in DEV role doc, fixed dangling AGENTS.md symlink |
 | 0.6.2 | README: enhance purpose clarified (templating set + self-hosted governance), CLI description updated |
 | 0.6.1 | AC21: enriched ac-template.md and ac-example.md with inline coaching, sub-headed scope, numbered ATs |
 | 0.6.0 | AC20: self-review enhance without `-r`, retired `cmd/bootstrap` |

@@ -3682,3 +3682,59 @@ func TestACExampleEnrichedStructure(t *testing.T) {
 		}
 	}
 }
+
+func TestGovernanceImprovementsFromSkout(t *testing.T) {
+	t.Parallel()
+	agentsPaths := []string{
+		"internal/templates/base/AGENTS.md",
+		"AGENTS.md",
+	}
+
+	rules := []struct {
+		marker  string
+		section string
+	}{
+		{"Authorization is per-scope", "## Approval Boundaries"},
+		{"terse by default", "## Review Style"},
+		{"update affected docs in the same pass", "## File-Change Discipline"},
+		{"complete the migration in one pass", "## File-Change Discipline"},
+		{"Every AC doc must end with", "## Documentation Update Expectations"},
+		{"preserve its semantic intent", "## Governed Sections"},
+	}
+
+	for _, path := range agentsPaths {
+		content := readRepoFile(t, path)
+		for _, rule := range rules {
+			if !strings.Contains(content, rule.marker) {
+				t.Errorf("%s: missing rule %q", path, rule.marker)
+				continue
+			}
+			// Verify the rule appears after its section header.
+			sectionIdx := strings.Index(content, rule.section)
+			markerIdx := strings.Index(content, rule.marker)
+			if sectionIdx < 0 {
+				t.Errorf("%s: missing section %q", path, rule.section)
+			} else if markerIdx < sectionIdx {
+				t.Errorf("%s: rule %q (at %d) should appear inside section %q (at %d)", path, rule.marker, markerIdx, rule.section, sectionIdx)
+			}
+		}
+	}
+
+	// Propagation integrity: both copies must be identical.
+	templateContent := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	rootContent := readRepoFile(t, "AGENTS.md")
+	if templateContent != rootContent {
+		t.Fatal("AGENTS.md root and internal/templates/base/AGENTS.md must have identical content")
+	}
+}
+
+func TestDevRoleDocEnhanceWorkflow(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "docs/agent-roles/dev.md")
+	if !strings.Contains(content, "repokit enhance -r") {
+		t.Fatal("docs/agent-roles/dev.md should contain enhance workflow instructions")
+	}
+	if !strings.Contains(content, "repokit enhance") {
+		t.Fatal("docs/agent-roles/dev.md should mention self-review mode")
+	}
+}

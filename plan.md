@@ -28,7 +28,6 @@ Pre-rubric ideas captured for future discussion. Prefix each with `IE<N>:` (sequ
 
 - IE1: non-git target support: bootstrap into directories that are not git repos, for security/privacy use cases where git may be added later or never
 - IE2: optional LLM assistance in enhance: evaluate additive LLM roles (candidate summarization, rationale drafting, second-opinion review) on top of the deterministic core; deterministic logic stays as the enforcement layer, LLM output is informational only and opt-in
-- IE4: Aside from ac-template.md, what else can repokit adopt from skout repo? or is this just a real-world test of `repokit enhance -r /Users/tek1/code/skouts`?
 
 ## Deferred
 

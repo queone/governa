@@ -8,6 +8,8 @@ Repo-specific workflow belongs in the selected overlay, not here.
 
 ## Governed Sections
 
+Each section must preserve its semantic intent across edits. Add new rules under the section that best fits — do not invent ad-hoc top-level sections.
+
 Only these sections may be edited through a guided update:
 
 - `Purpose`
@@ -33,6 +35,7 @@ When asked to update it, propose the exact section names to change and keep edit
 
 ## Approval Boundaries
 
+- Authorization is per-scope. A user approving a change once does not authorize future changes by analogy.
 - Do not create, delete, rename, publish, release, or perform destructive changes without explicit user approval.
 - Do not change governance files, CI/release configuration, secrets handling, or external integrations without explicit user approval.
 - Normal in-scope edits to existing project files are allowed once the user has asked for implementation.
@@ -40,6 +43,7 @@ When asked to update it, propose the exact section names to change and keep edit
 
 ## Review Style
 
+- Keep completion and status messages terse by default.
 - Default to a review mindset when the user asks for review: prioritize bugs, regressions, missing tests, and drift from documented behavior.
 - Present findings before summaries.
 - Prefer concrete evidence: file paths, behavior, and missing coverage.
@@ -53,6 +57,8 @@ When asked to update it, propose the exact section names to change and keep edit
 - When follow-on improvements are discovered but are not part of the current authorized change, record them in `plan.md` or the repo's planning artifact instead of expanding scope ad hoc.
 - Do not commit personal absolute filesystem paths in docs, templates, config, or generated artifacts; use repo-relative paths or clear placeholders such as `<template-root>`.
 - Keep generated repos self-contained; do not introduce runtime dependence on this template repo.
+- When a change adds a file, command, flag, or major decision, update affected docs in the same pass.
+- When a decision changes mid-implementation, complete the migration in one pass: update all affected files, docs, and tests together rather than leaving a half-migrated state.
 - Follow existing repo conventions unless the user asks to change them.
 
 ## Release Or Publish Triggers
@@ -70,3 +76,4 @@ When asked to update it, propose the exact section names to change and keep edit
 - Update user-facing docs when commands, setup, workflows, outputs, published content structure, or operating instructions change.
 - Update architecture, planning, or style docs only when the change materially affects them.
 - Do not let docs silently drift from the implemented or published reality.
+- Every AC doc must end with a `## Status` section. Valid states: `PENDING`, `IN PROGRESS`, `DEFERRED` (with reason). Completed ACs are deleted per the development cycle — do not change status to DONE before deletion.
