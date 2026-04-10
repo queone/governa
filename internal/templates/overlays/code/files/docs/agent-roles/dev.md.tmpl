@@ -11,3 +11,9 @@ Implementation-focused agent behavior. Follow these rules alongside `AGENTS.md`.
 - Never run the release command; present it for the user to run.
 - When an AC document exists for the current work, follow its scope and update its status when complete.
 - When an AC is completed and its decisions are consolidated into durable docs or code, remove the AC file in the same change.
+
+## Using Adopt
+
+- Run `repokit adopt` periodically to check if the governance template has evolved.
+- Review `.template-proposed` files and governance patch proposals before integrating.
+- The drift summary at the end of the output shows whether governance patches or overlay file proposals were generated.

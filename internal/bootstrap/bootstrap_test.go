@@ -3738,3 +3738,208 @@ func TestDevRoleDocEnhanceWorkflow(t *testing.T) {
 		t.Fatal("docs/agent-roles/dev.md should mention self-review mode")
 	}
 }
+
+func TestCodeOverlayDevRoleUsingAdopt(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{
+		"internal/templates/overlays/code/files/docs/agent-roles/dev.md.tmpl",
+		"examples/code/docs/agent-roles/dev.md",
+	} {
+		content := readRepoFile(t, path)
+		if !strings.Contains(content, "## Using Adopt") {
+			t.Errorf("%s: should contain ## Using Adopt section", path)
+		}
+		if !strings.Contains(content, "repokit adopt") {
+			t.Errorf("%s: should reference repokit adopt", path)
+		}
+	}
+	// Self-hosted DEV role must NOT have "Using Adopt" — repokit uses enhance.
+	selfHosted := readRepoFile(t, "docs/agent-roles/dev.md")
+	if strings.Contains(selfHosted, "## Using Adopt") {
+		t.Fatal("docs/agent-roles/dev.md should NOT contain Using Adopt (repokit uses enhance, not adopt)")
+	}
+}
+
+func TestEnhanceDriftSummary(t *testing.T) {
+	// Not parallel: captures stdout.
+	templateRoot := t.TempDir()
+	referenceRoot := t.TempDir()
+
+	mustWrite(t, filepath.Join(templateRoot, "base", "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Governed Sections
+
+- Purpose
+
+## Interaction Mode
+
+- Default to discussion first.
+
+## Approval Boundaries
+
+- Do not release without approval.
+
+## Review Style
+
+- Findings first.
+
+## File-Change Discipline
+
+- Prefer targeted edits.
+
+## Release Or Publish Triggers
+
+- Release only on request.
+
+## Documentation Update Expectations
+
+- Update docs with behavior.
+`)
+
+	mustWrite(t, filepath.Join(referenceRoot, "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Governed Sections
+
+- Purpose
+
+## Interaction Mode
+
+- Default to discussion first.
+- Do not create artifacts or make changes unless explicitly authorized.
+
+## Approval Boundaries
+
+- Do not release without approval.
+
+## Review Style
+
+- Findings first.
+
+## File-Change Discipline
+
+- Prefer targeted edits.
+
+## Release Or Publish Triggers
+
+- Release only on request.
+
+## Documentation Update Expectations
+
+- Update docs with behavior.
+`)
+
+	report, err := ReviewEnhancement(os.DirFS(templateRoot), templateRoot, referenceRoot)
+	if err != nil {
+		t.Fatalf("ReviewEnhancement() error = %v", err)
+	}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	printEnhancementSummary(report)
+	w.Close()
+	os.Stdout = oldStdout
+
+	captured, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read captured output: %v", err)
+	}
+	output := string(captured)
+	if !strings.Contains(output, "drift:") {
+		t.Fatalf("enhance output should contain drift summary, got: %q", output)
+	}
+}
+
+func TestAdoptDriftSummary(t *testing.T) {
+	// Not parallel: captures stdout via full adopt path.
+	root := repoRoot(t)
+	dir := t.TempDir()
+	// Create a target with an existing AGENTS.md missing some sections.
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting.\n")
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
+
+	cfg := Config{
+		Mode:     ModeAdopt,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-adopt-drift",
+		Purpose:  "test",
+		Stack:    "Go",
+		DryRun:   true,
+	}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	if err := runNewOrAdopt(templates.DiskFS(root), root, cfg, true); err != nil {
+		w.Close()
+		os.Stdout = oldStdout
+		t.Fatalf("runNewOrAdopt() error = %v", err)
+	}
+	w.Close()
+	os.Stdout = oldStdout
+
+	captured, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read captured output: %v", err)
+	}
+	output := string(captured)
+	if !strings.Contains(output, "drift:") {
+		t.Fatalf("adopt output should contain drift summary, got: %q", output)
+	}
+}
+
+func TestAdoptNoDrift(t *testing.T) {
+	// Not parallel: captures stdout.
+	root := repoRoot(t)
+	dir := t.TempDir()
+	// Empty target — no existing files to propose against.
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
+
+	cfg := Config{
+		Mode:     ModeAdopt,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-no-drift",
+		Purpose:  "test",
+		Stack:    "Go",
+		DryRun:   true,
+	}
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	if err := runNewOrAdopt(templates.DiskFS(root), root, cfg, true); err != nil {
+		w.Close()
+		os.Stdout = oldStdout
+		t.Fatalf("runNewOrAdopt() error = %v", err)
+	}
+	w.Close()
+	os.Stdout = oldStdout
+
+	captured, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read captured output: %v", err)
+	}
+	output := string(captured)
+	if !strings.Contains(output, "drift: none detected") {
+		t.Fatalf("adopt with no existing files should show 'drift: none detected', got: %q", output)
+	}
+}

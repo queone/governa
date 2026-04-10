@@ -288,15 +288,20 @@ func runNewOrAdopt(tfs fs.FS, repoRoot string, cfg Config, adopt bool) error {
 
 	var ops []operation
 	if adopt {
-		ops = compactOperations(applyAdoptTransforms(canonical))
+		transformed := applyAdoptTransforms(canonical)
+		ops = compactOperations(transformed)
 		emitAdoptAdvisories(targetAbs)
+		ops = append(ops, manifestOp)
+		if err := applyOperations(ops, cfg.DryRun); err != nil {
+			return err
+		}
+		printAdoptDrift(transformed)
 	} else {
 		ops = compactOperations(canonical)
-	}
-	ops = append(ops, manifestOp)
-
-	if err := applyOperations(ops, cfg.DryRun); err != nil {
-		return err
+		ops = append(ops, manifestOp)
+		if err := applyOperations(ops, cfg.DryRun); err != nil {
+			return err
+		}
 	}
 	if cfg.InitGit {
 		if err := maybeInitGit(targetAbs, cfg.DryRun); err != nil {
@@ -922,6 +927,7 @@ func printEnhancementSummary(report EnhancementReport) {
 	fmt.Printf("reference: %s\n", displayReferenceRoot())
 	if len(report.Candidates) == 0 {
 		fmt.Println("candidates: none")
+		fmt.Printf("%s none detected\n", color.Yel("drift:"))
 		return
 	}
 	counts := countEnhancementCandidates(report.Candidates)
@@ -930,6 +936,28 @@ func printEnhancementSummary(report EnhancementReport) {
 	for _, c := range report.Candidates {
 		fmt.Println(formatCandidateLine(c, report.ReferenceRoot))
 	}
+	printEnhanceDrift(report.Candidates)
+}
+
+func printEnhanceDrift(candidates []EnhancementCandidate) {
+	govChanged := 0
+	overlayDiff := 0
+	for _, c := range candidates {
+		if c.Disposition != "accept" && c.Disposition != "adapt" {
+			continue
+		}
+		if c.Area == "base governance" {
+			govChanged++
+		} else {
+			overlayDiff++
+		}
+	}
+	if govChanged == 0 && overlayDiff == 0 {
+		fmt.Printf("%s none detected\n", color.Yel("drift:"))
+		return
+	}
+	fmt.Printf("%s %d of %d governance sections changed, %d overlay files differ\n",
+		color.Yel("drift:"), govChanged, len(governedSectionNames), overlayDiff)
 }
 
 func formatCandidateLine(c EnhancementCandidate, referenceRoot string) string {
@@ -1801,6 +1829,33 @@ func readmeMissingWhySection(targetDir string) bool {
 		return false
 	}
 	return !strings.Contains(string(content), "## Why")
+}
+
+func printAdoptDrift(transformed []operation) {
+	govPatched := 0
+	overlayProposed := 0
+	for _, op := range transformed {
+		if op.kind != "write" {
+			continue
+		}
+		if strings.HasSuffix(op.path, "AGENTS.md") && strings.Contains(op.path, ".template-proposed") {
+			govPatched++
+		} else if strings.Contains(op.path, ".template-proposed") {
+			overlayProposed++
+		}
+	}
+	if govPatched == 0 && overlayProposed == 0 {
+		fmt.Printf("%s none detected\n", color.Yel("drift:"))
+		return
+	}
+	parts := []string{}
+	if govPatched > 0 {
+		parts = append(parts, "governance patch proposed")
+	}
+	if overlayProposed > 0 {
+		parts = append(parts, fmt.Sprintf("%d overlay files proposed", overlayProposed))
+	}
+	fmt.Printf("%s %s\n", color.Yel("drift:"), strings.Join(parts, ", "))
 }
 
 func emitAdoptAdvisories(targetDir string) {
