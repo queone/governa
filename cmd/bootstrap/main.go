@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"repokit/internal/bootstrap"
+	"github.com/kquo/repokit/internal/bootstrap"
 )
 
 func main() {

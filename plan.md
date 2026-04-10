@@ -20,8 +20,6 @@ Every new roadmap item should answer:
 
 ## Priorities
 
-- AC18: move `base/` and `overlays/` to `internal/templates/`, refactor `internal/bootstrap` to accept `fs.FS` instead of root path string (load-bearing step for CLI utility)
-- AC19: add `go:embed`, create `cmd/repokit` with subcommands (`new`, `adopt`, `enhance`, `version`/`ver`), wire embedded FS for new/adopt and disk FS for enhance, add GitHub version check against `kquo/repokit`
 - AC20: implement `-r`-less enhance (self-review against embedded templates), retire `cmd/bootstrap`
 
 ## Ideas To Explore

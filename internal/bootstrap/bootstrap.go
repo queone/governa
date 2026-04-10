@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"repokit/internal/color"
-	"repokit/internal/templates"
+	"github.com/kquo/repokit/internal/color"
+	"github.com/kquo/repokit/internal/templates"
 )
 
 type Mode string
@@ -201,7 +201,10 @@ func Run(cfg Config) error {
 		return err
 	}
 	tfs := templates.DiskFS(repoRoot)
+	return RunWithFS(tfs, repoRoot, cfg)
+}
 
+func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
 	switch cfg.Mode {
 	case ModeNew:
 		return runNewOrAdopt(tfs, repoRoot, cfg, false)
@@ -212,6 +215,74 @@ func Run(cfg Config) error {
 	default:
 		return fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}
+}
+
+// ParseModeArgs parses flags for a given mode without the -m flag.
+// Used by cmd/repokit where the mode is determined by the subcommand.
+func ParseModeArgs(mode Mode, args []string) (Config, bool, error) {
+	return parseFlags(mode, args)
+}
+
+func parseFlags(mode Mode, args []string) (Config, bool, error) {
+	values := flagValues{}
+	fset := flag.NewFlagSet("repokit", flag.ContinueOnError)
+	fset.SetOutput(os.Stderr)
+	fset.StringVar(&values.target, "t", "", "target directory")
+	fset.StringVar(&values.target, "target", "", "target directory")
+	fset.StringVar(&values.reference, "r", "", "reference repo for enhance")
+	fset.StringVar(&values.reference, "reference", "", "reference repo for enhance")
+	fset.StringVar(&values.repoType, "y", "", "repo type: CODE|DOC")
+	fset.StringVar(&values.repoType, "type", "", "repo type: CODE|DOC")
+	fset.StringVar(&values.repoName, "n", "", "repo name")
+	fset.StringVar(&values.repoName, "repo-name", "", "repo name")
+	fset.StringVar(&values.purpose, "p", "", "project purpose")
+	fset.StringVar(&values.purpose, "purpose", "", "project purpose")
+	fset.StringVar(&values.stack, "s", "", "stack or platform for CODE repos")
+	fset.StringVar(&values.stack, "stack", "", "stack or platform for CODE repos")
+	fset.StringVar(&values.publishingPlatform, "u", "", "publishing platform for DOC repos")
+	fset.StringVar(&values.publishingPlatform, "publishing-platform", "", "publishing platform for DOC repos")
+	fset.StringVar(&values.style, "v", "", "style or voice for DOC repos")
+	fset.StringVar(&values.style, "style", "", "style or voice for DOC repos")
+	fset.BoolVar(&values.initGit, "g", false, "initialize git if target is not already a repo")
+	fset.BoolVar(&values.initGit, "init-git", false, "initialize git if target is not already a repo")
+	fset.BoolVar(&values.dryRun, "d", false, "preview changes without writing")
+	fset.BoolVar(&values.dryRun, "dry-run", false, "preview changes without writing")
+	fset.BoolVar(&values.apply, "a", false, "write .template-proposed files for actionable candidates (enhance only)")
+	fset.BoolVar(&values.apply, "apply", false, "write .template-proposed files for actionable candidates (enhance only)")
+	if slices.Contains(args, "-?") || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
+		return Config{}, true, nil
+	}
+	if err := fset.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return Config{}, true, nil
+		}
+		return Config{}, false, err
+	}
+
+	target := strings.TrimSpace(values.target)
+	if target == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return Config{}, false, fmt.Errorf("resolve current working directory: %w", err)
+		}
+		target = cwd
+	}
+
+	cfg := Config{
+		Mode:               mode,
+		Target:             target,
+		Reference:          strings.TrimSpace(values.reference),
+		Type:               RepoType(strings.ToUpper(strings.TrimSpace(values.repoType))),
+		RepoName:           strings.TrimSpace(values.repoName),
+		Purpose:            strings.TrimSpace(values.purpose),
+		Stack:              strings.TrimSpace(values.stack),
+		PublishingPlatform: strings.TrimSpace(values.publishingPlatform),
+		Style:              strings.TrimSpace(values.style),
+		InitGit:            values.initGit,
+		DryRun:             values.dryRun,
+		Apply:              values.apply,
+	}
+	return cfg, false, validateConfig(cfg)
 }
 
 func validateConfig(cfg Config) error {

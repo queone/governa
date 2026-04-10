@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"repokit/internal/buildtool"
+	"github.com/kquo/repokit/internal/buildtool"
 )
 
 func main() {

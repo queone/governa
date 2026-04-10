@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"repokit/internal/color"
+	"github.com/kquo/repokit/internal/color"
 )
 
 type Config struct {
@@ -180,7 +180,7 @@ func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 	if nextTag, ok, err := nextPatchTag(); err != nil {
 		return err
 	} else if ok {
-		fmt.Fprintf(out, "\n%s\n\n    go run ./cmd/rel %s %s\n", color.Yel("==> To release, run:"), color.Grn(nextTag), color.Gra("\"<release message>\""))
+		fmt.Fprintf(out, "\n%s\n\n    ./build.sh %s %s\n", color.Yel("==> To release, run:"), color.Grn(nextTag), color.Gra("\"<release message>\""))
 	}
 	return nil
 }

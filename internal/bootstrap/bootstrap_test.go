@@ -1,11 +1,11 @@
 package bootstrap
 
 import (
+	"github.com/kquo/repokit/internal/templates"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"repokit/internal/templates"
 	"strings"
 	"testing"
 )
@@ -3123,21 +3123,21 @@ func TestReadmeConsolidatedStructure(t *testing.T) {
 		}
 	}
 
-	// Enhance example uses local path
-	if !strings.Contains(content, "go run ./cmd/bootstrap") {
-		t.Error("README.md: enhance example should use `go run ./cmd/bootstrap` (local path)")
-	}
-
-	// All four command examples present
-	for _, marker := range []string{"-m new -y CODE", "-m new -y DOC", "-m adopt", "-m enhance"} {
+	// All mode command examples present (subcommand form)
+	for _, marker := range []string{"repokit new", "repokit adopt", "repokit enhance"} {
 		if !strings.Contains(content, marker) {
 			t.Errorf("README.md: missing command example containing %q", marker)
 		}
 	}
 
-	// Neutral help pointer
-	if !strings.Contains(content, "bootstrap --help") {
-		t.Error("README.md: should contain neutral `bootstrap --help` pointer")
+	// Install section
+	if !strings.Contains(content, "go install github.com/kquo/repokit/cmd/repokit@latest") {
+		t.Error("README.md: should contain go install command")
+	}
+
+	// Help pointer
+	if !strings.Contains(content, "repokit help") {
+		t.Error("README.md: should contain `repokit help` pointer")
 	}
 }
 
@@ -3331,5 +3331,103 @@ func TestTemplateVersionAtRoot(t *testing.T) {
 	}
 	if strings.TrimSpace(string(content)) == "" {
 		t.Fatal("TEMPLATE_VERSION at repo root must not be empty")
+	}
+}
+
+func TestEmbeddedFSCanReadBaseAgents(t *testing.T) {
+	t.Parallel()
+	content, err := fs.ReadFile(templates.EmbeddedFS, "base/AGENTS.md")
+	if err != nil {
+		t.Fatalf("EmbeddedFS cannot read base/AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(content), "## Purpose") {
+		t.Fatal("embedded base/AGENTS.md missing ## Purpose section")
+	}
+}
+
+func TestEmbeddedFSCanWalkOverlays(t *testing.T) {
+	t.Parallel()
+	var tmplCount int
+	err := fs.WalkDir(templates.EmbeddedFS, "overlays/code/files", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".tmpl") {
+			tmplCount++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir on EmbeddedFS overlays/code/files: %v", err)
+	}
+	if tmplCount == 0 {
+		t.Fatal("EmbeddedFS overlays/code/files contains no .tmpl files")
+	}
+}
+
+func TestTemplateVersionConstMatchesFile(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	fileContent, err := os.ReadFile(filepath.Join(root, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatalf("read TEMPLATE_VERSION: %v", err)
+	}
+	fileVersion := strings.TrimSpace(string(fileContent))
+	if templates.TemplateVersion != fileVersion {
+		t.Fatalf("templates.TemplateVersion = %q but TEMPLATE_VERSION file = %q; they must match", templates.TemplateVersion, fileVersion)
+	}
+}
+
+func TestParseModeArgsNewMode(t *testing.T) {
+	t.Parallel()
+	cfg, help, err := ParseModeArgs(ModeNew, []string{
+		"-y", "CODE", "-n", "test-repo", "-p", "test purpose", "-s", "Go CLI", "-d",
+	})
+	if err != nil {
+		t.Fatalf("ParseModeArgs() error = %v", err)
+	}
+	if help {
+		t.Fatal("expected help = false")
+	}
+	if cfg.Mode != ModeNew {
+		t.Fatalf("Mode = %q, want new", cfg.Mode)
+	}
+	if cfg.RepoName != "test-repo" {
+		t.Fatalf("RepoName = %q, want test-repo", cfg.RepoName)
+	}
+	if !cfg.DryRun {
+		t.Fatal("expected DryRun = true")
+	}
+}
+
+func TestModulePathIsGitHub(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	content, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	if !strings.Contains(string(content), "module github.com/kquo/repokit") {
+		t.Fatal("go.mod module path must be github.com/kquo/repokit")
+	}
+}
+
+func TestImportPathsUseGitHub(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	// Check a representative set of files
+	for _, rel := range []string{
+		"cmd/bootstrap/main.go",
+		"cmd/build/main.go",
+		"cmd/repokit/main.go",
+		"internal/bootstrap/bootstrap.go",
+	} {
+		content, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if strings.Contains(string(content), `"repokit/internal/`) {
+			t.Errorf("%s: import path uses old module name \"repokit/internal/\" instead of \"github.com/kquo/repokit/internal/\"", rel)
+		}
 	}
 }
