@@ -220,7 +220,7 @@ Recommended outputs:
 - inferred repo shape: likely `CODE`, likely `DOC`, mixed, or unclear
 - existing artifact coverage: which expected files already exist
 - collision risk: low, medium, or high
-- adoption recommendation: safe to apply, safe with proposals only, or needs manual mapping first
+- adoption recommendation: safe to apply, review collisions first, or needs manual mapping first
 
 Recommended signals:
 
@@ -234,7 +234,7 @@ Example decision rules:
 - likely `CODE` if the repo contains source files, test files, package manifests, or build configs
 - likely `DOC` if the repo is mostly markdown/content plus editorial structure and lacks software build signals
 - high collision risk if `README.md`, `arch.md`, `plan.md`, or style-guide files already exist with substantial user content
-- proposals-only mode if the repo type is ambiguous or collision risk is high
+- review-only mode if the repo type is ambiguous or collision risk is high
 
 The agent or bootstrap command should show this assessment before modifying an existing repo.
 

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.10.2 | Build-release template restructured, stale doc refs fixed, release message limit enforced in checklist |
 | 0.10.1 | Enhance: removed -a/--apply and -t flags, deprecated .template-proposed |
 | 0.10.0 | AC31: enhance detects existing enhance ACs and prompts replace/update/new on collision |
 | 0.9.2 | Color: 256-color capability detection with basic ANSI fallback, test isolation fixes, FormatUsage coverage 93.3%, stale overlay/propagation docs fixed |

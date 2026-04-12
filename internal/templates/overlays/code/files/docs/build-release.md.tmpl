@@ -1,111 +1,55 @@
-# Build And Release
+# Build and Release
 
-## Build And Test Rules
+Reference for this repo's build pipeline, pre-release checklist, and acceptance test conventions. The enforceable one-liners live in `AGENTS.md`; this document explains the pipeline, the steps, and the rationale.
 
-- define one canonical local build command and keep it current here
-- run formatting, linting, tests, and packaging through that canonical command or documented sequence
-- do not trigger release work during routine implementation
+## Build
 
-If this repo is Go-based and includes `cmd/build/main.go`, use it for the build/test action itself rather than embedding build behavior in shell scripts.
-If this repo is Go-based and includes `cmd/rel/main.go`, use it for the release action itself rather than embedding release behavior in shell scripts.
-If this repo also includes `cmd/bootstrap/main.go`, treat it as a `go run` maintenance entrypoint rather than an installed binary.
+This repo has a single canonical build/test workflow: `./build.sh`.
 
-## Minimum Validation
+`./build.sh` is a thin Bash dispatcher. The real implementation lives in `go run ./cmd/build` (build/test) and `go run ./cmd/rel` (release). Both `cmd/build` and `cmd/rel` are `go run` entrypoints — they are intentionally not installed as binaries.
 
-- formatting passes — `go fmt` reformats are build-breaking, not warnings
-- lint or static checks pass if present
-- automated tests pass
-- changed docs match actual behavior
+The build pipeline runs these steps in order, fail-hard on each:
 
-## Acceptance Test Labeling
+1. `go mod tidy` — ensure `go.mod` and `go.sum` are consistent
+2. `go fmt ./...` — **fail-hard.** If `go fmt` rewrote any file (non-empty stdout), the build fails. Re-run after committing the formatting fix.
+3. `go fix ./...` — advisory; output is logged but does not break the build
+4. `go vet ./...` — **fail-hard**
+5. Test suite with coverage — fail-hard on any test failure
+6. `staticcheck ./...` — **fail-hard.** Installed via `go install staticcheck@latest` before each run.
+7. Binary build — installs utilities to `$GOPATH/bin`
 
-Every acceptance test in an AC document must be labeled `[Automated]` or `[Manual]`. Default to `[Automated]` when verifiable from CLI output, test assertions, or file inspection. Use `[Manual]` only when live user action is required to confirm the result.
+Invoking individual Go tools directly skips the tidy/fmt/lint pipeline above. A "passing" direct invocation can still produce a build that `./build.sh` would reject. The wrapper guarantees that what passes locally is what would pass in CI.
 
-## Release Trigger
+## Acceptance Tests
 
-Only perform release work when the user explicitly asks for release, publish, or version preparation.
+This repo uses a labeled-AT convention adopted with the AC-first workflow. Every AT in an AC document must be labeled `[Automated]` or `[Manual]`.
 
-## Release Checklist
+- **Automated** — The result can be verified from CLI output, test assertions, or file inspection. Automated ATs are run during implementation and re-run as part of the pre-release checklist.
+- **Manual** — Requires a live end-to-end action and must be confirmed by the user. The agent cannot self-verify these.
 
-1. run the canonical build and validation flow
-2. confirm user-visible docs and architecture notes are current
-3. update release notes or changelog if the repo uses them
-4. prepare version or publish artifacts only within the explicit release request
+Default to Automated whenever the result is verifiable without a live external service. Manual ATs add friction to the release flow, so reserve them for behaviors that genuinely cannot be checked any other way.
 
 ## Pre-Release Checklist
 
-Do not start this checklist unless the user explicitly asks to prep for release or equivalent.
+Do not begin this checklist until the user explicitly asks to prep for release or equivalent. This is gated by the release-prep trigger rule in `AGENTS.md` (Release Or Publish Triggers).
 
-Before offering a release commit or release command:
+1. **Run `./build.sh`.** Fix all failures until the build is clean.
+2. **Ask the user whether the live ATs were run.** Manual ATs cannot be verified from CLI output and require explicit confirmation.
+3. **Audit `arch.md` against the code.** Verify affected reference docs are current.
+4. **Update `CHANGELOG.md`.** Add the new version row using the existing format.
+5. **Check the latest git tag** (`git tag --sort=-v:refname | head -1`) before bumping the version constant. Do not assume the current version is unreleased — it may already be tagged.
+6. **Remove completed features from `plan.md`.**
+7. **Consolidate finished AC decisions into durable docs, then delete the AC file.** Do not delete AC files that are PENDING, IN PROGRESS, or DEFERRED — they are still active contracts. Only completed (released) ACs are deleted.
+8. **Present the release command for the user to run.** The agent never runs the release command directly. The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting.
 
-1. run the canonical build and validation flow and fix failures until clean
-2. ask the user whether any required manual or live acceptance checks were run
-3. audit `arch.md` and any affected reference docs against the actual behavior
-4. update `CHANGELOG.md` or the repo's release-history artifact
-5. confirm the repo's version artifact matches the intended release version
-6. remove or reprioritize completed roadmap items in `plan.md`
-7. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)
-8. prepare the exact tag and release message — the release message should be a single concise line, 80 characters or fewer
-9. present the canonical release command for the user to run or approve
-
-## Go Build Tool
-
-If this repo includes `cmd/build/main.go`, the expected build invocation is:
-
-```bash
-go run ./cmd/build
-```
-
-If the repo also includes `build.sh`, that shell wrapper is a convenience alias for Unix, Linux, and Git-Bash environments:
-
-```bash
-./build.sh
-```
-
-To scope the run to selected commands:
-
-```bash
-go run ./cmd/build bootstrap rel
-```
-
-or:
-
-```bash
-./build.sh bootstrap rel
-```
-
-If you pass `build`, `bootstrap`, or `rel` as targets, the command will run checks for those entrypoints but will not install binaries for them.
-
-Use `-v` or `--verbose` to run tests in verbose mode.
-
-## Go Release Tool
-
-If this repo includes `cmd/rel/main.go`, the expected release invocation is:
-
-```bash
-go run ./cmd/rel vX.Y.Z "release message"
-```
-
-The command always asks for interactive confirmation before it runs the release git steps.
-The only supported option is help: `-h`, `-?`, or `--help`.
-
-If the repo includes `build.sh`, the same release can be triggered through the shell convenience wrapper:
-
-```bash
-./build.sh vX.Y.Z "release message"
-```
-
-## Release Artifacts
-
-- `TEMPLATE_VERSION` is the template contract version written at bootstrap time. It records which template version this repo was generated from.
-- `CHANGELOG.md`, if the repo maintains one, is the human-readable release history. Keep it current as the canonical record of what shipped in each version.
+The release command (`./build.sh vX.Y.Z "message"`) executes `cmd/rel`, which orchestrates `git add → commit → tag → push tag → push branch` and produces recovery guidance if any step fails.
 
 ## Template Upgrade
 
-This repo was generated from a governance template. To check for template updates:
+This repo was generated from a governa governance template. To check for template updates:
 
-1. Compare `TEMPLATE_VERSION` in this repo against the source template's current version.
-2. Diff changed files manually against the template's current overlays.
-3. `.governa-manifest`, if present, records SHA-256 checksums of each file at bootstrap time. This enables tooling-assisted comparison to distinguish your customizations from stale template content.
+1. Run `governa sync` to generate a review document with per-file recommendations.
+2. Compare `TEMPLATE_VERSION` in this repo against the template's current version.
+3. `.governa-manifest`, if present, records SHA-256 checksums of each file at bootstrap time. This enables comparison to distinguish your customizations from stale template content.
 
-Template refresh is an operator-driven review process. The template maintainer may use enhance mode from the template repo to identify improvements, but generated repos do not run enhance directly.
+Template refresh is operator-driven. The governa tool proposes; the repo maintainer decides what to cherry-pick.

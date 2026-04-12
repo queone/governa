@@ -1,5 +1,5 @@
 # governa
-Template repo that bootstraps and adopts governed repositories, and maintains itself through enhance mode. Built from:
+Template repo that syncs governance into new and existing repositories, and maintains itself through enhance mode. Built from:
 
 - a common base contract in `internal/templates/base/`
 - a repo-type overlay in `internal/templates/overlays/code/` or `internal/templates/overlays/doc/`

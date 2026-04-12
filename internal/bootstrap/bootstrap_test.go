@@ -2614,8 +2614,8 @@ func TestBootstrapNewProducesEnrichedDocs(t *testing.T) {
 	if !strings.Contains(string(brContent), "## Template Upgrade") {
 		t.Fatal("build-release.md should contain Template Upgrade section")
 	}
-	if !strings.Contains(string(brContent), "## Release Artifacts") {
-		t.Fatal("build-release.md should contain Release Artifacts section")
+	if !strings.Contains(string(brContent), "## Pre-Release Checklist") {
+		t.Fatal("build-release.md should contain Pre-Release Checklist section")
 	}
 }
 

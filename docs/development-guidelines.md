@@ -29,7 +29,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 ## Program Version Declaration
 
 - Every installable `cmd/<name>/main.go` must declare a non-empty `const programVersion` string literal
-- Script-only helper entrypoints (`build`, `bootstrap`, `rel`) are exempt
+- Script-only helper entrypoints (`build`, `rel`) are exempt
 - The build tool validates this before compiling installable binaries; missing or empty declarations fail the build
 
 ## Error Handling And Validation

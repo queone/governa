@@ -1,6 +1,6 @@
-# Build And Release
+# Build and Release
 
-## Build And Test Rules
+## Build and Test Rules
 
 - use one canonical local build command and keep this document current
 - run formatting, static checks, tests, and packaging through that command or documented sequence
@@ -35,16 +35,16 @@ Convenience wrapper:
 To scope the run to selected commands:
 
 ```bash
-go run ./cmd/build bootstrap rel
+go run ./cmd/build build rel
 ```
 
 or:
 
 ```bash
-./build.sh bootstrap rel
+./build.sh build rel
 ```
 
-If you pass `build`, `bootstrap`, or `rel` as targets, the command will validate those entrypoints but will not install binaries for them.
+If you pass `build` or `rel` as targets, the command will validate those entrypoints but will not install binaries for them.
 
 ## Drift Check
 
@@ -91,8 +91,7 @@ Before offering a release commit or release command:
 5. confirm `TEMPLATE_VERSION` matches the intended template release version
 6. remove or reprioritize completed roadmap items in `plan.md`
 7. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)
-8. prepare the exact tag and release message — the release message must be a single concise line, 80 characters or fewer
-9. present the canonical release command for the user to run or approve
+8. present the canonical release command for the user to run or approve — the release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting.
 
 ## Release Artifacts
 
