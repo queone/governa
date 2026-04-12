@@ -11,16 +11,6 @@ import (
 	"testing"
 )
 
-func TestProposalPath(t *testing.T) {
-	t.Parallel()
-
-	got := proposalPath(filepath.Join("tmp", "README.md"))
-	want := filepath.Join("tmp", "README.template-proposed.md")
-	if got != want {
-		t.Fatalf("proposalPath() = %q, want %q", got, want)
-	}
-}
-
 func TestAssessTargetCodeRepo(t *testing.T) {
 	t.Parallel()
 
@@ -835,15 +825,6 @@ func TestCandidateRankAllTiers(t *testing.T) {
 		if got := candidateRank(c); got != tc.wantRank {
 			t.Fatalf("candidateRank(%s+%s) = %d, want %d", tc.disposition, tc.portability, got, tc.wantRank)
 		}
-	}
-}
-
-func TestProposalPathNoExtension(t *testing.T) {
-	t.Parallel()
-	got := proposalPath(filepath.Join("tmp", "TEMPLATE_VERSION"))
-	want := filepath.Join("tmp", "TEMPLATE_VERSION.template-proposed")
-	if got != want {
-		t.Fatalf("proposalPath() = %q, want %q", got, want)
 	}
 }
 
@@ -2278,168 +2259,6 @@ func TestClassificationRulesNoMatchFallsThrough(t *testing.T) {
 	p, d, r := classifyEnhancement("anything", "/tmp/ref", "any-target", false)
 	if p != "needs-review" || d != "adapt" || r != "catch-all" {
 		t.Fatalf("catch-all: got portability=%q disposition=%q reason=%q", p, d, r)
-	}
-}
-
-// --- AC-006 Phase 4: assisted apply ---
-
-// setupEnhanceFixture creates a template root and reference root for enhance tests.
-// Returns (templateRoot, referenceRoot). The reference has a modified Interaction Mode.
-func setupEnhanceFixture(t *testing.T) (string, string) {
-	t.Helper()
-	templateRoot := t.TempDir()
-	referenceRoot := filepath.Join(t.TempDir(), "ref")
-	if err := os.MkdirAll(referenceRoot, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, filepath.Join(templateRoot, "base", "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nBase purpose.\n\n## Interaction Mode\n\n- Default to discussion first.\n")
-	mustWrite(t, filepath.Join(templateRoot, "docs", "ac-template.md"), "# AC template\n")
-	mustWrite(t, filepath.Join(referenceRoot, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nBase purpose.\n\n## Interaction Mode\n\n- Default to discussion first.\n- Added authorization rule.\n")
-	return templateRoot, referenceRoot
-}
-
-func TestRunEnhanceApplyWritesProposal(t *testing.T) {
-	t.Parallel()
-	templateRoot, referenceRoot := setupEnhanceFixture(t)
-
-	cfg := Config{Mode: ModeEnhance, Reference: referenceRoot, Apply: true}
-	if err := RunEnhance(os.DirFS(templateRoot), templateRoot, cfg); err != nil {
-		t.Fatalf("RunEnhance() error = %v", err)
-	}
-
-	// AC doc should still be created
-	acDoc := findACDoc(t, filepath.Join(templateRoot, "docs"))
-	if acDoc == "" {
-		t.Fatal("expected AC doc to be created even with --apply")
-	}
-
-	// Proposal should exist for AGENTS.md
-	proposal := proposalPath(filepath.Join(templates.DirPath(templateRoot), "base", "AGENTS.md"))
-	if _, err := os.Stat(proposal); err != nil {
-		t.Fatalf("expected proposal file at %s, got error: %v", proposal, err)
-	}
-
-	content, _ := os.ReadFile(proposal)
-	if !strings.Contains(string(content), "Added authorization rule") {
-		t.Fatal("proposal should contain reference content")
-	}
-}
-
-func TestRunEnhanceApplyStillCreatesACDoc(t *testing.T) {
-	t.Parallel()
-	templateRoot, referenceRoot := setupEnhanceFixture(t)
-
-	cfg := Config{Mode: ModeEnhance, Reference: referenceRoot, Apply: true}
-	if err := RunEnhance(os.DirFS(templateRoot), templateRoot, cfg); err != nil {
-		t.Fatalf("RunEnhance() error = %v", err)
-	}
-
-	acDoc := findACDoc(t, filepath.Join(templateRoot, "docs"))
-	if acDoc == "" {
-		t.Fatal("--apply should not skip AC doc creation")
-	}
-}
-
-func TestRunEnhanceApplyNewTargetStillWritesProposal(t *testing.T) {
-	t.Parallel()
-
-	templateRoot := t.TempDir()
-	referenceRoot := filepath.Join(t.TempDir(), "ref")
-	if err := os.MkdirAll(referenceRoot, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	mustWrite(t, filepath.Join(templateRoot, "base", "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nBase purpose.\n\n## Interaction Mode\n\n- Default to discussion first.\n")
-	mustWrite(t, filepath.Join(templateRoot, "docs", "ac-template.md"), "# AC template\n")
-	// Reference has a file that maps to a template target that does NOT exist
-	mustWrite(t, filepath.Join(referenceRoot, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nBase purpose.\n\n## Interaction Mode\n\n- Default to discussion first.\n- New constraint.\n")
-
-	cfg := Config{Mode: ModeEnhance, Reference: referenceRoot, Apply: true}
-	if err := RunEnhance(os.DirFS(templateRoot), templateRoot, cfg); err != nil {
-		t.Fatalf("RunEnhance() error = %v", err)
-	}
-
-	// Even though base/AGENTS.md exists, proposal should be at the proposal path, not overwriting
-	proposal := proposalPath(filepath.Join(templates.DirPath(templateRoot), "base", "AGENTS.md"))
-	if _, err := os.Stat(proposal); err != nil {
-		t.Fatalf("expected proposal file, got error: %v", err)
-	}
-	// Live file should be unchanged
-	live, _ := os.ReadFile(filepath.Join(templateRoot, "base", "AGENTS.md"))
-	if strings.Contains(string(live), "New constraint") {
-		t.Fatal("--apply should not overwrite the live template file")
-	}
-}
-
-func TestRunEnhanceApplyDryRunWritesNothing(t *testing.T) {
-	t.Parallel()
-	templateRoot, referenceRoot := setupEnhanceFixture(t)
-
-	cfg := Config{Mode: ModeEnhance, Reference: referenceRoot, Apply: true, DryRun: true}
-	if err := RunEnhance(os.DirFS(templateRoot), templateRoot, cfg); err != nil {
-		t.Fatalf("RunEnhance() error = %v", err)
-	}
-
-	// No AC doc
-	acDoc := findACDoc(t, filepath.Join(templateRoot, "docs"))
-	if acDoc != "" {
-		t.Fatalf("dry-run should not create AC doc, found: %s", acDoc)
-	}
-
-	// No proposal files
-	proposal := proposalPath(filepath.Join(templates.DirPath(templateRoot), "base", "AGENTS.md"))
-	if _, err := os.Stat(proposal); err == nil {
-		t.Fatal("dry-run should not create proposal files")
-	}
-}
-
-func TestValidateConfigApplyRequiresEnhance(t *testing.T) {
-	t.Parallel()
-	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeCode, RepoName: "r", Purpose: "p", Stack: "Go", Apply: true})
-	if err == nil {
-		t.Fatal("expected error for --apply with non-enhance mode")
-	}
-	if !strings.Contains(err.Error(), "--apply") {
-		t.Fatalf("error should mention --apply, got: %v", err)
-	}
-}
-
-func TestRunEnhanceWithoutApplyNoProposals(t *testing.T) {
-	t.Parallel()
-	templateRoot, referenceRoot := setupEnhanceFixture(t)
-
-	cfg := Config{Mode: ModeEnhance, Reference: referenceRoot}
-	if err := RunEnhance(os.DirFS(templateRoot), templateRoot, cfg); err != nil {
-		t.Fatalf("RunEnhance() error = %v", err)
-	}
-
-	// Should create AC doc but no proposals
-	proposal := proposalPath(filepath.Join(templates.DirPath(templateRoot), "base", "AGENTS.md"))
-	if _, err := os.Stat(proposal); err == nil {
-		t.Fatal("enhance without --apply should not create proposal files")
-	}
-}
-
-func TestRunEnhanceApplyGovernanceProposesWholeFile(t *testing.T) {
-	t.Parallel()
-	templateRoot, referenceRoot := setupEnhanceFixture(t)
-
-	cfg := Config{Mode: ModeEnhance, Reference: referenceRoot, Apply: true}
-	if err := RunEnhance(os.DirFS(templateRoot), templateRoot, cfg); err != nil {
-		t.Fatalf("RunEnhance() error = %v", err)
-	}
-
-	proposal := proposalPath(filepath.Join(templates.DirPath(templateRoot), "base", "AGENTS.md"))
-	content, err := os.ReadFile(proposal)
-	if err != nil {
-		t.Fatalf("expected governance proposal, got error: %v", err)
-	}
-	// Should contain the entire reference AGENTS.md, not just the changed section
-	if !strings.Contains(string(content), "## Purpose") {
-		t.Fatal("governance proposal should contain the full file, not just the changed section")
-	}
-	if !strings.Contains(string(content), "Added authorization rule") {
-		t.Fatal("governance proposal should contain the reference content")
 	}
 }
 
@@ -4496,7 +4315,7 @@ func TestSyncHelpPrintsFlags(t *testing.T) {
 func TestEnhanceHelpPrintsFlags(t *testing.T) {
 	t.Parallel()
 	output := ModeHelp(ModeEnhance)
-	for _, flag := range []string{"-r", "-a", "-d"} {
+	for _, flag := range []string{"-r", "-d"} {
 		if !strings.Contains(output, flag) {
 			t.Fatalf("enhance help should contain %q, got:\n%s", flag, output)
 		}

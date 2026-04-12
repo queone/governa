@@ -58,7 +58,6 @@ type Config struct {
 	Style              string
 	InitGit            bool
 	DryRun             bool
-	Apply              bool
 	Input              io.Reader // interactive prompt source; nil defaults to os.Stdin
 }
 
@@ -111,7 +110,6 @@ type flagValues struct {
 	style              string
 	initGit            bool
 	dryRun             bool
-	apply              bool
 }
 
 func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
@@ -155,8 +153,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.BoolVar(&values.initGit, "init-git", false, "initialize git if target is not already a repo")
 	fset.BoolVar(&values.dryRun, "d", false, "preview changes without writing")
 	fset.BoolVar(&values.dryRun, "dry-run", false, "preview changes without writing")
-	fset.BoolVar(&values.apply, "a", false, "write .template-proposed files for actionable candidates (enhance only)")
-	fset.BoolVar(&values.apply, "apply", false, "write .template-proposed files for actionable candidates (enhance only)")
 	if slices.Contains(args, "-?") || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
 		printModeHelp(mode)
 		return Config{}, true, nil
@@ -190,7 +186,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		Style:              strings.TrimSpace(values.style),
 		InitGit:            values.initGit,
 		DryRun:             values.dryRun,
-		Apply:              values.apply,
 	}
 	// Validation is deferred to runSync (after prompts) for ModeSync.
 	// For enhance, validate immediately.
@@ -218,8 +213,6 @@ func ModeHelp(mode Mode) string {
 	case ModeEnhance:
 		return color.FormatUsage("governa enhance [options]", []color.UsageLine{
 			{Flag: "-r, --reference", Desc: "reference repo to review for improvements"},
-			{Flag: "-a, --apply", Desc: "write .template-proposed files for actionable candidates"},
-			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
 			{Flag: "-d, --dry-run", Desc: "preview changes without writing"},
 		}, "Without -r: self-review embedded vs on-disk templates. With -r: review reference repo.")
 	}
@@ -402,9 +395,6 @@ func validateConfig(cfg Config) error {
 		// -r is optional: empty means self-review mode
 	default:
 		return errors.New("unsupported mode")
-	}
-	if cfg.Apply && cfg.Mode != ModeEnhance {
-		return errors.New("--apply is only valid with enhance mode")
 	}
 	return nil
 }
@@ -764,12 +754,7 @@ func RunEnhance(tfs fs.FS, repoRoot string, cfg Config) error {
 		default:
 			fmt.Printf("dry-run write %s (enhancement AC doc)\n", acPath)
 		}
-		if cfg.Apply {
-			if err := applyProposals(repoRoot, selected, deferred, true); err != nil {
-				return err
-			}
-		}
-		fmt.Println("dry-run: no template changes applied")
+		fmt.Println("dry-run: no changes applied")
 		return nil
 	}
 	if err := os.MkdirAll(docsDir, 0o755); err != nil {
@@ -790,12 +775,6 @@ func RunEnhance(tfs fs.FS, repoRoot string, cfg Config) error {
 	default:
 		fmt.Printf("write %s (enhancement AC doc)\n", acPath)
 	}
-	if cfg.Apply {
-		if err := applyProposals(repoRoot, selected, deferred, false); err != nil {
-			return err
-		}
-	}
-	fmt.Println("enhance mode is review-first: no template changes applied")
 	return nil
 }
 
@@ -903,38 +882,6 @@ func PrintSelfReview(deltas []SelfReviewDelta, version string) {
 		}
 	}
 	fmt.Printf("summary: %d changed, %d added, %d removed\n", changed, added, removed)
-}
-
-func applyProposals(repoRoot string, selected EnhancementCandidate, deferred []EnhancementCandidate, dryRun bool) error {
-	candidates := []EnhancementCandidate{selected}
-	for _, d := range deferred {
-		if isActionable(d) {
-			candidates = append(candidates, d)
-		}
-	}
-
-	for _, c := range candidates {
-		refContent, err := os.ReadFile(c.Path)
-		if err != nil {
-			return fmt.Errorf("read reference file %s: %w", c.Path, err)
-		}
-
-		targetPath := filepath.Join(templates.DirPath(repoRoot), c.TemplateTarget)
-		proposal := proposalPath(targetPath)
-
-		if dryRun {
-			fmt.Printf("dry-run propose %s\n", proposal)
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(proposal), 0o755); err != nil {
-			return fmt.Errorf("create directory for proposal: %w", err)
-		}
-		if err := os.WriteFile(proposal, refContent, 0o644); err != nil {
-			return fmt.Errorf("write proposal %s: %w", proposal, err)
-		}
-		fmt.Printf("propose %s\n", proposal)
-	}
-	return nil
 }
 
 func AssessTarget(root string, repoType RepoType) (Assessment, error) {
@@ -2649,17 +2596,6 @@ func skipIfExists(op operation) operation {
 		return operation{kind: "skip"}
 	}
 	return op
-}
-
-func proposalPath(path string) string {
-	dir := filepath.Dir(path)
-	base := filepath.Base(path)
-	ext := filepath.Ext(base)
-	name := strings.TrimSuffix(base, ext)
-	if ext == "" {
-		return filepath.Join(dir, name+".template-proposed")
-	}
-	return filepath.Join(dir, name+".template-proposed"+ext)
 }
 
 // readTemplateOrRoot reads a file from the template FS first; if not found,

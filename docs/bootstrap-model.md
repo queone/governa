@@ -76,12 +76,11 @@ Behavior:
 - extract candidate improvements in governance, overlays, workflow, or bootstrap behavior
 - compare those candidates against this template's current files
 - create an AC doc for the highest-priority actionable candidate, if any
-- with `--apply`, write `.template-proposed` files alongside template targets for actionable candidates (never overwrites live files)
 - patch this template repo only after explicit approval
 
 `enhance` is not a blind sync operation.
 It is a review-driven, AC-first proposal flow for template maintainers.
-The `--apply` flag adds proposal files to assist the merge step, but the AC doc is always created first and proposals are always side-by-side artifacts requiring manual review.
+The AC doc is the only output — no `.template-proposed` files are written.
 
 ## Implementation Constraints
 
@@ -119,7 +118,6 @@ Recommended flag mapping (mode is determined by subcommand, not a flag):
 -r, --reference
 -g, --init-git
 -d, --dry-run
--a, --apply
 ```
 
 This convention should be documented and kept consistent across governa subcommands.
@@ -167,7 +165,7 @@ Subcommand interface:
 
 ```text
 governa sync [-t <target>] [-y CODE|DOC] [-n "<name>"] [-p "<purpose>"] [-s "<stack>"] [-g] [-d]
-governa enhance [-r <reference>] [-d] [-a]
+governa enhance [-r <reference>] [-d]
 governa version
 ```
 
