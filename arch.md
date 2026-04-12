@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide a self-contained template repo for governed `CODE` and `DOC` repositories, plus deterministic tooling to bootstrap, adopt, and enhance that governance model.
+Provide a self-contained template repo for governed `CODE` and `DOC` repositories, plus deterministic tooling to sync and enhance that governance model.
 
 ## System Summary
 
@@ -23,21 +23,21 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 
 - `internal/templates/base/`: cross-repo governance artifacts such as `AGENTS.md`
 - `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`
-- `cmd/governa`: installable CLI binary for `new`, `adopt`, `enhance`, and self-review
+- `cmd/governa`: installable CLI binary for `sync`, `enhance`, and self-review
 - `cmd/build` and `cmd/rel`: Go entrypoints for local validation and release
 - `internal/`: shared logic for bootstrap, build, release, colorized CLI output, and template access
 - `examples/`: rendered sample repos used to verify that output is concrete and usable
 
 ## Data And Control Flow
 
-For `new` and `adopt`, an agent runs from inside a target repo, points at this repo as read-only source material, and invokes `governa` to assess the target, render base plus overlay files, and write concrete output.
+For `sync`, a user runs `governa sync` from inside a target repo. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output.
 
 For `enhance`, a maintainer runs from inside this repo, points at another governed repo, and reviews governed sections and mapped overlay artifacts. Governance sections are compared at the constraint level (not just keyword signals), and structured markdown files are diffed per-section. When a `.governa-manifest` exists in the reference repo, enhance performs three-way comparison to distinguish user customizations from stale template content. Classification uses a data-driven rule table. If actionable improvements are found, enhance creates an AC doc under `docs/` for the highest-priority candidate. With `--apply`, it also writes `.template-proposed` files alongside template targets for assisted merge. No template files are overwritten automatically.
 
 ## Architecture Notes
 
 - generated repos must remain self-contained and must not depend on this repo at runtime
-- this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `new` or `adopt`
+- this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `sync`
 - `enhance` is report-first and intentionally conservative
 - shell wrappers are conveniences only; the canonical implementation lives in Go
 - `docs/agent-roles/` provides role-specific behavior docs (DEV, QA) that supplement the shared governance contract; role selection is instruction-driven and defined in `Interaction Mode`

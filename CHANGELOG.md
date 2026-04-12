@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.9.0 | AC30: `sync` replaces `new` and `adopt` — single subcommand with auto-detection and interactive prompts, per-subcommand help output, repo-wide command migration |
 | 0.8.2 | AC29: AGENTS.md preamble and Project Rules section, AC-first workflow rule, ac-example.md removed, ac-template improvements from skout, adopt knowledge/ skip, review doc verbosity and structural comparison, cherry-pick false positive fix |
 | 0.8.1 | AC28: overlay color.go replaced with shared internal/color import, review doc always at repo root, finer review categories (cherry-pick vs no action likely), identical file detection, DEV role AC-file-first rule |
 | 0.8.0 | AC25–AC27: build-time drift check, zero-flag adopt with auto-inferred params, content-aware adopt review document replacing .template-proposed files |

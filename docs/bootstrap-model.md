@@ -1,15 +1,11 @@
 # Bootstrap Model
 
-This template needs to support two distinct workflows from a target repo:
+This template supports two workflows:
 
-- bootstrap a new repo
-- adopt the methodology into an existing repo
+- `sync` — bootstrap a new repo or update governance in an existing repo (single command, auto-detected)
+- `enhance` — improve this template from lessons captured in another governed repo
 
-It also needs one template-maintenance workflow:
-
-- enhance this template from lessons captured in another governed repo
-
-All workflows should use the same deterministic command surface and the same template source tree.
+Both workflows use the same deterministic command surface and the same template source tree.
 
 ## Core Principle
 
@@ -25,55 +21,49 @@ Exception:
 
 The intended user flow is:
 
-1. create or open the target directory
-2. start a coding agent in that directory
-3. tell the agent where this template repo lives, for example `<template-root>`
-4. ask the agent to bootstrap or adopt the governance template
-5. let the agent inspect the current repo state and gather missing inputs
-6. render concrete files into the target repo
+1. open the target directory (new or existing)
+2. run `governa sync`
+3. governa detects whether this is a new repo, a first-time sync, or a re-sync
+4. prompts for any missing parameters (or uses flags/manifest/inference)
+5. renders concrete files into the target repo
 
 This means the template must be organized so an agent can reason about it easily from another working directory.
 
 ## Supported Modes
 
-### Mode: `new`
+### Mode: `sync`
 
-Use when the target directory is empty or effectively empty.
+Single entry point for both new and existing repos. Detection order:
 
-Behavior:
+1. `.governa-manifest` or `.repokit-manifest` found → **re-sync** (existing repo with stored params)
+2. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/agent-roles/) → **first sync** (existing repo, no stored params)
+3. Otherwise → **new repo** bootstrap
 
-- require `repo type`: `CODE` or `DOC`
-- require `repo name`
-- require `project purpose`
-- require `stack/platform` if `CODE`
-- require `publishing platform/style` if `DOC`
-- copy base files
-- apply the selected overlay
-- fill placeholders
+#### New-repo behavior
+
+- prompt for missing parameters interactively (repo type, name, purpose, stack/platform)
+- all flags (`-n`, `-y`, `-p`, `-s`, `-u`, `-v`) bypass individual prompts
+- copy base files, apply the selected overlay, fill placeholders
 - create `CLAUDE.md -> AGENTS.md`
 - write `TEMPLATE_VERSION`
 - optionally initialize git if the target is not already a repo
 
-### Mode: `adopt`
-
-Use when the target already contains an existing project.
-
-Behavior:
+#### Existing-repo behavior
 
 - inspect current files before writing anything
-- infer metadata (repo name, purpose, type, stack) from the target directory; explicit flags override; on re-adopt, stored manifest params are reused
+- resolve metadata via priority: (1) explicit flag, (2) stored manifest params, (3) inference from target directory, (4) interactive prompt
 - create missing governed files from the template
 - score existing file collisions using content-aware comparison and report in a consolidated review document
 - avoid broad rewrites of user-authored docs unless explicitly approved
 - write `TEMPLATE_VERSION`
 - create `CLAUDE.md -> AGENTS.md` if missing
 
-`adopt` must be conservative by default.
+Sync is conservative by default for existing repos.
 It writes new files directly and reports collisions in a single review document with per-file recommendations.
 
-For `AGENTS.md` specifically, adopt checks which governed sections are present. If all governed sections exist, the file scores as `keep`. If sections are missing, the governance patch (with missing sections appended) is included in the review document for the operator to apply manually. Existing content is never modified automatically.
+For `AGENTS.md` specifically, sync checks which governed sections are present. If all governed sections exist, the file scores as `keep`. If sections are missing, the governance patch (with missing sections appended) is included in the review document for the operator to apply manually. Existing content is never modified automatically.
 
-Before writing files, `adopt` should also assess how well the template fits the target repo and report that result to the user.
+Before writing files, sync assesses how well the template fits the target repo and reports that result to the user.
 
 ### Mode: `enhance`
 
@@ -162,7 +152,7 @@ Recommended initial ownership model:
   - business docs
   - CI config
 
-For adoption mode, template-owned sections should be narrow and explicit.
+For sync on existing repos, template-owned sections should be narrow and explicit.
 `AGENTS.md` is the clearest case: it should be treated like a governed config file with named sections.
 
 ## Bootstrap Entry Point
@@ -176,18 +166,17 @@ go install github.com/kquo/governa/cmd/governa@latest
 Subcommand interface:
 
 ```text
-governa new [-t <target>] -y CODE|DOC -n "<name>" -p "<purpose>" [-s "<stack>"] [-g] [-d]
-governa adopt [-t <target>] [-y CODE|DOC] [-n "<name>"] [-p "<purpose>"] [-s "<stack>"] [-d]
+governa sync [-t <target>] [-y CODE|DOC] [-n "<name>"] [-p "<purpose>"] [-s "<stack>"] [-g] [-d]
 governa enhance [-r <reference>] [-d] [-a]
 governa version
 ```
 
-The agent may gather inputs interactively, but the command itself accepts explicit flags so runs are reproducible. If `target` is omitted for `new` or `adopt`, the command defaults to the current working directory.
+`sync` prompts interactively for missing parameters but accepts all flags for fully non-interactive use. If `target` is omitted, the command defaults to the current working directory.
 
 Mode-specific expectations:
 
-- `new`: requires `type`, `repo-name`, `purpose`, plus overlay-specific metadata
-- `adopt`: all parameters are resolved in priority order: (1) explicit flag, (2) stored manifest params from a previous adopt, (3) inference from the target directory. Repo name is inferred from the directory basename, purpose from the first `README.md` paragraph, stack from manifest files (`go.mod`, `package.json`, etc.), and type from `AssessTarget` signals. Required parameters error only if all three sources fail. On re-adopt, the manifest provides all previously stored values so no flags are needed
+- `sync` (new repo): prompts for type, repo-name, purpose, and overlay-specific metadata; flags bypass individual prompts
+- `sync` (existing repo): all parameters are resolved in priority order: (1) explicit flag, (2) stored manifest params, (3) inference from the target directory, (4) interactive prompt. Repo name is inferred from the directory basename, purpose from the first `README.md` paragraph, stack from manifest files (`go.mod`, `package.json`, etc.), and type from `AssessTarget` signals. On re-sync, the manifest provides all previously stored values so no flags or prompts are needed
 - `enhance` with `-r`: inspects a reference repo for portable improvements
 - `enhance` without `-r`: self-review comparing on-disk templates against the embedded baseline
 
@@ -197,7 +186,7 @@ The implementation lives in `cmd/governa/`.
 
 The coding agent should:
 
-- inspect the target repo before choosing `new` versus `adopt`
+- run `sync` in the target repo (detection is automatic)
 - inspect the reference repo before proposing `enhance` changes
 - explain what it plans to create or modify
 - gather missing required inputs
@@ -207,9 +196,9 @@ The coding agent should:
 The agent should not improvise template structure from memory.
 It should use this repo's concrete files and documented rules.
 
-## Adoption Safety Rules
+## Sync Safety Rules
 
-Adoption mode should avoid clobbering an existing repo.
+Sync for existing repos should avoid clobbering the repo.
 
 Rules:
 
@@ -221,9 +210,9 @@ Rules:
 - never rewrite an existing `AGENTS.md` wholesale unless the user explicitly requests replacement
 - preserve unrelated local changes
 
-## Adoption Fit Assessment
+## Sync Fit Assessment
 
-`adopt` should estimate template fit before applying changes.
+`sync` should estimate template fit before applying changes to existing repos.
 
 The first version does not need ML or scoring complexity.
 A deterministic report is enough.
@@ -300,14 +289,14 @@ The current implementation stops at the review stage and, when actionable improv
 
 ### Bootstrap Manifest
 
-During `new` and `adopt` bootstrap, governa writes a `.governa-manifest` file into the generated repo. This file records:
+During `sync`, governa writes a `.governa-manifest` file into the generated repo. This file records:
 
 - the template version used at bootstrap time
 - SHA-256 checksums of each generated file (after placeholder substitution)
 - the source template path and checksum for each file
 - adopt parameters (repo name, purpose, type, stack, and DOC-specific fields) so subsequent adopt runs can reuse them without flags
 
-The manifest enables three-way comparison during enhance: by comparing the current reference file against its bootstrap-time checksum, and the current template source against its bootstrap-time checksum, enhance can determine whether a difference came from user customization, template evolution, or both. Repos bootstrapped before this feature have no manifest and fall back to the original two-way comparison. Manifests written before parameter storage are backward compatible — missing params are inferred from the target directory on the next adopt run and stored in the updated manifest.
+The manifest enables three-way comparison during enhance: by comparing the current reference file against its bootstrap-time checksum, and the current template source against its bootstrap-time checksum, enhance can determine whether a difference came from user customization, template evolution, or both. Repos bootstrapped before this feature have no manifest and fall back to the original two-way comparison. Manifests written before parameter storage are backward compatible — missing params are inferred from the target directory on the next sync run and stored in the updated manifest.
 
 ## Why This Fits The Template Repo
 

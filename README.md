@@ -16,33 +16,30 @@ go install github.com/kquo/governa/cmd/governa@latest
 
 ## Modes
 
-### `new` and `adopt`
-Consumer modes, run from a target repo or empty directory. Governa is read-only source — templates are embedded in the binary.
+### `sync`
+Consumer mode, run from a target repo or empty directory. Governa is read-only source — templates are embedded in the binary.
 
-**`new`** — bootstrap an empty or near-empty directory into a governed `CODE` or `DOC` repo.
+`sync` detects whether the target is a new or existing repo and prompts interactively for any missing parameters. All flags still work for fully non-interactive use.
 
-```bash
-governa new -y CODE \
-  -n my-service \
-  -p "API gateway for internal services" \
-  -s "Go CLI"
-```
+**New repo** (empty directory):
 
 ```bash
-governa new -y DOC \
-  -n my-docs \
-  -p "Public developer documentation" \
-  -u "Static site generator" \
-  -v "Clear, factual, concise"
+governa sync
 ```
 
-**`adopt`** — apply governance to an existing repo with conservative behavior: fit assessment, content-aware collision scoring, and a single `governa-adopt-review.md` at the repo root. New files are written directly; collisions are scored as `keep`, `review: cherry-pick`, or `review: no action likely`. Identical files are detected and marked as `keep`.
+Or with flags to skip prompts:
 
 ```bash
-governa adopt
+governa sync -y CODE -n my-service -p "API gateway for internal services" -s "Go CLI"
 ```
 
-Repo name, purpose, type, and stack are inferred from the target directory (directory basename, `README.md` first paragraph, manifest files). Explicit flags override inference: `-n`, `-p`, `-y`, `-s`. On re-adopt, stored parameters from the `.governa-manifest` are reused automatically.
+**Existing repo** (governance artifacts or manifest found): applies governance with conservative behavior — fit assessment, content-aware collision scoring, and a single `governa-adopt-review.md` at the repo root. New files are written directly; collisions are scored as `keep`, `review: cherry-pick`, or `review: no action likely`.
+
+```bash
+governa sync
+```
+
+Repo name, purpose, type, and stack are inferred from the target directory (directory basename, `README.md` first paragraph, manifest files). Explicit flags override inference: `-n`, `-p`, `-y`, `-s`. On re-sync, stored parameters from the `.governa-manifest` are reused automatically.
 
 ### `enhance`
 Template-maintenance mode, run from inside this repo. The only mode that runs from governa itself and the only mode that can propose changes back into the template. Its purpose is to improve the entire templating set — base governance contract, overlays, and workflow patterns — that ships into all generated repos, as well as governa's own self-hosted governance.

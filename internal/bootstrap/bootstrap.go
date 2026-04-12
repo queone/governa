@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -22,8 +23,7 @@ import (
 type Mode string
 
 const (
-	ModeNew     Mode = "new"
-	ModeAdopt   Mode = "adopt"
+	ModeSync    Mode = "sync"
 	ModeEnhance Mode = "enhance"
 )
 
@@ -59,6 +59,7 @@ type Config struct {
 	InitGit            bool
 	DryRun             bool
 	Apply              bool
+	Input              io.Reader // interactive prompt source; nil defaults to os.Stdin
 }
 
 type Assessment struct {
@@ -115,10 +116,8 @@ type flagValues struct {
 
 func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
 	switch cfg.Mode {
-	case ModeNew:
-		return runNewOrAdopt(tfs, repoRoot, cfg, false)
-	case ModeAdopt:
-		return runNewOrAdopt(tfs, repoRoot, cfg, true)
+	case ModeSync:
+		return runSync(tfs, repoRoot, cfg)
 	case ModeEnhance:
 		return RunEnhance(tfs, repoRoot, cfg)
 	default:
@@ -159,10 +158,12 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.BoolVar(&values.apply, "a", false, "write .template-proposed files for actionable candidates (enhance only)")
 	fset.BoolVar(&values.apply, "apply", false, "write .template-proposed files for actionable candidates (enhance only)")
 	if slices.Contains(args, "-?") || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
+		printModeHelp(mode)
 		return Config{}, true, nil
 	}
 	if err := fset.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
+			printModeHelp(mode)
 			return Config{}, true, nil
 		}
 		return Config{}, false, err
@@ -191,12 +192,42 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		DryRun:             values.dryRun,
 		Apply:              values.apply,
 	}
-	if mode == ModeAdopt {
-		resolved, sources := resolveAdoptParams(cfg, target)
-		cfg = resolved
-		printParamSources(sources)
+	// Validation is deferred to runSync (after prompts) for ModeSync.
+	// For enhance, validate immediately.
+	if mode == ModeEnhance {
+		return cfg, false, validateConfig(cfg)
 	}
-	return cfg, false, validateConfig(cfg)
+	return cfg, false, nil
+}
+
+// ModeHelp returns mode-specific flag usage text.
+func ModeHelp(mode Mode) string {
+	switch mode {
+	case ModeSync:
+		return color.FormatUsage("governa sync [options]", []color.UsageLine{
+			{Flag: "-n, --repo-name", Desc: "repo name"},
+			{Flag: "-y, --type", Desc: "repo type: CODE or DOC"},
+			{Flag: "-p, --purpose", Desc: "project purpose"},
+			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos)"},
+			{Flag: "-u, --publishing-platform", Desc: "publishing platform (DOC repos)"},
+			{Flag: "-v, --style", Desc: "style or voice (DOC repos)"},
+			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
+			{Flag: "-g, --init-git", Desc: "initialize git if target is not a repo"},
+			{Flag: "-d, --dry-run", Desc: "preview changes without writing"},
+		}, "Detects whether the target is a new or existing repo and prompts for missing parameters.")
+	case ModeEnhance:
+		return color.FormatUsage("governa enhance [options]", []color.UsageLine{
+			{Flag: "-r, --reference", Desc: "reference repo to review for improvements"},
+			{Flag: "-a, --apply", Desc: "write .template-proposed files for actionable candidates"},
+			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
+			{Flag: "-d, --dry-run", Desc: "preview changes without writing"},
+		}, "Without -r: self-review embedded vs on-disk templates. With -r: review reference repo.")
+	}
+	return ""
+}
+
+func printModeHelp(mode Mode) {
+	fmt.Fprint(os.Stderr, ModeHelp(mode))
 }
 
 func inferRepoName(targetDir string) string {
@@ -346,7 +377,7 @@ func printParamSources(sources []paramSource) {
 
 func validateConfig(cfg Config) error {
 	switch cfg.Mode {
-	case ModeNew:
+	case ModeSync:
 		if cfg.RepoName == "" {
 			return errors.New("repo name is required: use -n or --repo-name")
 		}
@@ -367,39 +398,107 @@ func validateConfig(cfg Config) error {
 				return errors.New("style is required for DOC repos: use -v or --style")
 			}
 		}
-	case ModeAdopt:
-		if cfg.RepoName == "" {
-			return errors.New("repo name is required: use -n or --repo-name")
-		}
-		if cfg.Purpose == "" {
-			return errors.New("project purpose is required: use -p or --purpose")
-		}
-		if cfg.Type != "" && cfg.Type != RepoTypeCode && cfg.Type != RepoTypeDoc {
-			return errors.New("repo type must be CODE or DOC when provided: use -y or --type")
-		}
-		if cfg.Type == RepoTypeCode && cfg.Stack == "" {
-			return errors.New("stack/platform is required for CODE repos: use -s or --stack")
-		}
-		if cfg.Type == RepoTypeDoc {
-			if cfg.PublishingPlatform == "" {
-				return errors.New("publishing platform is required for DOC repos: use -u or --publishing-platform")
-			}
-			if cfg.Style == "" {
-				return errors.New("style is required for DOC repos: use -v or --style")
-			}
-		}
 	case ModeEnhance:
 		// -r is optional: empty means self-review mode
 	default:
-		return errors.New("mode is required: use -m or --mode")
+		return errors.New("unsupported mode")
 	}
 	if cfg.Apply && cfg.Mode != ModeEnhance {
-		return errors.New("--apply is only valid with --mode enhance")
+		return errors.New("--apply is only valid with enhance mode")
 	}
 	return nil
 }
 
-func runNewOrAdopt(tfs fs.FS, repoRoot string, cfg Config, adopt bool) error {
+// detectSyncMode inspects the target directory and returns one of:
+//   - "re-sync"  — manifest found (adopt path with manifest defaults)
+//   - "adopt"    — governance artifacts found but no manifest
+//   - "new"      — fresh directory
+func detectSyncMode(targetDir string) string {
+	// Check for manifest first (authoritative).
+	for _, name := range []string{manifestFileName, legacyManifestFileName} {
+		if _, err := os.Stat(filepath.Join(targetDir, name)); err == nil {
+			return "re-sync"
+		}
+	}
+	// Check for governance artifacts.
+	for _, artifact := range []string{"AGENTS.md", "CLAUDE.md"} {
+		if _, err := os.Stat(filepath.Join(targetDir, artifact)); err == nil {
+			return "adopt"
+		}
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "docs", "agent-roles")); err == nil {
+		return "adopt"
+	}
+	return "new"
+}
+
+// promptRead reads a single line from the scanner. Returns empty string on EOF.
+func promptRead(sc *bufio.Scanner) string {
+	if sc.Scan() {
+		return strings.TrimSpace(sc.Text())
+	}
+	return ""
+}
+
+// promptParam prints a prompt to stderr and reads a response. If the response
+// is empty, returns defaultVal.
+func promptParam(prompt string, defaultVal string, sc *bufio.Scanner) string {
+	fmt.Fprint(os.Stderr, prompt)
+	answer := promptRead(sc)
+	if answer == "" {
+		return defaultVal
+	}
+	return answer
+}
+
+// promptMissing fills in any missing Config fields by prompting interactively.
+// Fields already set (via flags, manifest, or inference) are not prompted.
+func promptMissing(cfg *Config, targetDir string) {
+	r := cfg.Input
+	if r == nil {
+		r = os.Stdin
+	}
+	sc := bufio.NewScanner(r)
+
+	if cfg.RepoName == "" {
+		basename := inferRepoName(targetDir)
+		answer := promptParam(fmt.Sprintf("Use '%s' as repo name? [Y/n]: ", basename), "", sc)
+		if answer == "" || strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes") {
+			cfg.RepoName = basename
+		} else {
+			cfg.RepoName = promptParam("Repo name: ", "", sc)
+		}
+	}
+
+	if cfg.Type == "" {
+		for cfg.Type != RepoTypeCode && cfg.Type != RepoTypeDoc {
+			answer := promptParam("Repo type — CODE or DOC: ", "", sc)
+			if answer == "" {
+				break // EOF or empty input; let validation catch it
+			}
+			cfg.Type = RepoType(strings.ToUpper(answer))
+		}
+	}
+
+	if cfg.Purpose == "" {
+		cfg.Purpose = promptParam("Project purpose (one line): ", "", sc)
+	}
+
+	if cfg.Type == RepoTypeCode && cfg.Stack == "" {
+		cfg.Stack = promptParam("Stack (Go, Node, Rust, Python, Java): ", "", sc)
+	}
+
+	if cfg.Type == RepoTypeDoc {
+		if cfg.PublishingPlatform == "" {
+			cfg.PublishingPlatform = promptParam("Publishing platform: ", "", sc)
+		}
+		if cfg.Style == "" {
+			cfg.Style = promptParam("Style or voice: ", "", sc)
+		}
+	}
+}
+
+func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	targetAbs, err := filepath.Abs(cfg.Target)
 	if err != nil {
 		return fmt.Errorf("resolve target path: %w", err)
@@ -408,20 +507,38 @@ func runNewOrAdopt(tfs fs.FS, repoRoot string, cfg Config, adopt bool) error {
 		return fmt.Errorf("create target directory: %w", err)
 	}
 
+	syncMode := detectSyncMode(targetAbs)
+	adopt := syncMode != "new"
+
+	// For adopt/re-sync, resolve params from manifest and inference.
+	if adopt {
+		resolved, sources := resolveAdoptParams(cfg, targetAbs)
+		cfg = resolved
+		printParamSources(sources)
+	}
+
+	// Infer type from AssessTarget before prompting (flag > manifest > infer > prompt).
 	assessment, err := AssessTarget(targetAbs, cfg.Type)
 	if err != nil {
 		return err
 	}
-	if adopt && cfg.Type == "" {
+	if cfg.Type == "" {
 		switch assessment.RepoShape {
 		case "likely CODE":
 			cfg.Type = RepoTypeCode
 		case "likely DOC":
 			cfg.Type = RepoTypeDoc
-		default:
-			return errors.New("repo type could not be inferred confidently for adopt mode; use -y or --type")
 		}
 	}
+
+	// Prompt for any still-missing parameters.
+	promptMissing(&cfg, targetAbs)
+
+	// Validate after prompts have filled gaps.
+	if err := validateConfig(cfg); err != nil {
+		return err
+	}
+
 	printAssessment(cfg.Mode, targetAbs, assessment)
 
 	canonical, err := planCanonical(tfs, repoRoot, cfg, targetAbs)
@@ -922,7 +1039,7 @@ func readModulePath(targetRoot string) string {
 
 func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([]operation, error) {
 	modulePath := readModulePath(targetRoot)
-	if modulePath == "" && cfg.Mode == ModeNew {
+	if modulePath == "" {
 		// New repos don't have go.mod yet; use repo name as placeholder
 		modulePath = cfg.RepoName
 	}
@@ -2192,9 +2309,9 @@ func scoreGovernanceCollision(op operation) collisionScore {
 
 func renderAdoptReview(scores []collisionScore) string {
 	var b strings.Builder
-	fmt.Fprintln(&b, "# governa adopt review")
+	fmt.Fprintln(&b, "# governa sync review")
 	fmt.Fprintln(&b, "")
-	fmt.Fprintf(&b, "Generated by `governa adopt`. Review each recommendation and take action.\n\n")
+	fmt.Fprintf(&b, "Generated by `governa sync`. Review each recommendation and take action.\n\n")
 
 	fmt.Fprintln(&b, "## Recommendations")
 	fmt.Fprintln(&b, "")

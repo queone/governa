@@ -874,7 +874,7 @@ func TestDisplayReferencePathEmpty(t *testing.T) {
 
 func TestParseModeArgsHelpReturnsCleanExit(t *testing.T) {
 	t.Parallel()
-	_, help, err := ParseModeArgs(ModeNew, []string{"--help"})
+	_, help, err := ParseModeArgs(ModeSync, []string{"--help"})
 	if err != nil {
 		t.Fatalf("ParseModeArgs(--help) error = %v, want nil", err)
 	}
@@ -885,7 +885,7 @@ func TestParseModeArgsHelpReturnsCleanExit(t *testing.T) {
 
 func TestParseModeArgsInvalidFlagReturnsError(t *testing.T) {
 	t.Parallel()
-	_, help, err := ParseModeArgs(ModeNew, []string{"--bogus-flag"})
+	_, help, err := ParseModeArgs(ModeSync, []string{"--bogus-flag"})
 	if err == nil {
 		t.Fatal("ParseModeArgs(--bogus-flag) expected error")
 	}
@@ -898,7 +898,7 @@ func TestParseModeArgsInvalidFlagReturnsError(t *testing.T) {
 
 func TestValidateConfigNewCodeValid(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, RepoName: "r", Purpose: "p", Stack: "Go CLI"})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeCode, RepoName: "r", Purpose: "p", Stack: "Go CLI"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -906,7 +906,7 @@ func TestValidateConfigNewCodeValid(t *testing.T) {
 
 func TestValidateConfigNewDocValid(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", PublishingPlatform: "Hugo", Style: "concise"})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", PublishingPlatform: "Hugo", Style: "concise"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -914,7 +914,7 @@ func TestValidateConfigNewDocValid(t *testing.T) {
 
 func TestValidateConfigNewMissingName(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, Purpose: "p", Stack: "Go"})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeCode, Purpose: "p", Stack: "Go"})
 	if err == nil {
 		t.Fatal("expected error for missing repo name")
 	}
@@ -922,7 +922,7 @@ func TestValidateConfigNewMissingName(t *testing.T) {
 
 func TestValidateConfigNewMissingPurpose(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, RepoName: "r", Stack: "Go"})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeCode, RepoName: "r", Stack: "Go"})
 	if err == nil {
 		t.Fatal("expected error for missing purpose")
 	}
@@ -930,7 +930,7 @@ func TestValidateConfigNewMissingPurpose(t *testing.T) {
 
 func TestValidateConfigNewBadType(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: "INVALID", RepoName: "r", Purpose: "p"})
+	err := validateConfig(Config{Mode: ModeSync, Type: "INVALID", RepoName: "r", Purpose: "p"})
 	if err == nil {
 		t.Fatal("expected error for invalid type")
 	}
@@ -938,7 +938,7 @@ func TestValidateConfigNewBadType(t *testing.T) {
 
 func TestValidateConfigNewCodeMissingStack(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, RepoName: "r", Purpose: "p"})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeCode, RepoName: "r", Purpose: "p"})
 	if err == nil {
 		t.Fatal("expected error for missing stack")
 	}
@@ -946,7 +946,7 @@ func TestValidateConfigNewCodeMissingStack(t *testing.T) {
 
 func TestValidateConfigNewDocMissingPlatform(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", Style: "concise"})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", Style: "concise"})
 	if err == nil {
 		t.Fatal("expected error for missing publishing platform")
 	}
@@ -954,25 +954,25 @@ func TestValidateConfigNewDocMissingPlatform(t *testing.T) {
 
 func TestValidateConfigNewDocMissingStyle(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", PublishingPlatform: "Hugo"})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeDoc, RepoName: "r", Purpose: "p", PublishingPlatform: "Hugo"})
 	if err == nil {
 		t.Fatal("expected error for missing style")
 	}
 }
 
-func TestValidateConfigAdoptAllowsEmptyType(t *testing.T) {
+func TestValidateConfigSyncRequiresType(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeAdopt, RepoName: "r", Purpose: "p"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := validateConfig(Config{Mode: ModeSync, RepoName: "r", Purpose: "p"})
+	if err == nil {
+		t.Fatal("expected error for missing type in sync mode")
 	}
 }
 
-func TestValidateConfigAdoptRejectsBadType(t *testing.T) {
+func TestValidateConfigSyncRejectsBadType(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeAdopt, Type: "WRONG", RepoName: "r", Purpose: "p"})
+	err := validateConfig(Config{Mode: ModeSync, Type: "WRONG", RepoName: "r", Purpose: "p"})
 	if err == nil {
-		t.Fatal("expected error for invalid adopt type")
+		t.Fatal("expected error for invalid sync type")
 	}
 }
 
@@ -1285,7 +1285,7 @@ func TestPlanRenderCodeOverlay(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "build.sh.tmpl"), "#!/bin/bash\necho {{REPO_NAME}}\n")
 
 	cfg := Config{
-		Mode:     ModeNew,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
@@ -1329,7 +1329,7 @@ func TestPlanRenderAdoptSkipsExistingGovernance(t *testing.T) {
 	mustWrite(t, filepath.Join(targetRoot, "AGENTS.md"), "# Existing governance\n")
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
@@ -1363,7 +1363,7 @@ func TestPlanRenderNonGoStackSkipsGoFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(root, "overlays", "code", "files", "internal", "color", "color.go.tmpl"), "package color\n")
 
 	cfg := Config{
-		Mode:     ModeNew,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
@@ -1743,15 +1743,15 @@ func TestBootstrapNewWritesManifest(t *testing.T) {
 	targetDir := t.TempDir()
 
 	cfg := Config{
-		Mode:     ModeNew,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, false); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	manifestPath := filepath.Join(targetDir, manifestFileName)
@@ -1790,15 +1790,15 @@ func TestBootstrapAdoptWritesManifestWithCanonicalChecksums(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "TEMPLATE_VERSION"), "0.0.1\n")
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, true); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	manifestPath := filepath.Join(targetDir, manifestFileName)
@@ -2394,7 +2394,7 @@ func TestRunEnhanceApplyDryRunWritesNothing(t *testing.T) {
 
 func TestValidateConfigApplyRequiresEnhance(t *testing.T) {
 	t.Parallel()
-	err := validateConfig(Config{Mode: ModeNew, Type: RepoTypeCode, RepoName: "r", Purpose: "p", Stack: "Go", Apply: true})
+	err := validateConfig(Config{Mode: ModeSync, Type: RepoTypeCode, RepoName: "r", Purpose: "p", Stack: "Go", Apply: true})
 	if err == nil {
 		t.Fatal("expected error for --apply with non-enhance mode")
 	}
@@ -2561,15 +2561,15 @@ func TestAdoptPatchesMissingSections(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting purpose.\n")
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, true); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// Original file should be untouched
@@ -2608,15 +2608,15 @@ func TestAdoptSkipsWhenAllSectionsPresent(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), string(templateAgents))
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, true); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// No .template-proposed should exist
@@ -2632,15 +2632,15 @@ func TestAdoptNoExistingAgentsWritesDirectly(t *testing.T) {
 	targetDir := t.TempDir()
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, true); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// AGENTS.md should be written directly (no proposal)
@@ -2666,15 +2666,15 @@ func TestBootstrapNewProducesAgentRoles(t *testing.T) {
 	targetDir := t.TempDir()
 
 	cfg := Config{
-		Mode:     ModeNew,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, false); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	for _, rel := range []string{
@@ -2723,15 +2723,15 @@ func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# Existing AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n")
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, true); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// Existing files should be preserved
@@ -2769,15 +2769,15 @@ func TestBootstrapNewProducesEnrichedDocs(t *testing.T) {
 	targetDir := t.TempDir()
 
 	cfg := Config{
-		Mode:     ModeNew,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, false); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// ac-example.md should NOT exist (removed in AC29)
@@ -2810,15 +2810,15 @@ func TestBootstrapAdoptProposesEnrichedDocs(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n")
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Type:     RepoTypeCode,
 		Target:   targetDir,
 		RepoName: "test-repo",
 		Purpose:  "test purpose",
 		Stack:    "Go CLI",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, true); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// Review doc should exist at repo root with collision entries
@@ -2838,7 +2838,7 @@ func TestBootstrapNewDocProducesEnrichedFiles(t *testing.T) {
 	targetDir := t.TempDir()
 
 	cfg := Config{
-		Mode:               ModeNew,
+		Mode:               ModeSync,
 		Type:               RepoTypeDoc,
 		Target:             targetDir,
 		RepoName:           "test-doc",
@@ -2846,8 +2846,8 @@ func TestBootstrapNewDocProducesEnrichedFiles(t *testing.T) {
 		PublishingPlatform: "Hugo",
 		Style:              "concise",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, false); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// publishing-workflow.md should contain platform notes
@@ -2897,7 +2897,7 @@ func TestBootstrapAdoptDocProposesEnrichedFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n")
 
 	cfg := Config{
-		Mode:               ModeAdopt,
+		Mode:               ModeSync,
 		Type:               RepoTypeDoc,
 		Target:             targetDir,
 		RepoName:           "test-doc",
@@ -2905,8 +2905,8 @@ func TestBootstrapAdoptDocProposesEnrichedFiles(t *testing.T) {
 		PublishingPlatform: "Hugo",
 		Style:              "concise",
 	}
-	if err := runNewOrAdopt(templates.DiskFS(templateRoot), templateRoot, cfg, true); err != nil {
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync() error = %v", err)
 	}
 
 	// No .template-proposed files should exist
@@ -3116,7 +3116,7 @@ func TestReadmeConsolidatedStructure(t *testing.T) {
 	}
 
 	// All mode command examples present (subcommand form)
-	for _, marker := range []string{"governa new", "governa adopt", "governa enhance"} {
+	for _, marker := range []string{"governa sync", "governa enhance"} {
 		if !strings.Contains(content, marker) {
 			t.Errorf("README.md: missing command example containing %q", marker)
 		}
@@ -3251,9 +3251,10 @@ func TestAdoptEmitsWhyAdvisory(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "README.md"), "# Existing\n\n## Overview\n\nNo why section.\n")
 	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting.\n")
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Target:   dir,
 		Type:     RepoTypeCode,
 		RepoName: "test-adopt",
@@ -3269,10 +3270,10 @@ func TestAdoptEmitsWhyAdvisory(t *testing.T) {
 		t.Fatalf("os.Pipe() error = %v", err)
 	}
 	os.Stdout = w
-	if err := runNewOrAdopt(templates.DiskFS(root), root, cfg, true); err != nil {
+	if err := runSync(templates.DiskFS(root), root, cfg); err != nil {
 		w.Close()
 		os.Stdout = oldStdout
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+		t.Fatalf("runSync() error = %v", err)
 	}
 	w.Close()
 	os.Stdout = oldStdout
@@ -3369,7 +3370,7 @@ func TestTemplateVersionConstMatchesFile(t *testing.T) {
 
 func TestParseModeArgsNewMode(t *testing.T) {
 	t.Parallel()
-	cfg, help, err := ParseModeArgs(ModeNew, []string{
+	cfg, help, err := ParseModeArgs(ModeSync, []string{
 		"-y", "CODE", "-n", "test-repo", "-p", "test purpose", "-s", "Go CLI", "-d",
 	})
 	if err != nil {
@@ -3378,7 +3379,7 @@ func TestParseModeArgsNewMode(t *testing.T) {
 	if help {
 		t.Fatal("expected help = false")
 	}
-	if cfg.Mode != ModeNew {
+	if cfg.Mode != ModeSync {
 		t.Fatalf("Mode = %q, want new", cfg.Mode)
 	}
 	if cfg.RepoName != "test-repo" {
@@ -3703,17 +3704,17 @@ func TestCodeOverlayDevRoleUsingAdopt(t *testing.T) {
 		"examples/code/docs/agent-roles/dev.md",
 	} {
 		content := readRepoFile(t, path)
-		if !strings.Contains(content, "## Using Adopt") {
-			t.Errorf("%s: should contain ## Using Adopt section", path)
+		if !strings.Contains(content, "## Using Sync") {
+			t.Errorf("%s: should contain ## Using Sync section", path)
 		}
-		if !strings.Contains(content, "governa adopt") {
-			t.Errorf("%s: should reference governa adopt", path)
+		if !strings.Contains(content, "governa sync") {
+			t.Errorf("%s: should reference governa sync", path)
 		}
 	}
-	// Self-hosted DEV role must NOT have "Using Adopt" — governa uses enhance.
+	// Self-hosted DEV role must NOT have "Using Sync" — governa uses enhance.
 	selfHosted := readRepoFile(t, "docs/agent-roles/dev.md")
-	if strings.Contains(selfHosted, "## Using Adopt") {
-		t.Fatal("docs/agent-roles/dev.md should NOT contain Using Adopt (governa uses enhance, not adopt)")
+	if strings.Contains(selfHosted, "## Using Sync") {
+		t.Fatal("docs/agent-roles/dev.md should NOT contain Using Sync (governa uses enhance, not sync)")
 	}
 }
 
@@ -3827,7 +3828,7 @@ func TestAdoptDriftSummary(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Target:   dir,
 		Type:     RepoTypeCode,
 		RepoName: "test-adopt-drift",
@@ -3842,10 +3843,10 @@ func TestAdoptDriftSummary(t *testing.T) {
 		t.Fatalf("os.Pipe() error = %v", err)
 	}
 	os.Stdout = w
-	if err := runNewOrAdopt(templates.DiskFS(root), root, cfg, true); err != nil {
+	if err := runSync(templates.DiskFS(root), root, cfg); err != nil {
 		w.Close()
 		os.Stdout = oldStdout
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+		t.Fatalf("runSync() error = %v", err)
 	}
 	w.Close()
 	os.Stdout = oldStdout
@@ -3864,11 +3865,22 @@ func TestAdoptNoDrift(t *testing.T) {
 	// Not parallel: captures stdout.
 	root := repoRoot(t)
 	dir := t.TempDir()
-	// Empty target — no existing files to propose against.
+	// Target with manifest (triggers re-sync) but no overlay files to collide with.
 	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
+	m := Manifest{
+		FormatVersion:   manifestFormatVersion,
+		TemplateVersion: "0.8.2",
+		Params: ManifestParams{
+			RepoName: "test-no-drift",
+			Purpose:  "test",
+			Type:     "CODE",
+			Stack:    "Go",
+		},
+	}
+	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Target:   dir,
 		Type:     RepoTypeCode,
 		RepoName: "test-no-drift",
@@ -3883,10 +3895,10 @@ func TestAdoptNoDrift(t *testing.T) {
 		t.Fatalf("os.Pipe() error = %v", err)
 	}
 	os.Stdout = w
-	if err := runNewOrAdopt(templates.DiskFS(root), root, cfg, true); err != nil {
+	if err := runSync(templates.DiskFS(root), root, cfg); err != nil {
 		w.Close()
 		os.Stdout = oldStdout
-		t.Fatalf("runNewOrAdopt() error = %v", err)
+		t.Fatalf("runSync() error = %v", err)
 	}
 	w.Close()
 	os.Stdout = oldStdout
@@ -4021,7 +4033,7 @@ func TestResolveAdoptParamsFlagOverridesAll(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com\n"), 0o644)
 
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Target:   dir,
 		RepoName: "flag-name",
 		Purpose:  "flag purpose",
@@ -4058,7 +4070,7 @@ func TestResolveAdoptParamsFromManifest(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
 
-	cfg := Config{Mode: ModeAdopt, Target: dir}
+	cfg := Config{Mode: ModeSync, Target: dir}
 	resolved, sources := resolveAdoptParams(cfg, dir)
 	if resolved.RepoName != "stored-name" {
 		t.Fatalf("RepoName = %q, want stored-name", resolved.RepoName)
@@ -4079,7 +4091,7 @@ func TestResolveAdoptParamsInferred(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# TestProject\n\nA test project for testing.\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com\n"), 0o644)
 
-	cfg := Config{Mode: ModeAdopt, Target: dir}
+	cfg := Config{Mode: ModeSync, Target: dir}
 	resolved, sources := resolveAdoptParams(cfg, dir)
 	if resolved.RepoName == "" {
 		t.Fatal("RepoName should be inferred from directory basename")
@@ -4112,7 +4124,7 @@ func TestResolveAdoptParamsManifestTypeRestored(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
 
-	cfg := Config{Mode: ModeAdopt, Target: dir}
+	cfg := Config{Mode: ModeSync, Target: dir}
 	resolved, _ := resolveAdoptParams(cfg, dir)
 	if resolved.Type != RepoTypeCode {
 		t.Fatalf("Type = %q, want CODE (from manifest)", resolved.Type)
@@ -4127,7 +4139,7 @@ func TestAdoptManifestContainsParams(t *testing.T) {
 	tfs := templates.EmbeddedFS
 	repoRoot := repoRoot(t)
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Target:   dir,
 		RepoName: "testproj",
 		Purpose:  "Test purpose.",
@@ -4156,17 +4168,19 @@ func TestAdoptManifestContainsParams(t *testing.T) {
 }
 
 // AT11: inference fails for required param → error names the missing flag
-func TestAdoptErrorsWhenInferenceFails(t *testing.T) {
+func TestSyncErrorsWhenRequiredParamMissing(t *testing.T) {
 	t.Parallel()
-	// Empty directory: no README (purpose fails), no manifest file (stack fails)
 	dir := t.TempDir()
 
-	_, _, err := ParseModeArgs(ModeAdopt, []string{"-t", dir})
-	if err == nil {
-		t.Fatal("expected error when purpose cannot be inferred")
+	root := repoRoot(t)
+	cfg := Config{
+		Mode:   ModeSync,
+		Target: dir,
+		Input:  strings.NewReader(""), // empty input: prompts get no answers
 	}
-	if !strings.Contains(err.Error(), "purpose") || !strings.Contains(err.Error(), "-p") {
-		t.Fatalf("error should name the missing parameter and flag, got: %v", err)
+	err := RunWithFS(templates.DiskFS(root), root, cfg)
+	if err == nil {
+		t.Fatal("expected error when required params are missing")
 	}
 }
 
@@ -4179,7 +4193,7 @@ func TestAdoptDryRunDoesNotWriteManifest(t *testing.T) {
 	tfs := templates.EmbeddedFS
 	root := repoRoot(t)
 	cfg := Config{
-		Mode:     ModeAdopt,
+		Mode:     ModeSync,
 		Target:   dir,
 		RepoName: "drytest",
 		Purpose:  "A test project.",
@@ -4320,5 +4334,176 @@ func TestCompareStructureSameStructureNoNotes(t *testing.T) {
 	notes := compareStructure(content, content)
 	if len(notes) != 0 {
 		t.Fatalf("expected 0 structural notes for same structure, got %d", len(notes))
+	}
+}
+
+// --- AC30 tests ---
+
+// AT1: re-sync (manifest present) enters adopt path without prompts
+func TestSyncResyncWithManifest(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	dir := t.TempDir()
+
+	// Write a manifest so detectSyncMode returns "re-sync"
+	m := Manifest{
+		FormatVersion:   manifestFormatVersion,
+		TemplateVersion: "0.8.2",
+		Params: ManifestParams{
+			RepoName: "test-repo",
+			Purpose:  "test purpose",
+			Type:     "CODE",
+			Stack:    "Go",
+		},
+	}
+	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	// Pre-create AGENTS.md so adopt scoring runs
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting.\n")
+
+	cfg := Config{
+		Mode:   ModeSync,
+		Target: dir,
+		Input:  strings.NewReader(""), // no prompts needed
+	}
+	if err := RunWithFS(templates.DiskFS(root), root, cfg); err != nil {
+		t.Fatalf("RunWithFS() error = %v", err)
+	}
+	// Manifest should be updated
+	if _, err := os.Stat(filepath.Join(dir, manifestFileName)); err != nil {
+		t.Fatal("manifest should exist after re-sync")
+	}
+}
+
+// AT2: sync with all flags in empty dir (new path) produces no prompts
+func TestSyncNewWithAllFlags(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	dir := t.TempDir()
+
+	cfg := Config{
+		Mode:     ModeSync,
+		Type:     RepoTypeCode,
+		Target:   dir,
+		RepoName: "test-repo",
+		Purpose:  "test purpose",
+		Stack:    "Go CLI",
+		Input:    strings.NewReader(""), // no prompts needed, all flags given
+	}
+	if err := RunWithFS(templates.DiskFS(root), root, cfg); err != nil {
+		t.Fatalf("RunWithFS() error = %v", err)
+	}
+	// AGENTS.md should be written
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
+		t.Fatal("AGENTS.md should exist after sync new")
+	}
+	// Manifest should exist
+	if _, err := os.Stat(filepath.Join(dir, manifestFileName)); err != nil {
+		t.Fatal("manifest should exist after sync new")
+	}
+}
+
+// AT3: sync with no flags prompts interactively
+func TestSyncNewPrompts(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	dir := t.TempDir()
+
+	// Simulate interactive input: accept default name (Enter), CODE, purpose, Go
+	input := strings.NewReader("\nCODE\nmy test purpose\nGo\n")
+	cfg := Config{
+		Mode:   ModeSync,
+		Target: dir,
+		Input:  input,
+	}
+	if err := RunWithFS(templates.DiskFS(root), root, cfg); err != nil {
+		t.Fatalf("RunWithFS() error = %v", err)
+	}
+	// Should have bootstrapped successfully
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
+		t.Fatal("AGENTS.md should exist after prompted sync")
+	}
+}
+
+// AT4: sync in directory with AGENTS.md but no manifest enters adopt path
+func TestSyncFirstAdopt(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	dir := t.TempDir()
+
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting.\n")
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Test\n\nA test project.\n"), 0o644)
+
+	cfg := Config{
+		Mode:     ModeSync,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-adopt",
+		Purpose:  "A test project.",
+		Stack:    "Go",
+		Input:    strings.NewReader(""),
+	}
+	if err := RunWithFS(templates.DiskFS(root), root, cfg); err != nil {
+		t.Fatalf("RunWithFS() error = %v", err)
+	}
+	// Original AGENTS.md preserved (adopt path)
+	content, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if !strings.Contains(string(content), "Existing.") {
+		t.Fatal("AGENTS.md should be preserved in adopt path")
+	}
+}
+
+// AT5: old subcommands produce error
+func TestDetectSyncModeManifest(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, manifestFileName), []byte("governa-manifest-v1\ntemplate-version: 0.8.2\n"), 0o644)
+	if got := detectSyncMode(dir); got != "re-sync" {
+		t.Fatalf("detectSyncMode() = %q, want re-sync", got)
+	}
+}
+
+func TestDetectSyncModeGovernanceArtifacts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS\n")
+	if got := detectSyncMode(dir); got != "adopt" {
+		t.Fatalf("detectSyncMode() = %q, want adopt", got)
+	}
+}
+
+func TestDetectSyncModeEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if got := detectSyncMode(dir); got != "new" {
+		t.Fatalf("detectSyncMode() = %q, want new", got)
+	}
+}
+
+// AT6: sync help prints flag listing
+func TestSyncHelpPrintsFlags(t *testing.T) {
+	t.Parallel()
+	output := ModeHelp(ModeSync)
+	for _, flag := range []string{"-n", "-y", "-p", "-s", "-d"} {
+		if !strings.Contains(output, flag) {
+			t.Fatalf("sync help should contain %q, got:\n%s", flag, output)
+		}
+	}
+}
+
+// AT7: enhance help prints enhance-specific flags, not sync flags
+func TestEnhanceHelpPrintsFlags(t *testing.T) {
+	t.Parallel()
+	output := ModeHelp(ModeEnhance)
+	for _, flag := range []string{"-r", "-a", "-d"} {
+		if !strings.Contains(output, flag) {
+			t.Fatalf("enhance help should contain %q, got:\n%s", flag, output)
+		}
+	}
+	// Should NOT contain sync-only flags
+	for _, flag := range []string{"-n,", "-y,", "-p,"} {
+		if strings.Contains(output, flag) {
+			t.Fatalf("enhance help should not contain sync flag %q", flag)
+		}
 	}
 }
