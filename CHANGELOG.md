@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.10.0 | AC31: enhance detects existing enhance ACs and prompts replace/update/new on collision |
 | 0.9.2 | Color: 256-color capability detection with basic ANSI fallback, test isolation fixes, FormatUsage coverage 93.3%, stale overlay/propagation docs fixed |
 | 0.9.1 | Shared color package: 256-color ANSI standardization, superset palette (13 functions), ShowPalette() for agent troubleshooting, escape code regression tests |
 | 0.9.0 | AC30: `sync` replaces `new` and `adopt` — single subcommand with auto-detection and interactive prompts, per-subcommand help output, repo-wide command migration |

@@ -287,6 +287,8 @@ The current enhance workflow:
 
 The current implementation stops at the review stage and, when actionable improvements are found, creates an AC doc under `docs/` for the highest-priority candidate. It does not auto-apply enhancements.
 
+Before writing a new AC, enhance scans `docs/` for existing enhance-generated ACs (identified by a `# ACN Enhance:` heading in the first line). If found, it prompts: replace the existing AC (same number, new content), update it in place, or create a new one with the next sequential number. EOF or invalid input defaults to "new". Multiple existing enhance ACs are listed by AC number ascending for selection. This prevents AC accumulation from repeated enhance runs against the same reference.
+
 ### Bootstrap Manifest
 
 During `sync`, governa writes a `.governa-manifest` file into the generated repo. This file records:

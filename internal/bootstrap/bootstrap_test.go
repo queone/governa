@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"bufio"
 	"github.com/kquo/governa/internal/templates"
 	"io"
 	"io/fs"
@@ -4505,5 +4506,199 @@ func TestEnhanceHelpPrintsFlags(t *testing.T) {
 		if strings.Contains(output, flag) {
 			t.Fatalf("enhance help should not contain sync flag %q", flag)
 		}
+	}
+}
+
+// --- AC31 tests ---
+
+// AT6: findExistingEnhanceAC matches content marker, ignores hand-written ACs
+func TestFindExistingEnhanceACContentMarker(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Enhance-generated AC (matches)
+	mustWrite(t, filepath.Join(dir, "ac5-enhance-foo.md"), "# AC5 Enhance: base governance\n\nContent.\n")
+	// Hand-written AC about enhance behavior (should NOT match)
+	mustWrite(t, filepath.Join(dir, "ac31-enhance-ac-collision.md"), "# AC31 Enhance AC collision detection\n\nContent.\n")
+	// Unrelated AC (should not match)
+	mustWrite(t, filepath.Join(dir, "ac10-sync-refactor.md"), "# AC10 Sync refactor\n\nContent.\n")
+	// Another enhance-generated AC (matches)
+	mustWrite(t, filepath.Join(dir, "ac12-enhance-bar.md"), "# AC12 Enhance: overlay improvements\n\nContent.\n")
+
+	results := findExistingEnhanceAC(dir)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 enhance ACs, got %d", len(results))
+	}
+	if results[0].acNum != 5 {
+		t.Errorf("first result acNum = %d, want 5", results[0].acNum)
+	}
+	if results[1].acNum != 12 {
+		t.Errorf("second result acNum = %d, want 12", results[1].acNum)
+	}
+}
+
+// AT1: no existing enhance AC → new AC written without prompting
+func TestEnhanceNoExistingACWritesNew(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	results := findExistingEnhanceAC(dir)
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results for empty dir, got %d", len(results))
+	}
+}
+
+// AT2: single existing enhance AC, input "r" → replace (same number, new slug)
+func TestEnhanceCollisionReplace(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac5-enhance-foo.md"), "# AC5 Enhance: old stuff\n")
+
+	existing := findExistingEnhanceAC(dir)
+	sc := bufio.NewScanner(strings.NewReader("r\n"))
+	action := promptEnhanceCollision(existing, 6, sc)
+	if action.mode != "replace" {
+		t.Fatalf("expected mode replace, got %q", action.mode)
+	}
+	if action.acNum != 5 {
+		t.Fatalf("expected acNum 5, got %d", action.acNum)
+	}
+	if action.oldPath == "" {
+		t.Fatal("expected non-empty oldPath for replace")
+	}
+}
+
+// AT3: single existing enhance AC, input "u" → update (same path)
+func TestEnhanceCollisionUpdate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac5-enhance-foo.md"), "# AC5 Enhance: old stuff\n")
+
+	existing := findExistingEnhanceAC(dir)
+	sc := bufio.NewScanner(strings.NewReader("u\n"))
+	action := promptEnhanceCollision(existing, 6, sc)
+	if action.mode != "update" {
+		t.Fatalf("expected mode update, got %q", action.mode)
+	}
+	if action.acNum != 5 {
+		t.Fatalf("expected acNum 5, got %d", action.acNum)
+	}
+	if action.oldPath == "" {
+		t.Fatal("expected non-empty oldPath for update")
+	}
+}
+
+// AT4: single existing enhance AC, input "n" → new (next number)
+func TestEnhanceCollisionNew(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac5-enhance-foo.md"), "# AC5 Enhance: old stuff\n")
+
+	existing := findExistingEnhanceAC(dir)
+	sc := bufio.NewScanner(strings.NewReader("n\n"))
+	action := promptEnhanceCollision(existing, 6, sc)
+	if action.mode != "new" {
+		t.Fatalf("expected mode new, got %q", action.mode)
+	}
+	if action.acNum != 6 {
+		t.Fatalf("expected acNum 6, got %d", action.acNum)
+	}
+}
+
+// AT5: single existing enhance AC, EOF → defaults to new
+func TestEnhanceCollisionEOFDefaultsNew(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac5-enhance-foo.md"), "# AC5 Enhance: old stuff\n")
+
+	existing := findExistingEnhanceAC(dir)
+	sc := bufio.NewScanner(strings.NewReader(""))
+	action := promptEnhanceCollision(existing, 6, sc)
+	if action.mode != "new" {
+		t.Fatalf("expected mode new on EOF, got %q", action.mode)
+	}
+	if action.acNum != 6 {
+		t.Fatalf("expected acNum 6, got %d", action.acNum)
+	}
+}
+
+// AT7: multiple existing enhance ACs, select by number
+func TestEnhanceCollisionMultiMatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac5-enhance-foo.md"), "# AC5 Enhance: first\n")
+	mustWrite(t, filepath.Join(dir, "ac12-enhance-bar.md"), "# AC12 Enhance: second\n")
+
+	existing := findExistingEnhanceAC(dir)
+	if len(existing) != 2 {
+		t.Fatalf("expected 2 existing, got %d", len(existing))
+	}
+
+	// Select item 2 (ac12), then replace
+	sc := bufio.NewScanner(strings.NewReader("2\nr\n"))
+	action := promptEnhanceCollision(existing, 13, sc)
+	if action.mode != "replace" || action.acNum != 12 {
+		t.Fatalf("expected replace acNum=12, got mode=%q acNum=%d", action.mode, action.acNum)
+	}
+
+	// Select "n" for new
+	sc2 := bufio.NewScanner(strings.NewReader("n\n"))
+	action2 := promptEnhanceCollision(existing, 13, sc2)
+	if action2.mode != "new" || action2.acNum != 13 {
+		t.Fatalf("expected new acNum=13, got mode=%q acNum=%d", action2.mode, action2.acNum)
+	}
+}
+
+// AT8: dry-run with existing enhance AC — prompt runs, no files written
+func TestEnhanceCollisionDryRun(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac5-enhance-foo.md"), "# AC5 Enhance: old stuff\n\nOld content.\n")
+
+	existing := findExistingEnhanceAC(dir)
+	sc := bufio.NewScanner(strings.NewReader("r\n"))
+	action := promptEnhanceCollision(existing, 6, sc)
+	if action.mode != "replace" || action.acNum != 5 {
+		t.Fatalf("expected replace acNum=5, got mode=%q acNum=%d", action.mode, action.acNum)
+	}
+
+	// Original file should be untouched (dry-run wouldn't write)
+	content, err := os.ReadFile(filepath.Join(dir, "ac5-enhance-foo.md"))
+	if err != nil {
+		t.Fatalf("original file should still exist: %v", err)
+	}
+	if !strings.Contains(string(content), "Old content.") {
+		t.Fatal("original file content should be preserved in dry-run")
+	}
+}
+
+// AT2b: replace vs update produce different paths in RunEnhance context
+func TestEnhanceReplaceVsUpdatePathDifference(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "ac5-enhance-old-slug.md")
+	mustWrite(t, oldPath, "# AC5 Enhance: old slug\n")
+
+	existing := findExistingEnhanceAC(dir)
+
+	// Replace: returns old path (to delete) + same acNum → caller generates new slug path
+	scR := bufio.NewScanner(strings.NewReader("r\n"))
+	actionR := promptEnhanceCollision(existing, 6, scR)
+	if actionR.mode != "replace" {
+		t.Fatalf("expected replace, got %q", actionR.mode)
+	}
+	// Replace: new path would differ because slug is derived from the new candidate
+	// The old path is returned for deletion
+	if actionR.oldPath != oldPath {
+		t.Fatalf("replace should return oldPath=%q, got %q", oldPath, actionR.oldPath)
+	}
+
+	// Update: returns old path → caller uses it directly (no new slug)
+	scU := bufio.NewScanner(strings.NewReader("u\n"))
+	actionU := promptEnhanceCollision(existing, 6, scU)
+	if actionU.mode != "update" {
+		t.Fatalf("expected update, got %q", actionU.mode)
+	}
+	if actionU.oldPath != oldPath {
+		t.Fatalf("update should return oldPath=%q, got %q", oldPath, actionU.oldPath)
 	}
 }

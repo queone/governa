@@ -600,6 +600,104 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	return nil
 }
 
+// enhanceHeadingRe matches the heading format produced by renderACDoc: "# AC<N> Enhance: ..."
+var enhanceHeadingRe = regexp.MustCompile(`^# AC\d+ Enhance:`)
+
+// existingEnhanceAC holds the path and AC number of a prior enhance-generated AC.
+type existingEnhanceAC struct {
+	path    string
+	acNum   int
+	heading string
+}
+
+// findExistingEnhanceAC scans docsDir for AC files whose first line matches
+// the enhance-generated heading format (# ACN Enhance: ...). Results are
+// sorted by AC number ascending.
+func findExistingEnhanceAC(docsDir string) []existingEnhanceAC {
+	entries, err := os.ReadDir(docsDir)
+	if err != nil {
+		return nil
+	}
+	var results []existingEnhanceAC
+	for _, entry := range entries {
+		name := entry.Name()
+		match := workingACFileRe.FindStringSubmatch(name)
+		if match == nil {
+			continue
+		}
+		path := filepath.Join(docsDir, name)
+		f, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		var firstLine string
+		if scanner.Scan() {
+			firstLine = scanner.Text()
+		}
+		f.Close()
+		if enhanceHeadingRe.MatchString(firstLine) {
+			num, _ := strconv.Atoi(match[1])
+			results = append(results, existingEnhanceAC{
+				path:    path,
+				acNum:   num,
+				heading: firstLine,
+			})
+		}
+	}
+	slices.SortFunc(results, func(a, b existingEnhanceAC) int {
+		return cmp.Compare(a.acNum, b.acNum)
+	})
+	return results
+}
+
+// collisionAction describes what to do with an existing enhance AC.
+type collisionAction struct {
+	mode    string // "replace", "update", or "new"
+	oldPath string // path of existing AC (empty for "new")
+	acNum   int    // AC number to use
+}
+
+// promptEnhanceCollision handles collision with existing enhance ACs.
+func promptEnhanceCollision(existing []existingEnhanceAC, nextNum int, sc *bufio.Scanner) collisionAction {
+	if len(existing) == 1 {
+		e := existing[0]
+		fmt.Fprintf(os.Stderr, "Existing enhance AC: %s\n  %s\n", filepath.Base(e.path), e.heading)
+		answer := promptParam("Replace, update, or new? [r/u/n]: ", "", sc)
+		switch strings.ToLower(answer) {
+		case "r", "replace":
+			return collisionAction{"replace", e.path, e.acNum}
+		case "u", "update":
+			return collisionAction{"update", e.path, e.acNum}
+		default:
+			return collisionAction{"new", "", nextNum}
+		}
+	}
+	// Multiple matches — list and prompt for selection.
+	fmt.Fprintln(os.Stderr, "Existing enhance ACs:")
+	for i, e := range existing {
+		fmt.Fprintf(os.Stderr, "  %d. %s — %s\n", i+1, filepath.Base(e.path), e.heading)
+	}
+	answer := promptParam(fmt.Sprintf("Select AC to replace/update (1–%d), or n for new: ", len(existing)), "", sc)
+	if strings.EqualFold(answer, "n") || answer == "" {
+		return collisionAction{"new", "", nextNum}
+	}
+	idx, err := strconv.Atoi(answer)
+	if err != nil || idx < 1 || idx > len(existing) {
+		return collisionAction{"new", "", nextNum}
+	}
+	e := existing[idx-1]
+	action := promptParam("Replace or update? [r/u]: ", "", sc)
+	switch strings.ToLower(action) {
+	case "r", "replace":
+		return collisionAction{"replace", e.path, e.acNum}
+	case "u", "update":
+		return collisionAction{"update", e.path, e.acNum}
+	default:
+		return collisionAction{"new", "", nextNum}
+	}
+}
+
 // RunEnhance runs enhance mode against a reference repo.
 func RunEnhance(tfs fs.FS, repoRoot string, cfg Config) error {
 	refAbs, err := filepath.Abs(cfg.Reference)
@@ -619,17 +717,53 @@ func RunEnhance(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 
 	docsDir := filepath.Join(repoRoot, "docs")
-	acNum, err := nextACNumber(docsDir)
+	nextNum, err := nextACNumber(docsDir)
 	if err != nil {
 		return err
 	}
+
+	// Check for existing enhance-generated ACs.
+	acNum := nextNum
+	var action collisionAction
+	existing := findExistingEnhanceAC(docsDir)
+	if len(existing) > 0 {
+		r := cfg.Input
+		if r == nil {
+			r = os.Stdin
+		}
+		sc := bufio.NewScanner(r)
+		action = promptEnhanceCollision(existing, nextNum, sc)
+		acNum = action.acNum
+	} else {
+		action = collisionAction{mode: "new", acNum: nextNum}
+	}
+
 	slug := acSlug(selected)
-	acFileName := fmt.Sprintf("ac%d-%s.md", acNum, slug)
-	acPath := filepath.Join(docsDir, acFileName)
+	var acPath string
+	switch action.mode {
+	case "update":
+		// Keep the old file path, overwrite in place.
+		acPath = action.oldPath
+	case "replace":
+		// Same AC number, new slug-based filename. Old file will be removed.
+		acFileName := fmt.Sprintf("ac%d-%s.md", acNum, slug)
+		acPath = filepath.Join(docsDir, acFileName)
+	default:
+		// New AC with next sequential number.
+		acFileName := fmt.Sprintf("ac%d-%s.md", acNum, slug)
+		acPath = filepath.Join(docsDir, acFileName)
+	}
 	acContent := renderACDoc(selected, deferred, report, acNum)
 
 	if cfg.DryRun {
-		fmt.Printf("dry-run write %s (enhancement AC doc)\n", acPath)
+		switch action.mode {
+		case "update":
+			fmt.Printf("dry-run update %s (enhancement AC doc)\n", acPath)
+		case "replace":
+			fmt.Printf("dry-run replace %s -> %s (enhancement AC doc)\n", filepath.Base(action.oldPath), filepath.Base(acPath))
+		default:
+			fmt.Printf("dry-run write %s (enhancement AC doc)\n", acPath)
+		}
 		if cfg.Apply {
 			if err := applyProposals(repoRoot, selected, deferred, true); err != nil {
 				return err
@@ -641,10 +775,21 @@ func RunEnhance(tfs fs.FS, repoRoot string, cfg Config) error {
 	if err := os.MkdirAll(docsDir, 0o755); err != nil {
 		return fmt.Errorf("create docs directory: %w", err)
 	}
+	// For replace: remove the old file if its path differs from the new one.
+	if action.mode == "replace" && action.oldPath != acPath {
+		os.Remove(action.oldPath)
+	}
 	if err := os.WriteFile(acPath, []byte(acContent), 0o644); err != nil {
 		return fmt.Errorf("write AC doc: %w", err)
 	}
-	fmt.Printf("write %s (enhancement AC doc)\n", acPath)
+	switch action.mode {
+	case "update":
+		fmt.Printf("updated %s (enhancement AC doc)\n", acPath)
+	case "replace":
+		fmt.Printf("replaced %s (enhancement AC doc)\n", acPath)
+	default:
+		fmt.Printf("write %s (enhancement AC doc)\n", acPath)
+	}
 	if cfg.Apply {
 		if err := applyProposals(repoRoot, selected, deferred, false); err != nil {
 			return err
