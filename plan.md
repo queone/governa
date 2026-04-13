@@ -17,6 +17,8 @@ Provide a narrow, usable governance template that can bootstrap new repos, adopt
 
 Pre-rubric ideas captured for future discussion. Prefix each with `IE<N>:` (sequential N) for stable references. These are not commitments and have not passed the objective-fit rubric in `AGENTS.md`. Remove entries when promoted to an AC, completed, or no longer interesting; this section is pre-rubric staging, not a historical record.
 
+- IE1: Extract buildtool/reltool into a shared Go module (`devtools`) so governa, skout, utils, and iq import from one source instead of each carrying template-copied versions; relaxes "self-contained" constraint for build infrastructure only, not governance docs
+- IE2: Move repo from `github.com/kquo/governa` to `github.com/queone/governa` — requires go.mod module path change, all internal import paths, `sourceRepo` const, version-check URL, template references, and README/doc links
 
 ## Deferred
 
