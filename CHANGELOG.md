@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.13.1 | AC35: governance-first latch rule, tag-check and AC-to-file rules codified |
 | 0.13.0 | AC34: roles directory rename, delivery-model integration, director reference role |
 | 0.12.0 | AC33: sync content-change detection, AC deletion timing aligned to release prep |
 | 0.11.1 | TEMPLATE_VERSION semantic clarified, development-cycle wording aligned |
