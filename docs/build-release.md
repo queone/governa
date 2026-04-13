@@ -84,14 +84,14 @@ Do not start this checklist unless the user explicitly asks to prep for release 
 
 Before offering a release commit or release command:
 
-1. run the canonical build and validation flow and fix failures until clean
-2. ask the user whether any required manual or live acceptance checks were run
-3. audit `arch.md` and any affected reference docs against the actual behavior
-4. move the current `Unreleased` changelog summary into the release entry and leave a fresh `Unreleased` row
-5. confirm `TEMPLATE_VERSION` matches the intended template release version
-6. remove or reprioritize completed roadmap items in `plan.md`
-7. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)
-8. check the latest git tag before suggesting a release version — never guess or assume the current version
+1. check the latest git tag (`git tag --sort=-v:refname | head -1`) and run `git status` to confirm the working tree has uncommitted changes. If the tree is clean and the latest tag matches `programVersion` in `cmd/governa/main.go`, `TemplateVersion` in `internal/templates/version.go`, and `TEMPLATE_VERSION`, there is nothing to release — do not proceed. Never assume the current version from build output or prior conversation; always verify from git.
+2. run the canonical build and validation flow and fix failures until clean
+3. ask the user whether any required manual or live acceptance checks were run
+4. audit `arch.md` and any affected reference docs against the actual behavior
+5. move the current `Unreleased` changelog summary into the release entry and leave a fresh `Unreleased` row
+6. confirm `TEMPLATE_VERSION` matches the intended template release version
+7. remove or reprioritize completed roadmap items in `plan.md`
+8. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)
 9. present the canonical release command for the user to run or approve — the release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting.
 
 ## Release Artifacts

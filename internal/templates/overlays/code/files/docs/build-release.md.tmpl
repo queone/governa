@@ -33,14 +33,15 @@ Default to Automated whenever the result is verifiable without a live external s
 
 Do not begin this checklist until the user explicitly asks to prep for release or equivalent. This is gated by the release-prep trigger rule in `AGENTS.md` (Release Or Publish Triggers).
 
-1. **Run `./build.sh`.** Fix all failures until the build is clean.
-2. **Ask the user whether the live ATs were run.** Manual ATs cannot be verified from CLI output and require explicit confirmation.
-3. **Audit `arch.md` against the code.** Verify affected reference docs are current.
-4. **Update `CHANGELOG.md`.** Add the new version row using the existing format.
-5. **Check the latest git tag** (`git tag --sort=-v:refname | head -1`) before bumping the version constant. Do not assume the current version is unreleased — it may already be tagged.
-6. **Remove completed features from `plan.md`.**
-7. **Consolidate finished AC decisions into durable docs, then delete the AC file.** Do not delete AC files that are PENDING, IN PROGRESS, or DEFERRED — they are still active contracts. Only completed (released) ACs are deleted.
-8. **Present the release command for the user to run.** The agent never runs the release command directly. The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting.
+1. **Check the latest git tag and working tree.** Run `git tag --sort=-v:refname | head -1` and `git status`. If the tree is clean and the latest tag matches the `programVersion` constant in the main binary source, there is nothing to release — do not proceed. Never assume the current version from build output or prior conversation; always verify from git.
+2. **Run `./build.sh`.** Fix all failures until the build is clean.
+3. **Ask the user whether the live ATs were run.** Manual ATs cannot be verified from CLI output and require explicit confirmation.
+4. **Audit `arch.md` against the code.** Verify affected reference docs are current.
+5. **Update `CHANGELOG.md`.** Add the new version row using the existing format.
+6. **Bump version constants.** Use the tag from step 1 as the baseline.
+7. **Remove completed features from `plan.md`.**
+8. **Consolidate finished AC decisions into durable docs, then delete the AC file.** Do not delete AC files that are PENDING, IN PROGRESS, or DEFERRED — they are still active contracts. Only completed (released) ACs are deleted.
+9. **Present the release command for the user to run.** The agent never runs the release command directly. The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting.
 
 The release command (`./build.sh vX.Y.Z "message"`) executes `cmd/rel`, which orchestrates `git add → commit → tag → push tag → push branch` and produces recovery guidance if any step fails.
 
