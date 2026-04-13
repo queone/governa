@@ -4250,6 +4250,28 @@ func TestScoreGovernanceKeepWhenTemplateUnchanged(t *testing.T) {
 	}
 }
 
+func TestRenderAdoptReviewMethodology(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
+	}
+	output := renderAdoptReview(scores)
+	if !strings.Contains(output, "## Evaluation Methodology") {
+		t.Fatal("review doc should contain Evaluation Methodology section")
+	}
+	for _, phrase := range []string{
+		"Structure pass",
+		"Content pass",
+		"Residual check",
+		"Role files pass",
+		"Manifest pass",
+	} {
+		if !strings.Contains(output, phrase) {
+			t.Fatalf("review doc should contain %q in methodology", phrase)
+		}
+	}
+}
+
 func TestRenderAdoptReviewContentChanges(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
