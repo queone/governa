@@ -4265,6 +4265,8 @@ func TestRenderAdoptReviewMethodology(t *testing.T) {
 		"Residual check",
 		"Role files pass",
 		"Manifest pass",
+		"Report",
+		"Feedback",
 	} {
 		if !strings.Contains(output, phrase) {
 			t.Fatalf("review doc should contain %q in methodology", phrase)

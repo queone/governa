@@ -3,7 +3,8 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
-| 0.13.2 | Sync review doc: 5-step evaluation methodology in preamble, IE1-IE2 in plan |
+| 0.13.3 | Sync review methodology: report and feedback steps for director visibility and governa improvement loop |
+| 0.13.2 | Sync review doc: 7-step evaluation methodology with report and feedback loop, IE1-IE2 in plan |
 | 0.13.1 | AC35: governance-first latch rule, tag-check and AC-to-file rules codified |
 | 0.13.0 | AC34: roles directory rename, delivery-model integration, director reference role |
 | 0.12.0 | AC33: sync content-change detection, AC deletion timing aligned to release prep |
