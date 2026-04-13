@@ -10,6 +10,8 @@ Repo-specific workflow belongs in the selected overlay, not here.
 
 ## Governed Sections
 
+This file is loaded every agent session and must remain enforceable on its own. Detail, rationale, and examples live in extracted docs (`docs/development-guidelines.md`, `docs/build-release.md`, `docs/development-cycle.md`). Those docs are loaded on demand.
+
 Each section must preserve its semantic intent across edits. Add new rules under the section that best fits — do not invent ad-hoc top-level sections.
 
 Only these sections may be edited through a guided update:
@@ -34,7 +36,7 @@ When asked to update it, propose the exact section names to change and keep edit
 - Do not create artifacts or make changes unless the user explicitly authorizes them.
 - When the user authorizes changes, make the smallest concrete change that satisfies the request.
 - Surface assumptions, ambiguities, and missing context plainly before taking action that could change project direction.
-- If `docs/agent-roles/` exists and the user has not explicitly assigned a role, the agent's first substantive response must ask which role to assume. Role assignment requires an explicit instruction such as "act as DEV", "use docs/agent-roles/qa.md", or "you are QA". After assignment, read `docs/agent-roles/<role>.md` (case-insensitive lookup) and follow it alongside this file. If the requested role file does not exist, say so and continue under shared governance only.
+- If `docs/agent-roles/` exists and the user has not explicitly assigned a role: if `docs/agent-roles/maintainer.md` is present, default to maintainer immediately and announce the active role in the first response (e.g., "Operating as maintainer (default)."). If no maintainer role exists, ask which role to assume. Role assignment requires an explicit instruction such as "act as DEV", "use docs/agent-roles/qa.md", or "you are QA". After assignment, read `docs/agent-roles/<role>.md` (case-insensitive lookup) and follow it alongside this file. If the requested role file does not exist, say so and continue under shared governance only.
 
 ## Approval Boundaries
 
@@ -42,7 +44,9 @@ When asked to update it, propose the exact section names to change and keep edit
 - Do not create, delete, rename, publish, release, or perform destructive changes without explicit user approval.
 - Do not change governance files, CI/release configuration, secrets handling, or external integrations without explicit user approval.
 - Use an AC-first workflow for non-trivial changes. Before implementation, draft an AC doc (`docs/acN-short-slug.md`) that defines scope, out-of-scope, objective fit, and required tests. Use `docs/ac-template.md` as the starting point if available. Do not begin implementation until the AC is reviewed and the user authorizes it.
+- Before committing to an AC, every roadmap item must answer: (1) What user or system outcome does this serve? (2) Why is this a better next step than competing work? (3) What existing decisions or constraints does it depend on? (4) Is this direct roadmap work or an intentional pivot? These questions must be answered in the AC's Objective Fit section.
 - Normal in-scope edits to existing project files are allowed once the user has asked for implementation.
+- Never run the release command yourself; present it for the user to run.
 - If a request is ambiguous and the change would be hard to reverse, stop and ask.
 
 ## Review Style
@@ -52,12 +56,14 @@ When asked to update it, propose the exact section names to change and keep edit
 - Present findings before summaries.
 - Prefer concrete evidence: file paths, behavior, and missing coverage.
 - If no issues are found, say so directly and note any residual risk or verification gap.
+- Prefer terse completions: flat bullets, one-sentence next step. Do not add extra sections like "What's in it", "Main conclusion", or "Next steps" unless the user asks.
+- Prefer plain text and simple bullets over heavy Markdown tables or ASCII art. Use richer structure only when content clearly benefits.
 
 ## File-Change Discipline
 
 - Prefer targeted edits over broad rewrites.
 - Preserve user changes and unrelated local modifications.
-- Update only the files required for the task, plus directly affected docs.
+- Update only the files required for the task, plus directly affected docs. During implementation, keep docs current — do not defer doc updates to a follow-up.
 - When follow-on improvements are discovered but are not part of the current authorized change, record them in `plan.md` or the repo's planning artifact instead of expanding scope ad hoc.
 - Do not commit personal absolute filesystem paths in docs, templates, config, or generated artifacts; use repo-relative paths or clear placeholders such as `<template-root>`.
 - Keep generated repos self-contained; do not introduce runtime dependence on this template repo.

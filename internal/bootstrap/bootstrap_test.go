@@ -4521,3 +4521,135 @@ func TestEnhanceReplaceVsUpdatePathDifference(t *testing.T) {
 		t.Fatalf("update should return oldPath=%q, got %q", oldPath, actionU.oldPath)
 	}
 }
+
+// --- AC32 tests ---
+
+// AT1: Governed Sections loading contract
+func TestBaseAgentsMdLoadingContract(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	if !strings.Contains(content, "loaded every agent session") {
+		t.Fatal("Governed Sections should contain loading contract")
+	}
+	if !strings.Contains(content, "loaded on demand") {
+		t.Fatal("Governed Sections should reference on-demand docs")
+	}
+}
+
+// AT2: Interaction Mode defaults to maintainer
+func TestBaseAgentsMdDefaultMaintainer(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	if !strings.Contains(content, "default to maintainer immediately") {
+		t.Fatal("Interaction Mode should default to maintainer when maintainer.md exists")
+	}
+	if !strings.Contains(content, "announce the active role") {
+		t.Fatal("Interaction Mode should require announcing the active role")
+	}
+}
+
+// AT3: Review Style output format guidance
+func TestBaseAgentsMdTerseOutput(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	if !strings.Contains(content, "flat bullets") {
+		t.Fatal("Review Style should contain terse output guidance")
+	}
+}
+
+// AT4: Approval Boundaries release command rule
+func TestBaseAgentsMdReleaseCommandRule(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	if !strings.Contains(content, "Never run the release command yourself") {
+		t.Fatal("Approval Boundaries should contain release command rule")
+	}
+}
+
+// AT5: Approval Boundaries objective-fit rubric inline
+func TestBaseAgentsMdRubricInline(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	for _, q := range []string{
+		"What user or system outcome",
+		"Why is this a better next step",
+		"What existing decisions or constraints",
+		"Is this direct roadmap work or an intentional pivot",
+	} {
+		if !strings.Contains(content, q) {
+			t.Fatalf("Approval Boundaries should contain rubric question: %q", q)
+		}
+	}
+}
+
+// AT6: File-Change Discipline doc-current rule
+func TestBaseAgentsMdDocCurrentRule(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	if !strings.Contains(content, "keep docs current") {
+		t.Fatal("File-Change Discipline should contain doc-current rule")
+	}
+}
+
+// AT7: Root AGENTS.md matches base template
+func TestRootAgentsMdMatchesBase(t *testing.T) {
+	t.Parallel()
+	base := readRepoFile(t, "internal/templates/base/AGENTS.md")
+	root := readRepoFile(t, "AGENTS.md")
+	if base != root {
+		t.Fatal("root AGENTS.md should match internal/templates/base/AGENTS.md")
+	}
+}
+
+// AT8: plan.md and templates do not contain Objective-Fit Rubric section
+func TestPlanMdNoRubricSection(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{
+		"plan.md",
+		"internal/templates/overlays/code/files/plan.md.tmpl",
+		"examples/code/plan.md",
+	} {
+		content := readRepoFile(t, path)
+		if strings.Contains(content, "## Objective-Fit Rubric") {
+			t.Fatalf("%s should not contain Objective-Fit Rubric section (moved to AGENTS.md)", path)
+		}
+	}
+}
+
+// AT9: Role READMEs contain default-to-maintainer wording
+func TestRoleReadmesDefaultMaintainer(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{
+		"docs/agent-roles/README.md",
+		"internal/templates/overlays/code/files/docs/agent-roles/README.md.tmpl",
+		"internal/templates/overlays/doc/files/docs/agent-roles/README.md.tmpl",
+		"examples/code/docs/agent-roles/README.md",
+		"examples/doc/docs/agent-roles/README.md",
+	} {
+		content := readRepoFile(t, path)
+		if strings.Contains(content, "asks which role to assume before doing substantive work") {
+			t.Fatalf("%s still has old ask-first wording", path)
+		}
+		if !strings.Contains(content, "defaults to maintainer") {
+			t.Fatalf("%s should contain default-to-maintainer wording", path)
+		}
+	}
+}
+
+// AT10: Development cycle docs reference AGENTS.md for rubric
+func TestDevCycleRubricReferencesAgentsMd(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{
+		"docs/development-cycle.md",
+		"internal/templates/overlays/code/files/docs/development-cycle.md.tmpl",
+		"examples/code/docs/development-cycle.md",
+	} {
+		content := readRepoFile(t, path)
+		if strings.Contains(content, "→ Objective-Fit Rubric →") {
+			t.Fatalf("%s still references old Objective-Fit Rubric (should reference AGENTS.md)", path)
+		}
+		if !strings.Contains(content, "AGENTS.md") {
+			t.Fatalf("%s should reference AGENTS.md for rubric", path)
+		}
+	}
+}

@@ -8,22 +8,13 @@ Example governed code repository rendered from the template.
 
 - Go service
 
-## Objective-Fit Rubric
-
-Every new roadmap item should answer:
-
-1. what user or system outcome does this serve
-2. why is this a better next step than competing work
-3. what existing decisions or constraints does it depend on
-4. is this direct roadmap work or an intentional pivot
-
 ## Priorities
 
 - active work items only; remove when shipped
 
 ## Ideas To Explore
 
-Pre-rubric ideas captured for future discussion. Prefix each with `IE<N>:` (sequential N) for stable references. These are not commitments and have not passed the Objective-Fit Rubric. Remove entries when promoted to an AC, completed, or no longer interesting; this section is pre-rubric staging, not a historical record.
+Pre-rubric ideas captured for future discussion. Prefix each with `IE<N>:` (sequential N) for stable references. These are not commitments and have not passed the objective-fit rubric in `AGENTS.md`. Remove entries when promoted to an AC, completed, or no longer interesting; this section is pre-rubric staging, not a historical record.
 
 ## Deferred
 

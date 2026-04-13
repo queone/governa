@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.11.0 | AC32: governance baseline from skout — rubric inline, default-to-maintainer, terse output, release command rule |
 | 0.10.2 | Build-release template restructured, stale doc refs fixed, release message limit enforced in checklist |
 | 0.10.1 | Enhance: removed -a/--apply and -t flags, deprecated .template-proposed |
 | 0.10.0 | AC31: enhance detects existing enhance ACs and prompts replace/update/new on collision |
