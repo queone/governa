@@ -48,8 +48,8 @@ The release command (`./build.sh vX.Y.Z "message"`) executes `cmd/rel`, which or
 
 This repo was generated from a governa governance template. To check for template updates:
 
-1. Run `governa sync` to generate a review document with per-file recommendations.
-2. Compare `TEMPLATE_VERSION` in this repo against the template's current version.
+1. Run `governa sync` to generate a review document with per-file recommendations. This also updates `TEMPLATE_VERSION` to the current template version.
+2. Compare `TEMPLATE_VERSION` in this repo against the template's current version. `TEMPLATE_VERSION` reflects the last template version this repo was evaluated against, not the original bootstrap version.
 3. `.governa-manifest`, if present, records SHA-256 checksums of each file at bootstrap time. This enables comparison to distinguish your customizations from stale template content.
 
 Template refresh is operator-driven. The governa tool proposes; the repo maintainer decides what to cherry-pick.

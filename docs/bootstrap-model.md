@@ -135,7 +135,7 @@ Recommended initial ownership model:
 - fully template-owned when created by bootstrap:
   - `AGENTS.md`
   - `CLAUDE.md` symlink
-  - `TEMPLATE_VERSION`
+  - `TEMPLATE_VERSION` — records the last governa template version this repo was synced against; updated automatically by `governa sync` on every run
   - `.governa-manifest`
 - overlay-owned by default when newly created:
   - `README.md`
