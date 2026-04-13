@@ -416,7 +416,7 @@ func detectSyncMode(targetDir string) string {
 			return "adopt"
 		}
 	}
-	if _, err := os.Stat(filepath.Join(targetDir, "docs", "agent-roles")); err == nil {
+	if _, err := os.Stat(filepath.Join(targetDir, "docs", "roles")); err == nil {
 		return "adopt"
 	}
 	return "new"

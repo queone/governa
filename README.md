@@ -71,7 +71,7 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 - [`plan.md`](plan.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/README.md`](docs/README.md)
-- [`docs/agent-roles/`](docs/agent-roles/)
+- [`docs/roles/`](docs/roles/)
 
 ## Rendered Examples
 Generated examples:

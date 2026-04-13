@@ -36,7 +36,7 @@ This means the template must be organized so an agent can reason about it easily
 Single entry point for both new and existing repos. Detection order:
 
 1. `.governa-manifest` or `.repokit-manifest` found → **re-sync** (existing repo with stored params)
-2. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/agent-roles/) → **first sync** (existing repo, no stored params)
+2. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/roles/) → **first sync** (existing repo, no stored params)
 3. Otherwise → **new repo** bootstrap
 
 #### New-repo behavior
@@ -143,7 +143,7 @@ Recommended initial ownership model:
   - `plan.md`
   - `style.md` or `voice.md`
   - `content-plan.md` or `calendar.md`
-  - `docs/agent-roles/` (DEV, QA, and custom role docs)
+  - `docs/roles/` (DEV, QA, director reference, and custom role docs)
 - user-owned unless explicitly mapped:
   - source code
   - app content

@@ -2498,10 +2498,10 @@ func TestBootstrapNewProducesAgentRoles(t *testing.T) {
 	}
 
 	for _, rel := range []string{
-		filepath.Join("docs", "agent-roles", "README.md"),
-		filepath.Join("docs", "agent-roles", "dev.md"),
-		filepath.Join("docs", "agent-roles", "qa.md"),
-		filepath.Join("docs", "agent-roles", "maintainer.md"),
+		filepath.Join("docs", "roles", "README.md"),
+		filepath.Join("docs", "roles", "dev.md"),
+		filepath.Join("docs", "roles", "qa.md"),
+		filepath.Join("docs", "roles", "maintainer.md"),
 	} {
 		path := filepath.Join(targetDir, rel)
 		if _, err := os.Stat(path); err != nil {
@@ -2509,15 +2509,15 @@ func TestBootstrapNewProducesAgentRoles(t *testing.T) {
 		}
 	}
 
-	devContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "dev.md"))
+	devContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "roles", "dev.md"))
 	if !strings.Contains(string(devContent), "test coverage") {
 		t.Fatal("dev.md should state the test coverage requirement")
 	}
-	qaContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "qa.md"))
+	qaContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "roles", "qa.md"))
 	if !strings.Contains(string(qaContent), "QA says") {
 		t.Fatal("qa.md should state the QA says prefix requirement")
 	}
-	maintContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "maintainer.md"))
+	maintContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "roles", "maintainer.md"))
 	if !strings.Contains(string(maintContent), "MAINT says:") {
 		t.Fatal("maintainer.md should state the MAINT says: prefix")
 	}
@@ -2535,11 +2535,11 @@ func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
 	templateRoot, _ := filepath.Abs("../..")
 	targetDir := t.TempDir()
 
-	// Pre-create agent-roles files so adopt proposes them
-	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "README.md"), "# Existing roles index\n")
-	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "dev.md"), "# Existing dev role\n")
-	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "qa.md"), "# Existing qa role\n")
-	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "maintainer.md"), "# Existing maintainer role\n")
+	// Pre-create roles files so adopt proposes them
+	mustWrite(t, filepath.Join(targetDir, "docs", "roles", "README.md"), "# Existing roles index\n")
+	mustWrite(t, filepath.Join(targetDir, "docs", "roles", "dev.md"), "# Existing dev role\n")
+	mustWrite(t, filepath.Join(targetDir, "docs", "roles", "qa.md"), "# Existing qa role\n")
+	mustWrite(t, filepath.Join(targetDir, "docs", "roles", "maintainer.md"), "# Existing maintainer role\n")
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# Existing AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n")
 
 	cfg := Config{
@@ -2555,17 +2555,17 @@ func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
 	}
 
 	// Existing files should be preserved
-	devContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "dev.md"))
+	devContent, _ := os.ReadFile(filepath.Join(targetDir, "docs", "roles", "dev.md"))
 	if !strings.Contains(string(devContent), "Existing dev role") {
 		t.Fatal("adopt should preserve existing dev.md")
 	}
 
 	// No .template-proposed files should exist
 	for _, rel := range []string{
-		filepath.Join("docs", "agent-roles", "README.md"),
-		filepath.Join("docs", "agent-roles", "dev.md"),
-		filepath.Join("docs", "agent-roles", "qa.md"),
-		filepath.Join("docs", "agent-roles", "maintainer.md"),
+		filepath.Join("docs", "roles", "README.md"),
+		filepath.Join("docs", "roles", "dev.md"),
+		filepath.Join("docs", "roles", "qa.md"),
+		filepath.Join("docs", "roles", "maintainer.md"),
 	} {
 		proposed := filepath.Join(targetDir, strings.TrimSuffix(rel, ".md")+".template-proposed.md")
 		if _, err := os.Stat(proposed); err == nil {
@@ -2683,11 +2683,11 @@ func TestBootstrapNewDocProducesEnrichedFiles(t *testing.T) {
 		}
 	}
 
-	// agent-roles should exist
+	// roles should exist
 	for _, rel := range []string{
-		filepath.Join("docs", "agent-roles", "dev.md"),
-		filepath.Join("docs", "agent-roles", "qa.md"),
-		filepath.Join("docs", "agent-roles", "maintainer.md"),
+		filepath.Join("docs", "roles", "dev.md"),
+		filepath.Join("docs", "roles", "qa.md"),
+		filepath.Join("docs", "roles", "maintainer.md"),
 	} {
 		if _, err := os.Stat(filepath.Join(targetDir, rel)); err != nil {
 			t.Fatalf("expected %s to exist, got error: %v", rel, err)
@@ -2695,7 +2695,7 @@ func TestBootstrapNewDocProducesEnrichedFiles(t *testing.T) {
 	}
 
 	// DOC dev role should use editorial language, not build language
-	devRole, _ := os.ReadFile(filepath.Join(targetDir, "docs", "agent-roles", "dev.md"))
+	devRole, _ := os.ReadFile(filepath.Join(targetDir, "docs", "roles", "dev.md"))
 	if strings.Contains(string(devRole), "build command") {
 		t.Fatal("DOC dev.md should not reference build commands")
 	}
@@ -2713,7 +2713,7 @@ func TestBootstrapAdoptDocProposesEnrichedFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(targetDir, "voice.md"), "# Old voice\n")
 	mustWrite(t, filepath.Join(targetDir, "calendar.md"), "# Old calendar\n")
 	mustWrite(t, filepath.Join(targetDir, "publishing-workflow.md"), "# Old workflow\n")
-	mustWrite(t, filepath.Join(targetDir, "docs", "agent-roles", "dev.md"), "# Old dev\n")
+	mustWrite(t, filepath.Join(targetDir, "docs", "roles", "dev.md"), "# Old dev\n")
 	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nP.\n\n## Governed Sections\n\nG.\n\n## Interaction Mode\n\nI.\n\n## Approval Boundaries\n\nA.\n\n## Review Style\n\nR.\n\n## File-Change Discipline\n\nF.\n\n## Release Or Publish Triggers\n\nT.\n\n## Documentation Update Expectations\n\nD.\n")
 
 	cfg := Config{
@@ -2734,7 +2734,7 @@ func TestBootstrapAdoptDocProposesEnrichedFiles(t *testing.T) {
 		"voice.md",
 		"calendar.md",
 		"publishing-workflow.md",
-		filepath.Join("docs", "agent-roles", "dev.md"),
+		filepath.Join("docs", "roles", "dev.md"),
 	} {
 		ext := filepath.Ext(rel)
 		name := strings.TrimSuffix(rel, ext)
@@ -3508,20 +3508,20 @@ func TestGovernanceImprovementsFromSkout(t *testing.T) {
 
 func TestDevRoleDocEnhanceWorkflow(t *testing.T) {
 	t.Parallel()
-	content := readRepoFile(t, "docs/agent-roles/dev.md")
+	content := readRepoFile(t, "docs/roles/dev.md")
 	if !strings.Contains(content, "governa enhance -r") {
-		t.Fatal("docs/agent-roles/dev.md should contain enhance workflow instructions")
+		t.Fatal("docs/roles/dev.md should contain enhance workflow instructions")
 	}
 	if !strings.Contains(content, "governa enhance") {
-		t.Fatal("docs/agent-roles/dev.md should mention self-review mode")
+		t.Fatal("docs/roles/dev.md should mention self-review mode")
 	}
 }
 
 func TestCodeOverlayDevRoleUsingAdopt(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{
-		"internal/templates/overlays/code/files/docs/agent-roles/dev.md.tmpl",
-		"examples/code/docs/agent-roles/dev.md",
+		"internal/templates/overlays/code/files/docs/roles/dev.md.tmpl",
+		"examples/code/docs/roles/dev.md",
 	} {
 		content := readRepoFile(t, path)
 		if !strings.Contains(content, "## Using Sync") {
@@ -3532,9 +3532,9 @@ func TestCodeOverlayDevRoleUsingAdopt(t *testing.T) {
 		}
 	}
 	// Self-hosted DEV role must NOT have "Using Sync" — governa uses enhance.
-	selfHosted := readRepoFile(t, "docs/agent-roles/dev.md")
+	selfHosted := readRepoFile(t, "docs/roles/dev.md")
 	if strings.Contains(selfHosted, "## Using Sync") {
-		t.Fatal("docs/agent-roles/dev.md should NOT contain Using Sync (governa uses enhance, not sync)")
+		t.Fatal("docs/roles/dev.md should NOT contain Using Sync (governa uses enhance, not sync)")
 	}
 }
 
@@ -4068,7 +4068,7 @@ func TestProjectRulesInGovernedSectionList(t *testing.T) {
 
 func TestCodeOverlayDevMdHasResponseStyle(t *testing.T) {
 	t.Parallel()
-	content := readRepoFile(t, "internal/templates/overlays/code/files/docs/agent-roles/dev.md.tmpl")
+	content := readRepoFile(t, "internal/templates/overlays/code/files/docs/roles/dev.md.tmpl")
 	if !strings.Contains(content, "terse") || !strings.Contains(content, "Review Style") {
 		t.Fatal("CODE overlay dev.md should contain response style expectations referencing Review Style")
 	}
@@ -4770,11 +4770,11 @@ func TestPlanMdNoRubricSection(t *testing.T) {
 func TestRoleReadmesDefaultMaintainer(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{
-		"docs/agent-roles/README.md",
-		"internal/templates/overlays/code/files/docs/agent-roles/README.md.tmpl",
-		"internal/templates/overlays/doc/files/docs/agent-roles/README.md.tmpl",
-		"examples/code/docs/agent-roles/README.md",
-		"examples/doc/docs/agent-roles/README.md",
+		"docs/roles/README.md",
+		"internal/templates/overlays/code/files/docs/roles/README.md.tmpl",
+		"internal/templates/overlays/doc/files/docs/roles/README.md.tmpl",
+		"examples/code/docs/roles/README.md",
+		"examples/doc/docs/roles/README.md",
 	} {
 		content := readRepoFile(t, path)
 		if strings.Contains(content, "asks which role to assume before doing substantive work") {

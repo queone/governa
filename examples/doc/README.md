@@ -31,7 +31,7 @@ Editorial style reference:
 - `style.md`: editorial style and formatting rules (alternate: `voice.md` for persona and audience focus)
 - `content-plan.md`: prioritized content roadmap (alternate: `calendar.md` for date-driven scheduling)
 - `publishing-workflow.md`: review and publishing steps
-- `docs/agent-roles/`: role-specific behavior docs (DEV, QA, Maintainer)
+- `docs/roles/`: role-specific behavior docs (DEV, QA, Maintainer, director reference)
 - `cmd/rel/main.go`: Go release helper for documented release tagging
 - `rel.sh`: shell convenience wrapper for Unix, Linux, and Git-Bash environments
 

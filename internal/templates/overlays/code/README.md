@@ -19,9 +19,10 @@ Current contents:
 - `docs/build-release.md`
 - `docs/development-guidelines.md`
 - `docs/knowledge/README.md`
-- `docs/agent-roles/README.md`
-- `docs/agent-roles/dev.md`
-- `docs/agent-roles/qa.md`
-- `docs/agent-roles/maintainer.md`
+- `docs/roles/README.md`
+- `docs/roles/director.md`
+- `docs/roles/dev.md`
+- `docs/roles/qa.md`
+- `docs/roles/maintainer.md`
 
 See `plan.md` for future overlay improvements.

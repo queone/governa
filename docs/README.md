@@ -9,5 +9,5 @@ Index for repo-level workflow and maintenance docs.
 - `overlay-scope.md`: `CODE` versus `DOC` boundaries
 - `development-guidelines.md`: durable engineering guidance for any agent or contributor
 - `knowledge/`: deeper supporting notes and reusable lessons that expand development-guidelines topics
-- `agent-roles/`: role-specific behavior docs (DEV, QA) that supplement AGENTS.md
+- `roles/`: role-specific behavior docs (DEV, QA, director reference) that supplement AGENTS.md
 - `acN-short-slug.md`: acceptance-criteria docs (working AC files; `ac-template.md` is the keeper)

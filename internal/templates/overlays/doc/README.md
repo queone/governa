@@ -13,10 +13,11 @@ Current contents:
 - `calendar.md` (alternate to `content-plan.md`)
 - `publishing-workflow.md`
 - `release.md`
-- `docs/agent-roles/README.md`
-- `docs/agent-roles/dev.md`
-- `docs/agent-roles/qa.md`
-- `docs/agent-roles/maintainer.md`
+- `docs/roles/README.md`
+- `docs/roles/director.md`
+- `docs/roles/dev.md`
+- `docs/roles/qa.md`
+- `docs/roles/maintainer.md`
 - `cmd/rel/main.go`
 - `internal/color/color.go` shared color package
 - `rel.sh`

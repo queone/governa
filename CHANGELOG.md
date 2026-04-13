@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.13.0 | AC34: roles directory rename, delivery-model integration, director reference role |
 | 0.12.0 | AC33: sync content-change detection, AC deletion timing aligned to release prep |
 | 0.11.1 | TEMPLATE_VERSION semantic clarified, development-cycle wording aligned |
 | 0.11.0 | AC32: governance baseline from skout — rubric inline, default-to-maintainer, terse output, release command rule |
