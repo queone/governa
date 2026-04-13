@@ -1081,7 +1081,7 @@ func TestScoreOverlayCollisionKeepLargerExisting(t *testing.T) {
 	existing := filepath.Join(dir, "README.md")
 	// 20 lines existing vs 5 lines proposed
 	mustWrite(t, existing, strings.Repeat("line\n", 20))
-	score := scoreOverlayCollision(existing, strings.Repeat("line\n", 5))
+	score := scoreOverlayCollision(existing, strings.Repeat("line\n", 5), "", "")
 	if score.recommendation != "keep" {
 		t.Fatalf("recommendation = %q, want keep", score.recommendation)
 	}
@@ -1092,7 +1092,7 @@ func TestScoreOverlayCollisionKeepMoreSections(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "doc.md")
 	mustWrite(t, existing, "# Doc\n\n## A\ncontent\n## B\ncontent\n## C\ncontent\n## D\ncontent\n")
-	score := scoreOverlayCollision(existing, "# Doc\n\n## A\ncontent\n## B\ncontent\n")
+	score := scoreOverlayCollision(existing, "# Doc\n\n## A\ncontent\n## B\ncontent\n", "", "")
 	if score.recommendation != "keep" {
 		t.Fatalf("recommendation = %q, want keep", score.recommendation)
 	}
@@ -1103,7 +1103,7 @@ func TestScoreOverlayCollisionReviewNewSections(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "doc.md")
 	mustWrite(t, existing, "# Doc\n\n## A\ncontent\n")
-	score := scoreOverlayCollision(existing, "# Doc\n\n## A\ncontent\n## B\nnew content\n")
+	score := scoreOverlayCollision(existing, "# Doc\n\n## A\ncontent\n## B\nnew content\n", "", "")
 	if score.recommendation != "review: cherry-pick" {
 		t.Fatalf("recommendation = %q, want review: cherry-pick", score.recommendation)
 	}
@@ -1114,7 +1114,7 @@ func TestScoreOverlayCollisionReviewNewSections(t *testing.T) {
 
 func TestScoreOverlayCollisionAcceptMissing(t *testing.T) {
 	t.Parallel()
-	score := scoreOverlayCollision("/nonexistent/file.md", "content\n")
+	score := scoreOverlayCollision("/nonexistent/file.md", "content\n", "", "")
 	if score.recommendation != "accept" {
 		t.Fatalf("recommendation = %q, want accept", score.recommendation)
 	}
@@ -1125,7 +1125,7 @@ func TestScoreOverlayCollisionReviewNonMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "build.sh")
 	mustWrite(t, existing, "#!/bin/bash\necho hello\n")
-	score := scoreOverlayCollision(existing, "#!/bin/bash\necho world\n")
+	score := scoreOverlayCollision(existing, "#!/bin/bash\necho world\n", "", "")
 	if score.recommendation != "review: no action likely" {
 		t.Fatalf("recommendation = %q, want review: no action likely for non-markdown", score.recommendation)
 	}
@@ -4114,7 +4114,7 @@ func TestScoreOverlayCollisionIdentical(t *testing.T) {
 	content := "# Same\n\n## Section\n\ncontent\n"
 	existing := filepath.Join(dir, "doc.md")
 	mustWrite(t, existing, content)
-	score := scoreOverlayCollision(existing, content)
+	score := scoreOverlayCollision(existing, content, "", "")
 	if score.recommendation != "keep" {
 		t.Fatalf("recommendation = %q, want keep for identical", score.recommendation)
 	}
@@ -4129,9 +4129,159 @@ func TestScoreOverlayCollisionSameCountDifferentNames(t *testing.T) {
 	existing := filepath.Join(dir, "doc.md")
 	mustWrite(t, existing, "# Doc\n\n## Build\ncontent\n## Release\ncontent\n## Tests\ncontent\n")
 	proposed := "# Doc\n\n## Build And Test Rules\ncontent\n## Release Trigger\ncontent\n## Release Checklist\ncontent\n"
-	score := scoreOverlayCollision(existing, proposed)
+	score := scoreOverlayCollision(existing, proposed, "", "")
 	if score.recommendation != "keep" {
 		t.Fatalf("recommendation = %q, want keep (same section count, different names)", score.recommendation)
+	}
+}
+
+// --- Content-change detection tests (AC33) ---
+
+func TestScoreOverlayContentChangedMarkdown(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "doc.md")
+	// Existing has same sections but different body — and existing is "more developed" (longer).
+	mustWrite(t, existing, "# Doc\n\n## Rules\n\nold rule 1\nold rule 2\nold rule 3\nold rule 4\nold rule 5\n\n## Notes\n\nextra content here\nextra content here\n")
+	proposed := "# Doc\n\n## Rules\n\nnew rule 1\n\n## Notes\n\nnote\n"
+	score := scoreOverlayCollision(existing, proposed, "oldchecksum", "newchecksum")
+	if score.recommendation != "review: content changed" {
+		t.Fatalf("recommendation = %q, want review: content changed", score.recommendation)
+	}
+	if !score.contentChanged {
+		t.Fatal("contentChanged should be true")
+	}
+	if len(score.changedSections) == 0 {
+		t.Fatal("changedSections should list changed sections")
+	}
+	found := false
+	for _, s := range score.changedSections {
+		if s == "Rules" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("changedSections = %v, want to include Rules", score.changedSections)
+	}
+}
+
+func TestScoreOverlayContentChangedNonMarkdown(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "build.sh")
+	mustWrite(t, existing, "#!/bin/bash\necho hello\n")
+	score := scoreOverlayCollision(existing, "#!/bin/bash\necho world\n", "oldchecksum", "newchecksum")
+	if score.recommendation != "review: content changed" {
+		t.Fatalf("recommendation = %q, want review: content changed", score.recommendation)
+	}
+	if !score.contentChanged {
+		t.Fatal("contentChanged should be true")
+	}
+}
+
+func TestScoreOverlayNoFalsePositiveWhenAlreadyAbsorbed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "doc.md")
+	content := "# Doc\n\n## Rules\n\nnew rule\n"
+	mustWrite(t, existing, content)
+	// Template changed (different checksums) but existing already matches proposed.
+	score := scoreOverlayCollision(existing, content, "oldchecksum", "newchecksum")
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep (already absorbed)", score.recommendation)
+	}
+}
+
+func TestScoreOverlayNoContentChangedWhenTemplateUnchanged(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "doc.md")
+	// Existing differs from proposed, but template hasn't changed (same checksums).
+	// The structural heuristic may return "keep" or "review: no action likely"
+	// depending on line/section counts — the key assertion is that it does NOT
+	// return "review: content changed".
+	mustWrite(t, existing, "# Doc\n\n## Rules\n\nold rule 1\nold rule 2\nold rule 3\nold rule 4\nold rule 5\n\n## Notes\n\nextra\nextra\n")
+	score := scoreOverlayCollision(existing, "# Doc\n\n## Rules\n\nnew rule\n\n## Notes\n\nnote\n", "samechecksum", "samechecksum")
+	if score.recommendation == "review: content changed" {
+		t.Fatalf("recommendation = %q, should not be content changed when template unchanged", score.recommendation)
+	}
+	if score.contentChanged {
+		t.Fatal("contentChanged should be false when template unchanged")
+	}
+}
+
+func TestScoreGovernanceContentChanged(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	// Existing has all governed sections but with different content in one.
+	existing := "# AGENTS.md\n\n## Purpose\n\nmy purpose\n\n## Governed Sections\n\nmy sections\n\n## Interaction Mode\n\nold interaction rules\n\n## Approval Boundaries\n\nmy rules\n\n## Review Style\n\nmy style\n\n## File-Change Discipline\n\nmy discipline\n\n## Release Or Publish Triggers\n\nmy triggers\n\n## Documentation Update Expectations\n\nmy docs\n\n## Project Rules\n\nmy project rules\n"
+	mustWrite(t, agentsPath, existing)
+
+	// Template has same sections but different Interaction Mode content.
+	template := "# AGENTS.md\n\n## Purpose\n\ntemplate purpose\n\n## Governed Sections\n\ntemplate sections\n\n## Interaction Mode\n\nnew interaction rules with extra guidance\n\n## Approval Boundaries\n\ntemplate rules\n\n## Review Style\n\ntemplate style\n\n## File-Change Discipline\n\ntemplate discipline\n\n## Release Or Publish Triggers\n\ntemplate triggers\n\n## Documentation Update Expectations\n\ntemplate docs\n\n## Project Rules\n\ntemplate project rules\n"
+
+	op := operation{kind: "write", path: agentsPath, content: template, note: "base governance contract"}
+	score := scoreGovernanceCollision(op, "oldchecksum", "newchecksum")
+	if score.recommendation != "review: content changed" {
+		t.Fatalf("recommendation = %q, want review: content changed", score.recommendation)
+	}
+	if !score.contentChanged {
+		t.Fatal("contentChanged should be true")
+	}
+	if len(score.changedSections) == 0 {
+		t.Fatal("changedSections should list changed governed sections")
+	}
+}
+
+func TestScoreGovernanceKeepWhenTemplateUnchanged(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	existing := "# AGENTS.md\n\n## Purpose\n\nmy purpose\n\n## Governed Sections\n\nmy sections\n\n## Interaction Mode\n\nold rules\n\n## Approval Boundaries\n\nmy rules\n\n## Review Style\n\nmy style\n\n## File-Change Discipline\n\nmy discipline\n\n## Release Or Publish Triggers\n\nmy triggers\n\n## Documentation Update Expectations\n\nmy docs\n\n## Project Rules\n\nmy project rules\n"
+	mustWrite(t, agentsPath, existing)
+	template := "# AGENTS.md\n\n## Purpose\n\ntemplate\n\n## Governed Sections\n\ntemplate\n\n## Interaction Mode\n\ntemplate\n\n## Approval Boundaries\n\ntemplate\n\n## Review Style\n\ntemplate\n\n## File-Change Discipline\n\ntemplate\n\n## Release Or Publish Triggers\n\ntemplate\n\n## Documentation Update Expectations\n\ntemplate\n\n## Project Rules\n\ntemplate\n"
+
+	op := operation{kind: "write", path: agentsPath, content: template, note: "base governance contract"}
+	// Same checksums — template didn't change.
+	score := scoreGovernanceCollision(op, "samechecksum", "samechecksum")
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep (template unchanged)", score.recommendation)
+	}
+}
+
+func TestRenderAdoptReviewContentChanges(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/docs/dev-cycle.md",
+			recommendation:  "review: content changed",
+			reason:          "template sections changed: Cycle",
+			existingLines:   50,
+			proposedLines:   20,
+			changedSections: []string{"Cycle"},
+			contentChanged:  true,
+			proposedContent: "# Dev Cycle\n\n## Cycle\n\nnew cycle content\n",
+		},
+		{
+			path:           "/tmp/repo/build.sh",
+			recommendation: "review: content changed",
+			reason:         "template changed since last sync",
+			contentChanged: true,
+		},
+	}
+	output := renderAdoptReview(scores)
+	if !strings.Contains(output, "## Content Changes") {
+		t.Fatal("output should contain Content Changes section")
+	}
+	if !strings.Contains(output, "review: content changed**: 2") {
+		t.Fatalf("output should show 2 content-changed files, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Changed sections: Cycle") {
+		t.Fatal("output should list changed sections for markdown files")
+	}
+	if !strings.Contains(output, "Template content changed since last sync") {
+		t.Fatal("output should have generic message for non-markdown files")
 	}
 }
 

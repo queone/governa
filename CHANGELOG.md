@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.12.0 | AC33: sync content-change detection, AC deletion timing aligned to release prep |
 | 0.11.1 | TEMPLATE_VERSION semantic clarified, development-cycle wording aligned |
 | 0.11.0 | AC32: governance baseline from skout — rubric inline, default-to-maintainer, terse output, release command rule |
 | 0.10.2 | Build-release template restructured, stale doc refs fixed, release message limit enforced in checklist |

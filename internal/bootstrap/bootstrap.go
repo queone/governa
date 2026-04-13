@@ -555,7 +555,10 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 
 	var ops []operation
 	if adopt {
-		transformed, scores := applyAdoptTransforms(canonical)
+		oldManifest, _, _ := readManifest(targetAbs)
+		oldEntryMap := manifestEntryMap(oldManifest)
+		newEntryMap := manifestEntryMap(manifest)
+		transformed, scores := applyAdoptTransforms(canonical, oldEntryMap, newEntryMap, targetAbs)
 		ops = compactOperations(transformed)
 		emitAdoptAdvisories(targetAbs)
 		ops = append(ops, manifestOp)
@@ -1110,7 +1113,7 @@ func planRender(tfs fs.FS, repoRoot string, cfg Config, targetRoot string, adopt
 	if !adopt {
 		return compactOperations(canonical), nil
 	}
-	transformed, _ := applyAdoptTransforms(canonical)
+	transformed, _ := applyAdoptTransforms(canonical, nil, nil, targetRoot)
 	return compactOperations(transformed), nil
 }
 
@@ -1219,13 +1222,21 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 	return ops, nil
 }
 
-func applyAdoptTransforms(ops []operation) ([]operation, []collisionScore) {
+func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry, newManifest map[string]ManifestEntry, targetDir string) ([]operation, []collisionScore) {
 	out := make([]operation, len(ops))
 	var scores []collisionScore
 	for i, op := range ops {
+		// Derive repo-relative path for manifest lookup.
+		var repoRel string
+		if rel, err := filepath.Rel(targetDir, op.path); err == nil {
+			repoRel = filepath.ToSlash(rel)
+		}
+		oldEntry := oldManifest[repoRel]
+		newEntry := newManifest[repoRel]
+
 		switch {
 		case op.kind == "write" && op.note == "base governance contract":
-			score := scoreGovernanceCollision(op)
+			score := scoreGovernanceCollision(op, oldEntry.SourceChecksum, newEntry.SourceChecksum)
 			scores = append(scores, score)
 			if score.recommendation == "accept" {
 				out[i] = op // file doesn't exist, write directly
@@ -1237,7 +1248,7 @@ func applyAdoptTransforms(ops []operation) ([]operation, []collisionScore) {
 		case op.kind == "symlink":
 			out[i] = skipIfExists(op)
 		case op.kind == "write" && op.note == "overlay file":
-			score := scoreOverlayCollision(op.path, op.content)
+			score := scoreOverlayCollision(op.path, op.content, oldEntry.SourceChecksum, newEntry.SourceChecksum)
 			if score.recommendation == "accept" {
 				out[i] = op // file doesn't exist, write directly
 			} else {
@@ -2246,13 +2257,15 @@ type structuralNote struct {
 
 type collisionScore struct {
 	path             string // target file path
-	recommendation   string // "keep", "review: cherry-pick", "review: no action likely", "accept"
+	recommendation   string // "keep", "review: cherry-pick", "review: content changed", "review: no action likely", "accept"
 	reason           string
 	existingLines    int
 	proposedLines    int
 	existingSections int
 	proposedSections int
 	missingSections  []string         // sections in proposed but not in existing
+	changedSections  []string         // shared sections with different content (markdown only)
+	contentChanged   bool             // true when template source changed and existing differs from new template
 	proposedContent  string           // the template content for the review doc
 	governancePatch  string           // non-empty if this is an AGENTS.md patch with missing sections
 	structuralNotes  []structuralNote // section-level structural observations
@@ -2275,7 +2288,7 @@ func markdownSectionNames(content string) []string {
 	return names
 }
 
-func scoreOverlayCollision(existingPath string, proposedContent string) collisionScore {
+func scoreOverlayCollision(existingPath string, proposedContent string, oldSourceChecksum string, newSourceChecksum string) collisionScore {
 	score := collisionScore{
 		path:            existingPath,
 		proposedLines:   countLines(proposedContent),
@@ -2299,9 +2312,21 @@ func scoreOverlayCollision(existingPath string, proposedContent string) collisio
 		return score
 	}
 
+	// Detect whether the template source changed since last sync.
+	templateChanged := oldSourceChecksum != "" && newSourceChecksum != "" && oldSourceChecksum != newSourceChecksum
+	// Even if the template changed, the repo may have already absorbed the
+	// changes manually. Check whether existing content still differs from the
+	// new template. If it matches, no content-change flag is needed.
+	alreadyAbsorbed := templateChanged && existingContent == proposedContent // (caught by identical check above, but defensive)
+
 	isMarkdown := strings.HasSuffix(existingPath, ".md") || strings.HasSuffix(existingPath, ".md.tmpl")
 	if !isMarkdown {
-		// Non-markdown files always default to review
+		if templateChanged && !alreadyAbsorbed {
+			score.recommendation = "review: content changed"
+			score.reason = fmt.Sprintf("template changed since last sync (non-markdown, existing %d lines, proposed %d lines)", score.existingLines, score.proposedLines)
+			score.contentChanged = true
+			return score
+		}
 		score.recommendation = "review: no action likely"
 		score.reason = fmt.Sprintf("non-markdown file (existing %d lines, proposed %d lines)", score.existingLines, score.proposedLines)
 		return score
@@ -2326,13 +2351,31 @@ func scoreOverlayCollision(existingPath string, proposedContent string) collisio
 	// Structural comparison for matching sections
 	score.structuralNotes = compareStructure(existingContent, proposedContent)
 
+	// Detect section-level content changes when template source changed.
+	if templateChanged {
+		score.changedSections = detectChangedSections(existingContent, proposedContent)
+		if len(score.changedSections) > 0 {
+			score.contentChanged = true
+		}
+	}
+
 	// Decision rules
 	if score.existingLines >= 2*score.proposedLines {
+		if score.contentChanged {
+			score.recommendation = "review: content changed"
+			score.reason = fmt.Sprintf("existing is more developed (%d lines vs %d proposed) but template sections changed: %s", score.existingLines, score.proposedLines, strings.Join(score.changedSections, ", "))
+			return score
+		}
 		score.recommendation = "keep"
 		score.reason = fmt.Sprintf("existing is more developed (%d lines vs %d proposed)", score.existingLines, score.proposedLines)
 		return score
 	}
 	if score.existingSections > score.proposedSections {
+		if score.contentChanged {
+			score.recommendation = "review: content changed"
+			score.reason = fmt.Sprintf("existing has richer structure (%d sections vs %d proposed) but template sections changed: %s", score.existingSections, score.proposedSections, strings.Join(score.changedSections, ", "))
+			return score
+		}
 		score.recommendation = "keep"
 		score.reason = fmt.Sprintf("existing has richer structure (%d sections vs %d proposed)", score.existingSections, score.proposedSections)
 		return score
@@ -2341,6 +2384,11 @@ func scoreOverlayCollision(existingPath string, proposedContent string) collisio
 	// names likely mean the existing file covers the same content under more
 	// specific headings — not a real cherry-pick opportunity.
 	if score.existingSections >= score.proposedSections && len(score.missingSections) > 0 {
+		if score.contentChanged {
+			score.recommendation = "review: content changed"
+			score.reason = fmt.Sprintf("template sections changed: %s", strings.Join(score.changedSections, ", "))
+			return score
+		}
 		score.recommendation = "keep"
 		score.reason = fmt.Sprintf("existing covers same content under different headings (%d sections vs %d proposed)", score.existingSections, score.proposedSections)
 		return score
@@ -2351,12 +2399,17 @@ func scoreOverlayCollision(existingPath string, proposedContent string) collisio
 		return score
 	}
 
+	if score.contentChanged {
+		score.recommendation = "review: content changed"
+		score.reason = fmt.Sprintf("template sections changed: %s", strings.Join(score.changedSections, ", "))
+		return score
+	}
 	score.recommendation = "review: no action likely"
 	score.reason = fmt.Sprintf("similar content (%d lines vs %d proposed, %d sections vs %d)", score.existingLines, score.proposedLines, score.existingSections, score.proposedSections)
 	return score
 }
 
-func scoreGovernanceCollision(op operation) collisionScore {
+func scoreGovernanceCollision(op operation, oldSourceChecksum string, newSourceChecksum string) collisionScore {
 	existingContent, err := os.ReadFile(op.path)
 	if err != nil {
 		// File doesn't exist — accept (write directly)
@@ -2370,6 +2423,24 @@ func scoreGovernanceCollision(op operation) collisionScore {
 
 	patched, changed := patchGovernedSections(string(existingContent), op.content)
 	if !changed {
+		// All governed sections present. Check if template content changed
+		// within those sections since last sync.
+		templateChanged := oldSourceChecksum != "" && newSourceChecksum != "" && oldSourceChecksum != newSourceChecksum
+		if templateChanged {
+			changedGoverned := detectChangedGovernedSections(string(existingContent), op.content)
+			if len(changedGoverned) > 0 {
+				return collisionScore{
+					path:            op.path,
+					recommendation:  "review: content changed",
+					reason:          fmt.Sprintf("governed sections changed: %s", strings.Join(changedGoverned, ", ")),
+					existingLines:   countLines(string(existingContent)),
+					proposedLines:   countLines(op.content),
+					changedSections: changedGoverned,
+					contentChanged:  true,
+					proposedContent: op.content,
+				}
+			}
+		}
 		return collisionScore{
 			path:           op.path,
 			recommendation: "keep",
@@ -2399,6 +2470,26 @@ func scoreGovernanceCollision(op operation) collisionScore {
 	}
 }
 
+// detectChangedGovernedSections compares governed section bodies between
+// existing and template content. Returns names of sections where body differs.
+func detectChangedGovernedSections(existingContent, templateContent string) []string {
+	existingMap := sectionMap(parseLevel2Sections(existingContent))
+	templateMap := sectionMap(parseLevel2Sections(templateContent))
+
+	var changed []string
+	for _, name := range governedSectionNames {
+		existingBody, eOk := existingMap[name]
+		templateBody, tOk := templateMap[name]
+		if !eOk || !tOk {
+			continue
+		}
+		if strings.TrimSpace(existingBody) != strings.TrimSpace(templateBody) {
+			changed = append(changed, name)
+		}
+	}
+	return changed
+}
+
 func renderAdoptReview(scores []collisionScore) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, "# governa sync review")
@@ -2414,13 +2505,15 @@ func renderAdoptReview(scores []collisionScore) string {
 	}
 
 	// Action summary
-	keeps, cherryPicks, noAction := 0, 0, 0
+	keeps, cherryPicks, contentChanged, noAction := 0, 0, 0, 0
 	for _, s := range scores {
 		switch s.recommendation {
 		case "keep":
 			keeps++
 		case "review: cherry-pick":
 			cherryPicks++
+		case "review: content changed":
+			contentChanged++
 		case "review: no action likely":
 			noAction++
 		}
@@ -2428,6 +2521,7 @@ func renderAdoptReview(scores []collisionScore) string {
 	fmt.Fprintf(&b, "\n## Summary\n\n")
 	fmt.Fprintf(&b, "- **keep**: %d files (existing is more developed or identical, no action needed)\n", keeps)
 	fmt.Fprintf(&b, "- **review: cherry-pick**: %d files (proposed adds sections worth considering)\n", cherryPicks)
+	fmt.Fprintf(&b, "- **review: content changed**: %d files (template sections changed since last sync)\n", contentChanged)
 	fmt.Fprintf(&b, "- **review: no action likely**: %d files (structurally different but not clearly better)\n", noAction)
 
 	if cherryPicks > 0 {
@@ -2451,6 +2545,40 @@ func renderAdoptReview(scores []collisionScore) string {
 				}
 				fmt.Fprintf(&b, "Proposed content:\n\n")
 				fmt.Fprintf(&b, "```\n%s\n```\n\n", s.proposedContent)
+			}
+		}
+	}
+
+	// Content changes
+	if contentChanged > 0 {
+		fmt.Fprintf(&b, "\n## Content Changes\n\n")
+		fmt.Fprintln(&b, "The template content for these files changed since the last sync. Review the changed sections and incorporate relevant updates.")
+		fmt.Fprintln(&b, "")
+		for _, s := range scores {
+			if s.recommendation != "review: content changed" {
+				continue
+			}
+			rel := scoreRelPath(s.path)
+			if len(s.changedSections) > 0 {
+				fmt.Fprintf(&b, "### `%s`\n\n", rel)
+				fmt.Fprintf(&b, "Changed sections: %s\n\n", strings.Join(s.changedSections, ", "))
+				existingBytes, _ := os.ReadFile(s.path)
+				existingMap := sectionMap(parseLevel2Sections(string(existingBytes)))
+				proposedMap := sectionMap(parseLevel2Sections(s.proposedContent))
+				for _, sec := range s.changedSections {
+					fmt.Fprintf(&b, "#### %s\n\n", sec)
+					fmt.Fprintln(&b, "**Your version:**")
+					fmt.Fprintln(&b, "")
+					fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
+					fmt.Fprintln(&b, "**Template version:**")
+					fmt.Fprintln(&b, "")
+					fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
+				}
+			} else {
+				// Non-markdown file — no section detail available
+				fmt.Fprintf(&b, "### `%s`\n\n", rel)
+				fmt.Fprintln(&b, "Template content changed since last sync. Compare your version against the template and incorporate relevant updates.")
+				fmt.Fprintln(&b, "")
 			}
 		}
 	}
@@ -2510,6 +2638,25 @@ func compareStructure(existingContent, proposedContent string) []structuralNote 
 		}
 	}
 	return notes
+}
+
+// detectChangedSections compares shared ## sections between existing and
+// proposed content and returns section names where the body differs.
+func detectChangedSections(existingContent, proposedContent string) []string {
+	existingSections := parseLevel2Sections(existingContent)
+	proposedMap := sectionMap(parseLevel2Sections(proposedContent))
+
+	var changed []string
+	for _, es := range existingSections {
+		proposedBody, exists := proposedMap[es.Name]
+		if !exists {
+			continue
+		}
+		if strings.TrimSpace(es.Body) != strings.TrimSpace(proposedBody) {
+			changed = append(changed, es.Name)
+		}
+	}
+	return changed
 }
 
 func scoreRelPath(path string) string {

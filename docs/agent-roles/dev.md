@@ -12,7 +12,7 @@ Implementation-focused agent behavior. Follow these rules alongside `AGENTS.md`.
 - Propagate fixes to overlay templates and rendered examples in the same change.
 - When work needs an AC, create or update the AC file in `docs/` before asking for review; do not use a chat-only AC draft as the source of truth.
 - When an AC document exists for the current work, follow its scope and update its status when complete. Do not expand scope without updating the AC first.
-- When an AC is completed and its decisions are consolidated into durable docs or code, remove the AC file in the same change.
+- When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `docs/build-release.md` Pre-Release Checklist).
 - Keep responses terse: flat bullets, one-sentence next step. Follow the Review Style contract in `AGENTS.md`.
 
 ## Using Enhance
