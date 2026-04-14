@@ -5596,15 +5596,22 @@ func TestOverlayNoStandingDriftWhenIdentical(t *testing.T) {
 
 func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	devPath := filepath.Join(dir, "dev.md")
+	existing := "# DEV\n\nOld intro.\n\n## Governa Templating Maintenance\n\n- old bullet\n"
+	proposed := "# DEV\n\nNew intro.\n\n## Governa Templating Maintenance\n\n- new bullet\n"
+	os.WriteFile(devPath, []byte(existing), 0o644)
+
 	scores := []collisionScore{
 		{
-			path:           "/tmp/repo/docs/roles/dev.md",
-			recommendation: "review: no action likely",
-			reason:         "similar content",
-			existingLines:  20,
-			proposedLines:  22,
-			standingDrift:  true,
-			driftSections:  []string{"(preamble)", "Governa Templating Maintenance"},
+			path:            devPath,
+			recommendation:  "review: no action likely",
+			reason:          "similar content",
+			existingLines:   7,
+			proposedLines:   7,
+			standingDrift:   true,
+			driftSections:   []string{"(preamble)", "Governa Templating Maintenance"},
+			proposedContent: proposed,
 		},
 	}
 	output := renderSyncReview(scores, "", "")
@@ -5614,11 +5621,15 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	if !strings.Contains(output, "standing drift") {
 		t.Fatalf("expected 'standing drift' note, got:\n%s", output)
 	}
-	if !strings.Contains(output, "(preamble)") {
-		t.Fatal("drift note should list preamble section")
+	if !strings.Contains(output, "#### (preamble)") {
+		t.Fatal("drift should render preamble section heading")
 	}
-	if !strings.Contains(output, "Governa Templating Maintenance") {
-		t.Fatal("drift note should list differing section names")
+	if !strings.Contains(output, "#### Governa Templating Maintenance") {
+		t.Fatal("drift should render section heading")
+	}
+	// Should contain actual diff content (compact or full blocks)
+	if !strings.Contains(output, "old") || !strings.Contains(output, "new") {
+		t.Fatal("drift should show actual diff content, not just section names")
 	}
 	if !strings.Contains(output, "Report them to the director") {
 		t.Fatal("advisory notes should instruct reporting drift to director")
@@ -5647,17 +5658,21 @@ func TestRenderSyncReviewStandingDriftNonMarkdown(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
-			path:           "/tmp/repo/build.sh",
-			recommendation: "review: no action likely",
-			reason:         "non-markdown file",
-			existingLines:  2,
-			proposedLines:  3,
-			standingDrift:  true,
+			path:            "/tmp/repo/build.sh",
+			recommendation:  "review: no action likely",
+			reason:          "non-markdown file",
+			existingLines:   2,
+			proposedLines:   3,
+			standingDrift:   true,
+			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\ngo run ./cmd/rel \"$@\"\n",
 		},
 	}
 	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "file differs from template baseline") {
 		t.Fatalf("non-markdown drift should say 'file differs from template baseline', got:\n%s", output)
+	}
+	if !strings.Contains(output, "**Template version:**") {
+		t.Fatal("non-markdown drift should show proposed template content")
 	}
 	if strings.Contains(output, "sections that differ") {
 		t.Fatal("non-markdown drift should NOT mention sections")

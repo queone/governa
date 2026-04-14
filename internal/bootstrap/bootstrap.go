@@ -2778,9 +2778,40 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 			}
 			if s.standingDrift {
 				if len(s.driftSections) > 0 {
-					fmt.Fprintf(&b, "- `%s`: standing drift (unchanged since last sync) — sections that differ from template: %s\n", rel, strings.Join(s.driftSections, ", "))
+					fmt.Fprintf(&b, "\n### `%s` — standing drift\n\n", rel)
+					fmt.Fprintln(&b, "Template unchanged since last sync, but these sections still differ from the template baseline:")
+					fmt.Fprintln(&b, "")
+					existingBytes, _ := os.ReadFile(s.path)
+					existingMap := sectionMap(parseLevel2Sections(string(existingBytes)))
+					proposedMap := sectionMap(parseLevel2Sections(s.proposedContent))
+					for _, sec := range s.driftSections {
+						fmt.Fprintf(&b, "#### %s\n\n", sec)
+						diffLines, diffCount := lineDiff(existingMap[sec], proposedMap[sec])
+						if diffCount > 0 && diffCount <= 10 {
+							fmt.Fprintln(&b, "```diff")
+							for _, dl := range diffLines {
+								fmt.Fprintln(&b, dl)
+							}
+							fmt.Fprintln(&b, "```")
+							fmt.Fprintln(&b, "")
+						} else {
+							fmt.Fprintln(&b, "**Your version:**")
+							fmt.Fprintln(&b, "")
+							fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
+							fmt.Fprintln(&b, "**Template version:**")
+							fmt.Fprintln(&b, "")
+							fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
+						}
+					}
 				} else {
-					fmt.Fprintf(&b, "- `%s`: standing drift (unchanged since last sync) — file differs from template baseline\n", rel)
+					fmt.Fprintf(&b, "\n### `%s` — standing drift\n\n", rel)
+					fmt.Fprintln(&b, "Template unchanged since last sync, but file differs from template baseline.")
+					fmt.Fprintln(&b, "")
+					if s.proposedContent != "" {
+						fmt.Fprintln(&b, "**Template version:**")
+						fmt.Fprintln(&b, "")
+						fmt.Fprintf(&b, "```\n%s\n```\n\n", strings.TrimSpace(s.proposedContent))
+					}
 				}
 			}
 		}

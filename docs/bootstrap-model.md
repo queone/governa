@@ -212,7 +212,7 @@ Rules:
 - preamble content (text before the first `##` heading) is captured as a synthetic `(preamble)` section and participates in change detection and classification like any named section
 - for `keep` files that have template sections not present in the existing file: an advisory note appears under `## Advisory Notes` listing the missing sections. The recommendation stays `keep` — the note is informational
 - when a section exists in one version but not the other and their bodies share >=50% of lines, sync reports it as a section rename in Advisory Notes
-- when the template source hasn't changed since last sync but the actual file still differs from the template, report it as **standing drift** in Advisory Notes — this surfaces un-adopted changes from previous sync rounds that would otherwise be invisible
+- when the template source hasn't changed since last sync but the actual file still differs from the template, report it as **standing drift** in Advisory Notes with inline diffs: markdown files get per-section compact diff or full-block rendering, non-markdown files get the template content block. This surfaces un-adopted changes from previous sync rounds that would otherwise be invisible
 - never rewrite an existing `AGENTS.md` wholesale unless the user explicitly requests replacement
 - preserve unrelated local changes
 
