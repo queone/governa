@@ -3533,6 +3533,9 @@ func TestCodeOverlayDevRoleGovernaTemplating(t *testing.T) {
 		if strings.Contains(content, "### Enhance") {
 			t.Errorf("%s: consumer repo should not have an Enhance subsection", path)
 		}
+		if !strings.Contains(content, "draft an AC before applying") {
+			t.Errorf("%s: should nudge AC workflow for sync cherry-picks", path)
+		}
 	}
 	// Self-hosted DEV role should have both sync and enhance under the same section.
 	selfHosted := readRepoFile(t, "docs/roles/dev.md")
@@ -4307,6 +4310,9 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 	}
 	if !strings.Contains(output, "not intended to be committed") {
 		t.Fatal("review doc should state review artifact is not intended to be committed")
+	}
+	if !strings.Contains(output, "Draft an AC before applying") {
+		t.Fatal("review doc should nudge agents to use AC workflow for cherry-picks")
 	}
 }
 

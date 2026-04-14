@@ -2585,6 +2585,8 @@ func renderSyncReview(scores []collisionScore) string {
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "This file (`governa-sync-review.md`) is a working artifact, not intended to be committed. Repo governance decides cleanup.")
 	fmt.Fprintln(&b, "")
+	fmt.Fprintln(&b, "Cherry-picks and content adoptions are non-trivial changes to governance docs. Draft an AC before applying them — scope the work, get review, then implement. Do not apply cherry-picks directly without going through the repo's development cycle.")
+	fmt.Fprintln(&b, "")
 
 	fmt.Fprintln(&b, "## Recommendations")
 	fmt.Fprintln(&b, "")
