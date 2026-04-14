@@ -2759,7 +2759,7 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 	}
 	if hasAdvisory {
 		fmt.Fprintf(&b, "\n## Advisory Notes\n\n")
-		fmt.Fprintln(&b, "These notes are advisory — they do not change the recommendation for any file.")
+		fmt.Fprintln(&b, "These notes are advisory — they do not change the recommendation for any file. Standing drift items represent un-adopted template improvements from previous sync rounds. Report them to the director for disposition even if no immediate action is needed.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
 			rel := scoreRelPath(s.path)

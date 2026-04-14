@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.19.1 | Advisory notes: instruct agents to report standing drift to director |
 | 0.19.0 | Standing drift detection: surfaces un-adopted template changes from previous sync rounds; sync lifecycle guidance in DEV role |
 | 0.18.2 | Sync review: version transition header, AC workflow nudge for cherry-picks |
 | 0.18.1 | Sync review and DEV role: nudge AC workflow for cherry-picks before applying |

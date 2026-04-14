@@ -5620,6 +5620,9 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	if !strings.Contains(output, "Governa Templating Maintenance") {
 		t.Fatal("drift note should list differing section names")
 	}
+	if !strings.Contains(output, "Report them to the director") {
+		t.Fatal("advisory notes should instruct reporting drift to director")
+	}
 }
 
 func TestOverlayStandingDriftNonMarkdown(t *testing.T) {
