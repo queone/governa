@@ -5040,3 +5040,303 @@ func TestGovernanceCollisionClassifications(t *testing.T) {
 		t.Fatalf("Project Rules classification = %q, want structural (list reordered)", cls)
 	}
 }
+
+// --- AC38 tests ---
+
+// AT1: scoreOverlayCollision on markdown with 3 ## sections, 1 changed.
+func TestOverlaySectionLevelScoring(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "guide.md")
+
+	existing := "# Guide\n\n## Alpha\n\nAlpha content.\n\n## Beta\n\nBeta content.\n\n## Gamma\n\nGamma content.\n"
+	proposed := "# Guide\n\n## Alpha\n\nAlpha content.\n\n## Beta\n\nBeta updated content.\n\n## Gamma\n\nGamma content.\n"
+	os.WriteFile(filePath, []byte(existing), 0o644)
+
+	score := scoreOverlayCollision(filePath, proposed, "old-checksum", "new-checksum")
+	if len(score.changedSections) != 1 {
+		t.Fatalf("expected 1 changed section, got %d: %v", len(score.changedSections), score.changedSections)
+	}
+	if score.changedSections[0] != "Beta" {
+		t.Fatalf("changed section = %q, want Beta", score.changedSections[0])
+	}
+}
+
+// AT2: renderSyncReview uses fenced diff block for small deltas.
+func TestRenderSyncReviewCompactDiff(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/docs/guide.md",
+			recommendation:  "review: content changed",
+			reason:          "template sections changed: Style (cosmetic)",
+			existingLines:   20,
+			proposedLines:   20,
+			changedSections: []string{"Style"},
+			changedClassifications: map[string]string{
+				"Style": "cosmetic",
+			},
+			contentChanged:  true,
+			proposedContent: "# Guide\n\n## Style\n\n- Keep it short.\n- Be direct.\n",
+		},
+	}
+	// Create the existing file so renderSyncReview can read it.
+	os.MkdirAll("/tmp/repo/docs", 0o755)
+	os.WriteFile("/tmp/repo/docs/guide.md", []byte("# Guide\n\n## Style\n\n- Keep it brief.\n- Be direct.\n"), 0o644)
+	defer os.Remove("/tmp/repo/docs/guide.md")
+
+	output := renderSyncReview(scores)
+	if !strings.Contains(output, "```diff") {
+		t.Fatalf("expected fenced diff block for small delta, got:\n%s", output)
+	}
+	if strings.Contains(output, "**Your version:**") {
+		t.Fatal("should NOT have full blocks for small delta")
+	}
+}
+
+// AT3: renderSyncReview uses full blocks for large deltas.
+func TestRenderSyncReviewFullBlocks(t *testing.T) {
+	t.Parallel()
+	existing := "# Guide\n\n## Style\n\n- rule one\n- rule two\n- rule three\n- rule four\n- rule five\n- rule six\n"
+	proposed := "# Guide\n\n## Style\n\n- new one\n- new two\n- new three\n- new four\n- new five\n- new six\n"
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/docs/big.md",
+			recommendation:  "review: content changed",
+			reason:          "template sections changed: Style (structural)",
+			existingLines:   20,
+			proposedLines:   20,
+			changedSections: []string{"Style"},
+			changedClassifications: map[string]string{
+				"Style": "structural",
+			},
+			contentChanged:  true,
+			proposedContent: proposed,
+		},
+	}
+	os.MkdirAll("/tmp/repo/docs", 0o755)
+	os.WriteFile("/tmp/repo/docs/big.md", []byte(existing), 0o644)
+	defer os.Remove("/tmp/repo/docs/big.md")
+
+	output := renderSyncReview(scores)
+	if !strings.Contains(output, "**Your version:**") {
+		t.Fatalf("expected full blocks for large delta, got:\n%s", output)
+	}
+	if strings.Contains(output, "```diff") {
+		t.Fatal("should NOT have compact diff for large delta")
+	}
+}
+
+// AT4: Recommendations table stays file-level.
+func TestRenderSyncReviewTableIsFileLevel(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/docs/guide.md",
+			recommendation:  "review: content changed",
+			reason:          "template sections changed: Alpha (cosmetic), Beta (structural)",
+			existingLines:   30,
+			proposedLines:   25,
+			changedSections: []string{"Alpha", "Beta"},
+			changedClassifications: map[string]string{
+				"Alpha": "cosmetic",
+				"Beta":  "structural",
+			},
+			contentChanged:  true,
+			proposedContent: "# Guide\n\n## Alpha\n\nnew alpha\n\n## Beta\n\nnew beta\n",
+		},
+	}
+	output := renderSyncReview(scores)
+	// Count table data rows (lines starting with "| `")
+	tableRows := 0
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.HasPrefix(line, "| `") {
+			tableRows++
+		}
+	}
+	if tableRows != 1 {
+		t.Fatalf("recommendations table should have 1 file-level row, got %d", tableRows)
+	}
+}
+
+// AT5: Enhance subsection drill-down finds portable ### inside deferred ##.
+func TestEnhanceSubsectionAcceptInsideDefer(t *testing.T) {
+	t.Parallel()
+	templateRoot := t.TempDir()
+	referenceRoot := filepath.Join(t.TempDir(), "myproject")
+	os.MkdirAll(referenceRoot, 0o755)
+
+	mustWrite(t, filepath.Join(templateRoot, "base", "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Project Rules
+
+- Follow existing patterns.
+`)
+	mustWrite(t, filepath.Join(templateRoot, "docs", "ac-template.md"), "# AC template\n")
+	// Reference has project-specific Project Rules with a generic subsection.
+	// Parent body mentions repo name "myproject" to trigger project-specific marker.
+	mustWrite(t, filepath.Join(referenceRoot, "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Project Rules
+
+myproject-specific rule about domain data.
+
+### Shell Tool Efficiency
+
+- Use dedicated CLI tools when available.
+- Batch independent shell operations into fewer calls.
+`)
+
+	report, err := ReviewEnhancement(os.DirFS(templateRoot), templateRoot, referenceRoot)
+	if err != nil {
+		t.Fatalf("ReviewEnhancement() error = %v", err)
+	}
+
+	var foundSubsection bool
+	for _, c := range report.Candidates {
+		if strings.Contains(c.Section, "Project Rules > Shell Tool Efficiency") {
+			foundSubsection = true
+			if c.Disposition != "accept" {
+				t.Fatalf("subsection disposition = %q, want accept", c.Disposition)
+			}
+		}
+	}
+	if !foundSubsection {
+		t.Fatal("expected an accept candidate for 'Project Rules > Shell Tool Efficiency'")
+	}
+}
+
+// AT6: Enhance all-project-specific subsections produce no subsection candidates.
+func TestEnhanceSubsectionAllProjectSpecific(t *testing.T) {
+	t.Parallel()
+	templateRoot := t.TempDir()
+	referenceRoot := filepath.Join(t.TempDir(), "myproject")
+	os.MkdirAll(referenceRoot, 0o755)
+
+	mustWrite(t, filepath.Join(templateRoot, "base", "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Project Rules
+
+- Follow existing patterns.
+`)
+	mustWrite(t, filepath.Join(templateRoot, "docs", "ac-template.md"), "# AC template\n")
+	// All subsections mention the repo name "myproject", so all are project-specific
+	mustWrite(t, filepath.Join(referenceRoot, "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Project Rules
+
+myproject-specific rule about domain data.
+
+### myproject Integrity
+
+- Consult myproject docs before changing core code.
+
+### myproject Safety
+
+- Any myproject test must use the mock harness.
+`)
+
+	report, err := ReviewEnhancement(os.DirFS(templateRoot), templateRoot, referenceRoot)
+	if err != nil {
+		t.Fatalf("ReviewEnhancement() error = %v", err)
+	}
+
+	for _, c := range report.Candidates {
+		if strings.Contains(c.Section, " > ") && c.Disposition == "accept" {
+			t.Fatalf("should have no accept subsection candidates, got: %s (%s)", c.Section, c.Disposition)
+		}
+	}
+}
+
+// AT7: Markdown file with no ## sections falls back to whole-file scoring.
+func TestOverlayNoSectionsFallback(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "plain.md")
+
+	existing := "Just some text without any sections.\nLine two.\n"
+	proposed := "Just some updated text without any sections.\nLine two.\n"
+	os.WriteFile(filePath, []byte(existing), 0o644)
+
+	score := scoreOverlayCollision(filePath, proposed, "old-checksum", "new-checksum")
+	// With no ## sections, changedSections should be empty — whole-file scoring
+	if len(score.changedSections) != 0 {
+		t.Fatalf("expected 0 changedSections for sectionless file, got %d", len(score.changedSections))
+	}
+	// Should still get a recommendation
+	if score.recommendation == "" {
+		t.Fatal("expected a recommendation for sectionless file")
+	}
+}
+
+// AT8: Enhance parent defer and child accept coexist.
+func TestEnhanceParentDeferChildAcceptCoexist(t *testing.T) {
+	t.Parallel()
+	templateRoot := t.TempDir()
+	referenceRoot := filepath.Join(t.TempDir(), "myproject")
+	os.MkdirAll(referenceRoot, 0o755)
+
+	mustWrite(t, filepath.Join(templateRoot, "base", "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Project Rules
+
+- Follow existing patterns.
+`)
+	mustWrite(t, filepath.Join(templateRoot, "docs", "ac-template.md"), "# AC template\n")
+	mustWrite(t, filepath.Join(referenceRoot, "AGENTS.md"), `# AGENTS.md
+
+## Purpose
+
+Base purpose.
+
+## Project Rules
+
+myproject-specific rule about domain data.
+
+### Shell Tool Efficiency
+
+- Use dedicated CLI tools when available.
+- Batch independent shell operations into fewer calls.
+`)
+
+	report, err := ReviewEnhancement(os.DirFS(templateRoot), templateRoot, referenceRoot)
+	if err != nil {
+		t.Fatalf("ReviewEnhancement() error = %v", err)
+	}
+
+	var parentDefer, childAccept bool
+	for _, c := range report.Candidates {
+		if c.Section == "Project Rules" && c.Disposition == "defer" {
+			parentDefer = true
+		}
+		if strings.Contains(c.Section, "Project Rules > Shell Tool Efficiency") && c.Disposition == "accept" {
+			childAccept = true
+		}
+	}
+	if !parentDefer {
+		t.Fatal("expected parent 'Project Rules' with disposition defer")
+	}
+	if !childAccept {
+		t.Fatal("expected child 'Project Rules > Shell Tool Efficiency' with disposition accept")
+	}
+}

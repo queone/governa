@@ -44,7 +44,7 @@ Repo name, purpose, type, and stack are inferred from the target directory (dire
 ### `enhance`
 Template-maintenance mode, run from inside this repo. The only mode that runs from governa itself and the only mode that can propose changes back into the template. Its purpose is to improve the entire templating set — base governance contract, overlays, and workflow patterns — that ships into all generated repos, as well as governa's own self-hosted governance.
 
-With `-r`, enhance inspects another governed repo for portable improvements: patterns that every governed repo should benefit from, not project-specific local choices. It compares at the constraint level for governance sections and per-section for structured markdown files. When a `.governa-manifest` exists in the reference repo, enhance uses three-way comparison to distinguish user customizations from stale template content. The only output is an AC doc — no template files are overwritten automatically.
+With `-r`, enhance inspects another governed repo for portable improvements: patterns that every governed repo should benefit from, not project-specific local choices. It compares at the constraint level for governance sections and per-section for structured markdown files. For governance sections classified as project-specific, enhance drills into `### Subsections` to identify portable content within otherwise deferred parents. When a `.governa-manifest` exists in the reference repo, enhance uses three-way comparison to distinguish user customizations from stale template content. The only output is an AC doc — no template files are overwritten automatically.
 
 ```bash
 governa enhance \

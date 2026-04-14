@@ -1485,6 +1485,27 @@ func reviewGovernedSections(tfs fs.FS, referenceRoot string, mmap map[string]Man
 			CollisionImpact: "medium",
 			ChangeOrigin:    sectionOrigin,
 		})
+		// Subsection drill-down: when a ## section is deferred, check ### subsections individually.
+		if disposition == "defer" {
+			subsections := parseLevel3Sections(refBody)
+			for _, sub := range subsections {
+				subPort, subDisp, subReason := classifyEnhancement(sub.Body, referenceRoot, "base/AGENTS.md", true)
+				if subDisp == "accept" {
+					candidates = append(candidates, EnhancementCandidate{
+						Area:            "base governance",
+						Path:            refPath,
+						Section:         section + " > " + sub.Name,
+						Disposition:     subDisp,
+						Reason:          subReason,
+						Portability:     subPort,
+						TemplateTarget:  "base/AGENTS.md",
+						Summary:         summarizeSectionDelta(sub.Name, sub.Body),
+						CollisionImpact: "medium",
+						ChangeOrigin:    sectionOrigin,
+					})
+				}
+			}
+		}
 	}
 	return candidates, nil
 }
@@ -2620,12 +2641,22 @@ func renderSyncReview(scores []collisionScore) string {
 					fmt.Fprintf(&b, "#### %s changes\n\n", strings.ToUpper(tier[:1])+tier[1:])
 					for _, sec := range sections {
 						fmt.Fprintf(&b, "##### %s\n\n", sec)
-						fmt.Fprintln(&b, "**Your version:**")
-						fmt.Fprintln(&b, "")
-						fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
-						fmt.Fprintln(&b, "**Template version:**")
-						fmt.Fprintln(&b, "")
-						fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
+						diffLines, diffCount := lineDiff(existingMap[sec], proposedMap[sec])
+						if diffCount > 0 && diffCount <= 5 {
+							fmt.Fprintln(&b, "```diff")
+							for _, dl := range diffLines {
+								fmt.Fprintln(&b, dl)
+							}
+							fmt.Fprintln(&b, "```")
+							fmt.Fprintln(&b, "")
+						} else {
+							fmt.Fprintln(&b, "**Your version:**")
+							fmt.Fprintln(&b, "")
+							fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
+							fmt.Fprintln(&b, "**Template version:**")
+							fmt.Fprintln(&b, "")
+							fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
+						}
 					}
 				}
 			} else {
@@ -2874,6 +2905,62 @@ func classifySections(existingContent, proposedContent string, changedSections [
 		result[name] = classifyChange(existingMap[name], proposedMap[name])
 	}
 	return result
+}
+
+// lineDiff computes a set-difference diff between two section bodies.
+// Lines in existing but not proposed get "- " prefix; lines in proposed
+// but not existing get "+ " prefix. Returns the diff lines and the count
+// of changed lines (added + removed). Order follows existing lines first
+// (removals), then proposed lines (additions).
+func lineDiff(existingBody, proposedBody string) ([]string, int) {
+	eLines := strings.Split(strings.TrimSpace(existingBody), "\n")
+	pLines := strings.Split(strings.TrimSpace(proposedBody), "\n")
+
+	pSet := make(map[string]bool, len(pLines))
+	for _, l := range pLines {
+		pSet[l] = true
+	}
+	eSet := make(map[string]bool, len(eLines))
+	for _, l := range eLines {
+		eSet[l] = true
+	}
+
+	var diff []string
+	for _, l := range eLines {
+		if !pSet[l] {
+			diff = append(diff, "- "+l)
+		}
+	}
+	for _, l := range pLines {
+		if !eSet[l] {
+			diff = append(diff, "+ "+l)
+		}
+	}
+	return diff, len(diff)
+}
+
+// parseLevel3Sections parses ### subsections within a ## section body.
+// Returns a slice of section structs with Name and Body.
+func parseLevel3Sections(body string) []markdownSection {
+	var sections []markdownSection
+	lines := strings.Split(body, "\n")
+	var current *markdownSection
+	for _, line := range lines {
+		if after, ok := strings.CutPrefix(line, "### "); ok {
+			if current != nil {
+				sections = append(sections, *current)
+			}
+			current = &markdownSection{Name: strings.TrimSpace(after)}
+			continue
+		}
+		if current != nil {
+			current.Body += line + "\n"
+		}
+	}
+	if current != nil {
+		sections = append(sections, *current)
+	}
+	return sections
 }
 
 func scoreRelPath(path string) string {

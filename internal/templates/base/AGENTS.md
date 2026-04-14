@@ -30,6 +30,8 @@ Do not add new sections, reorder sections, or rewrite the whole file unless the 
 Treat this file as a governed config artifact, not freeform prose.
 When asked to update it, propose the exact section names to change and keep edits local to those sections.
 
+Prefer flat `##` sections with inline bullets over `###` sub-subsections in governance files. Sub-subsections add navigation overhead without adding enforceability. If a section grows large enough to need internal grouping, consider splitting it into a separate `##` section or extracting detail to a supplementary doc. `### Sub-subsections` are acceptable only when the repo has a documented technical reason (e.g., many domain-specific rules in Project Rules that benefit from grouping).
+
 ## Interaction Mode
 
 - Treat requests as exploratory discussion unless the user explicitly asks for implementation or file changes.
