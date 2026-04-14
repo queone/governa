@@ -4278,14 +4278,15 @@ func TestRenderAdoptReviewContentChanges(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
-			path:            "/tmp/repo/docs/dev-cycle.md",
-			recommendation:  "review: content changed",
-			reason:          "template sections changed: Cycle",
-			existingLines:   50,
-			proposedLines:   20,
-			changedSections: []string{"Cycle"},
-			contentChanged:  true,
-			proposedContent: "# Dev Cycle\n\n## Cycle\n\nnew cycle content\n",
+			path:                   "/tmp/repo/docs/dev-cycle.md",
+			recommendation:         "review: content changed",
+			reason:                 "template sections changed: Cycle (cosmetic)",
+			existingLines:          50,
+			proposedLines:          20,
+			changedSections:        []string{"Cycle"},
+			changedClassifications: map[string]string{"Cycle": "cosmetic"},
+			contentChanged:         true,
+			proposedContent:        "# Dev Cycle\n\n## Cycle\n\nnew cycle content\n",
 		},
 		{
 			path:           "/tmp/repo/build.sh",
@@ -4301,8 +4302,8 @@ func TestRenderAdoptReviewContentChanges(t *testing.T) {
 	if !strings.Contains(output, "review: content changed**: 2") {
 		t.Fatalf("output should show 2 content-changed files, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Changed sections: Cycle") {
-		t.Fatal("output should list changed sections for markdown files")
+	if !strings.Contains(output, "Changed sections: Cycle (cosmetic)") {
+		t.Fatal("output should list changed sections with classification tag")
 	}
 	if !strings.Contains(output, "Template content changed since last sync") {
 		t.Fatal("output should have generic message for non-markdown files")
@@ -4825,5 +4826,138 @@ func TestDevCycleRubricReferencesAgentsMd(t *testing.T) {
 		if !strings.Contains(content, "AGENTS.md") {
 			t.Fatalf("%s should reference AGENTS.md for rubric", path)
 		}
+	}
+}
+
+// --- AC36 tests ---
+
+// AT1: classifyChange returns "structural" when numbered list step is reordered.
+func TestClassifyChangeNumberedReorder(t *testing.T) {
+	t.Parallel()
+	existing := "1. Check tag\n2. Run build\n3. Update changelog\n"
+	proposed := "1. Run build\n2. Check tag\n3. Update changelog\n"
+	if got := classifyChange(existing, proposed); got != "structural" {
+		t.Fatalf("classifyChange = %q, want structural (numbered list reordered)", got)
+	}
+}
+
+// AT2: classifyChange returns "structural" when a new subsection is added.
+func TestClassifyChangeSubsectionAdded(t *testing.T) {
+	t.Parallel()
+	existing := "Some content here.\n"
+	proposed := "Some content here.\n\n### New Subsection\n\nMore detail.\n"
+	if got := classifyChange(existing, proposed); got != "structural" {
+		t.Fatalf("classifyChange = %q, want structural (subsection added)", got)
+	}
+}
+
+// AT3: classifyChange returns "cosmetic" when only wording changes.
+func TestClassifyChangeCosmeticWording(t *testing.T) {
+	t.Parallel()
+	existing := "- Use the build command to compile.\n- Run tests after build.\n"
+	proposed := "- Use the canonical build command to compile.\n- Execute tests after build.\n"
+	if got := classifyChange(existing, proposed); got != "cosmetic" {
+		t.Fatalf("classifyChange = %q, want cosmetic (same structure, different wording)", got)
+	}
+}
+
+// AT4: classifyChange returns "structural" when bullet count changes by >1.
+func TestClassifyChangeBulletCountDelta(t *testing.T) {
+	t.Parallel()
+	existing := "- rule one\n- rule two\n"
+	proposed := "- rule one\n- rule two\n- rule three\n- rule four\n"
+	if got := classifyChange(existing, proposed); got != "structural" {
+		t.Fatalf("classifyChange = %q, want structural (bullet count delta >1)", got)
+	}
+}
+
+// AT5: renderAdoptReview tags sections with (structural) and (cosmetic).
+func TestRenderAdoptReviewClassificationTags(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/docs/guide.md",
+			recommendation:  "review: content changed",
+			reason:          "template sections changed: Checklist (structural), Style (cosmetic)",
+			existingLines:   40,
+			proposedLines:   30,
+			changedSections: []string{"Checklist", "Style"},
+			changedClassifications: map[string]string{
+				"Checklist": "structural",
+				"Style":     "cosmetic",
+			},
+			contentChanged:  true,
+			proposedContent: "# Guide\n\n## Checklist\n\n1. Step A\n2. Step B\n\n## Style\n\nKeep it short.\n",
+		},
+	}
+	output := renderAdoptReview(scores)
+	if !strings.Contains(output, "(structural)") {
+		t.Fatalf("output should contain (structural) tag, got:\n%s", output)
+	}
+	if !strings.Contains(output, "(cosmetic)") {
+		t.Fatalf("output should contain (cosmetic) tag, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Changed sections: Checklist (structural), Style (cosmetic)") {
+		t.Fatalf("output should have tagged Changed sections line, got:\n%s", output)
+	}
+}
+
+// AT6: renderAdoptReview renders structural before cosmetic subheadings.
+func TestRenderAdoptReviewStructuralBeforeCosmeticSubheadings(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/docs/guide.md",
+			recommendation:  "review: content changed",
+			reason:          "template sections changed: Style (cosmetic), Checklist (structural)",
+			existingLines:   40,
+			proposedLines:   30,
+			changedSections: []string{"Style", "Checklist"},
+			changedClassifications: map[string]string{
+				"Checklist": "structural",
+				"Style":     "cosmetic",
+			},
+			contentChanged:  true,
+			proposedContent: "# Guide\n\n## Style\n\nKeep it short.\n\n## Checklist\n\n1. Step A\n2. Step B\n",
+		},
+	}
+	output := renderAdoptReview(scores)
+	structIdx := strings.Index(output, "#### Structural changes")
+	cosmeticIdx := strings.Index(output, "#### Cosmetic changes")
+	if structIdx < 0 {
+		t.Fatalf("output should contain '#### Structural changes' subheading, got:\n%s", output)
+	}
+	if cosmeticIdx < 0 {
+		t.Fatalf("output should contain '#### Cosmetic changes' subheading, got:\n%s", output)
+	}
+	if structIdx >= cosmeticIdx {
+		t.Fatalf("structural subheading (pos %d) should appear before cosmetic (pos %d)", structIdx, cosmeticIdx)
+	}
+}
+
+// AT7: scoreGovernanceCollision populates changedClassifications for governed sections.
+func TestGovernanceCollisionClassifications(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+
+	existing := "# AGENTS.md\n\n## Project Rules\n\n1. Run build\n2. Check lint\n3. Deploy\n"
+	proposed := "# AGENTS.md\n\n## Project Rules\n\n1. Check lint\n2. Run build\n3. Deploy\n"
+	os.WriteFile(agentsPath, []byte(existing), 0o644)
+
+	score := scoreGovernanceCollision(
+		operation{path: agentsPath, content: proposed},
+		"old-checksum",
+		"new-checksum",
+	)
+	if score.recommendation != "review: content changed" {
+		t.Fatalf("recommendation = %q, want 'review: content changed'", score.recommendation)
+	}
+	cls, ok := score.changedClassifications["Project Rules"]
+	if !ok {
+		t.Fatalf("changedClassifications missing 'Project Rules', got: %v", score.changedClassifications)
+	}
+	if cls != "structural" {
+		t.Fatalf("Project Rules classification = %q, want structural (list reordered)", cls)
 	}
 }

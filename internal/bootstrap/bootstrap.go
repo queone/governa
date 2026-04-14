@@ -2256,19 +2256,20 @@ type structuralNote struct {
 }
 
 type collisionScore struct {
-	path             string // target file path
-	recommendation   string // "keep", "review: cherry-pick", "review: content changed", "review: no action likely", "accept"
-	reason           string
-	existingLines    int
-	proposedLines    int
-	existingSections int
-	proposedSections int
-	missingSections  []string         // sections in proposed but not in existing
-	changedSections  []string         // shared sections with different content (markdown only)
-	contentChanged   bool             // true when template source changed and existing differs from new template
-	proposedContent  string           // the template content for the review doc
-	governancePatch  string           // non-empty if this is an AGENTS.md patch with missing sections
-	structuralNotes  []structuralNote // section-level structural observations
+	path                   string // target file path
+	recommendation         string // "keep", "review: cherry-pick", "review: content changed", "review: no action likely", "accept"
+	reason                 string
+	existingLines          int
+	proposedLines          int
+	existingSections       int
+	proposedSections       int
+	missingSections        []string          // sections in proposed but not in existing
+	changedSections        []string          // shared sections with different content (markdown only)
+	changedClassifications map[string]string // section name → "structural" or "cosmetic"
+	contentChanged         bool              // true when template source changed and existing differs from new template
+	proposedContent        string            // the template content for the review doc
+	governancePatch        string            // non-empty if this is an AGENTS.md patch with missing sections
+	structuralNotes        []structuralNote  // section-level structural observations
 }
 
 func countLines(s string) int {
@@ -2356,6 +2357,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 		score.changedSections = detectChangedSections(existingContent, proposedContent)
 		if len(score.changedSections) > 0 {
 			score.contentChanged = true
+			score.changedClassifications = classifySections(existingContent, proposedContent, score.changedSections)
 		}
 	}
 
@@ -2363,7 +2365,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	if score.existingLines >= 2*score.proposedLines {
 		if score.contentChanged {
 			score.recommendation = "review: content changed"
-			score.reason = fmt.Sprintf("existing is more developed (%d lines vs %d proposed) but template sections changed: %s", score.existingLines, score.proposedLines, strings.Join(score.changedSections, ", "))
+			score.reason = fmt.Sprintf("existing is more developed (%d lines vs %d proposed) but template sections changed: %s", score.existingLines, score.proposedLines, taggedSectionList(score.changedSections, score.changedClassifications))
 			return score
 		}
 		score.recommendation = "keep"
@@ -2373,7 +2375,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	if score.existingSections > score.proposedSections {
 		if score.contentChanged {
 			score.recommendation = "review: content changed"
-			score.reason = fmt.Sprintf("existing has richer structure (%d sections vs %d proposed) but template sections changed: %s", score.existingSections, score.proposedSections, strings.Join(score.changedSections, ", "))
+			score.reason = fmt.Sprintf("existing has richer structure (%d sections vs %d proposed) but template sections changed: %s", score.existingSections, score.proposedSections, taggedSectionList(score.changedSections, score.changedClassifications))
 			return score
 		}
 		score.recommendation = "keep"
@@ -2386,7 +2388,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	if score.existingSections >= score.proposedSections && len(score.missingSections) > 0 {
 		if score.contentChanged {
 			score.recommendation = "review: content changed"
-			score.reason = fmt.Sprintf("template sections changed: %s", strings.Join(score.changedSections, ", "))
+			score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications))
 			return score
 		}
 		score.recommendation = "keep"
@@ -2401,7 +2403,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 
 	if score.contentChanged {
 		score.recommendation = "review: content changed"
-		score.reason = fmt.Sprintf("template sections changed: %s", strings.Join(score.changedSections, ", "))
+		score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications))
 		return score
 	}
 	score.recommendation = "review: no action likely"
@@ -2429,15 +2431,17 @@ func scoreGovernanceCollision(op operation, oldSourceChecksum string, newSourceC
 		if templateChanged {
 			changedGoverned := detectChangedGovernedSections(string(existingContent), op.content)
 			if len(changedGoverned) > 0 {
+				cls := classifySections(string(existingContent), op.content, changedGoverned)
 				return collisionScore{
-					path:            op.path,
-					recommendation:  "review: content changed",
-					reason:          fmt.Sprintf("governed sections changed: %s", strings.Join(changedGoverned, ", ")),
-					existingLines:   countLines(string(existingContent)),
-					proposedLines:   countLines(op.content),
-					changedSections: changedGoverned,
-					contentChanged:  true,
-					proposedContent: op.content,
+					path:                   op.path,
+					recommendation:         "review: content changed",
+					reason:                 fmt.Sprintf("governed sections changed: %s", taggedSectionList(changedGoverned, cls)),
+					existingLines:          countLines(string(existingContent)),
+					proposedLines:          countLines(op.content),
+					changedSections:        changedGoverned,
+					changedClassifications: cls,
+					contentChanged:         true,
+					proposedContent:        op.content,
 				}
 			}
 		}
@@ -2596,18 +2600,26 @@ func renderAdoptReview(scores []collisionScore) string {
 			rel := scoreRelPath(s.path)
 			if len(s.changedSections) > 0 {
 				fmt.Fprintf(&b, "### `%s`\n\n", rel)
-				fmt.Fprintf(&b, "Changed sections: %s\n\n", strings.Join(s.changedSections, ", "))
+				fmt.Fprintf(&b, "Changed sections: %s\n\n", taggedSectionList(s.changedSections, s.changedClassifications))
 				existingBytes, _ := os.ReadFile(s.path)
 				existingMap := sectionMap(parseLevel2Sections(string(existingBytes)))
 				proposedMap := sectionMap(parseLevel2Sections(s.proposedContent))
-				for _, sec := range s.changedSections {
-					fmt.Fprintf(&b, "#### %s\n\n", sec)
-					fmt.Fprintln(&b, "**Your version:**")
-					fmt.Fprintln(&b, "")
-					fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
-					fmt.Fprintln(&b, "**Template version:**")
-					fmt.Fprintln(&b, "")
-					fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
+				// Render structural changes first, then cosmetic.
+				for _, tier := range []string{"structural", "cosmetic"} {
+					sections := filterByClassification(s.changedSections, s.changedClassifications, tier)
+					if len(sections) == 0 {
+						continue
+					}
+					fmt.Fprintf(&b, "#### %s changes\n\n", strings.ToUpper(tier[:1])+tier[1:])
+					for _, sec := range sections {
+						fmt.Fprintf(&b, "##### %s\n\n", sec)
+						fmt.Fprintln(&b, "**Your version:**")
+						fmt.Fprintln(&b, "")
+						fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
+						fmt.Fprintln(&b, "**Template version:**")
+						fmt.Fprintln(&b, "")
+						fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
+					}
 				}
 			} else {
 				// Non-markdown file — no section detail available
@@ -2692,6 +2704,169 @@ func detectChangedSections(existingContent, proposedContent string) []string {
 		}
 	}
 	return changed
+}
+
+// classifyChange determines whether the difference between two section bodies
+// is "structural" (layout/shape changed) or "cosmetic" (wording-only).
+//
+// Structural signals: heading count delta, numbered-list item count delta,
+// numbered-list reorder, bullet count delta >1, paragraph count delta.
+// If none fire, the change is cosmetic.
+func classifyChange(existingBody, proposedBody string) string {
+	existing := strings.TrimSpace(existingBody)
+	proposed := strings.TrimSpace(proposedBody)
+	if existing == proposed {
+		return "cosmetic" // identical — shouldn't happen, but safe default
+	}
+
+	eLines := strings.Split(existing, "\n")
+	pLines := strings.Split(proposed, "\n")
+
+	// Heading count (### or deeper).
+	eHeadings := countPrefix(eLines, "### ")
+	pHeadings := countPrefix(pLines, "### ")
+	if eHeadings != pHeadings {
+		return "structural"
+	}
+
+	// Numbered list items (lines starting with digit+period).
+	eNumbered := countNumbered(eLines)
+	pNumbered := countNumbered(pLines)
+	if eNumbered != pNumbered {
+		return "structural"
+	}
+
+	// Numbered list reorder: same count but items moved to different positions.
+	if eNumbered > 0 && numberedItemsReordered(eLines, pLines) {
+		return "structural"
+	}
+
+	// Bullet list items (lines starting with "- ").
+	eBullets := countPrefix(eLines, "- ")
+	pBullets := countPrefix(pLines, "- ")
+	if abs(eBullets-pBullets) > 1 {
+		return "structural"
+	}
+
+	// Paragraph count (non-empty blocks separated by blank lines).
+	eParas := countParagraphs(eLines)
+	pParas := countParagraphs(pLines)
+	if eParas != pParas {
+		return "structural"
+	}
+
+	return "cosmetic"
+}
+
+func countPrefix(lines []string, prefix string) int {
+	n := 0
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), prefix) {
+			n++
+		}
+	}
+	return n
+}
+
+var numberedLineRe = regexp.MustCompile(`^\s*\d+\.\s`)
+
+func countNumbered(lines []string) int {
+	n := 0
+	for _, l := range lines {
+		if numberedLineRe.MatchString(l) {
+			n++
+		}
+	}
+	return n
+}
+
+// numberedItemsReordered returns true if the numbered list items appear in a
+// different order. It compares the text after stripping the number prefix.
+func numberedItemsReordered(eLines, pLines []string) bool {
+	eItems := numberedItemTexts(eLines)
+	pItems := numberedItemTexts(pLines)
+	if len(eItems) != len(pItems) {
+		return true
+	}
+	for i := range eItems {
+		if eItems[i] != pItems[i] {
+			return true
+		}
+	}
+	return false
+}
+
+var numberedItemRe = regexp.MustCompile(`^\s*\d+\.\s+(.*)`)
+
+func numberedItemTexts(lines []string) []string {
+	var items []string
+	for _, l := range lines {
+		if m := numberedItemRe.FindStringSubmatch(l); m != nil {
+			items = append(items, strings.TrimSpace(m[1]))
+		}
+	}
+	return items
+}
+
+func countParagraphs(lines []string) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	paras := 0
+	inPara := false
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			inPara = false
+		} else if !inPara {
+			paras++
+			inPara = true
+		}
+	}
+	return paras
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// taggedSectionList formats changed section names with their classification,
+// e.g. "Pre-Release Checklist (structural), Build (cosmetic)".
+func taggedSectionList(sections []string, classifications map[string]string) string {
+	parts := make([]string, len(sections))
+	for i, name := range sections {
+		if cls, ok := classifications[name]; ok {
+			parts[i] = fmt.Sprintf("%s (%s)", name, cls)
+		} else {
+			parts[i] = name
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// filterByClassification returns sections matching the given classification tier.
+func filterByClassification(sections []string, classifications map[string]string, tier string) []string {
+	var result []string
+	for _, name := range sections {
+		if classifications[name] == tier {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+// classifySections builds a section-name → "structural"/"cosmetic" map
+// for each changed section by comparing the section bodies.
+func classifySections(existingContent, proposedContent string, changedSections []string) map[string]string {
+	existingMap := sectionMap(parseLevel2Sections(existingContent))
+	proposedMap := sectionMap(parseLevel2Sections(proposedContent))
+	result := make(map[string]string, len(changedSections))
+	for _, name := range changedSections {
+		result[name] = classifyChange(existingMap[name], proposedMap[name])
+	}
+	return result
 }
 
 func scoreRelPath(path string) string {

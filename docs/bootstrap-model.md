@@ -206,6 +206,7 @@ Rules:
 - for markdown files: identical content → `keep`; existing ≥2x lines → `keep` (unless template changed → `review: content changed`); existing has more sections → `keep` (unless template changed → `review: content changed`); proposed adds missing sections → `review: cherry-pick`; otherwise → `review: no action likely`
 - for non-markdown files: if template source-sha256 changed since last sync → `review: content changed`; otherwise → `review: no action likely`
 - content-change detection compares old manifest `source-sha256` against new template `source-sha256` and requires that existing content still differs from the new template (no false positives if the repo already absorbed the change manually)
+- for `review: content changed` items, each changed section is classified as `structural` (heading/list-item count changed, numbered steps reordered, paragraphs added/removed) or `cosmetic` (wording changes within same-shaped content). The classification appears in the reason string and the Content Changes detail section, with structural changes rendered before cosmetic ones
 - never rewrite an existing `AGENTS.md` wholesale unless the user explicitly requests replacement
 - preserve unrelated local changes
 
