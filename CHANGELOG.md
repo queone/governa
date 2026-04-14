@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.15.5 | Sync review: version coherence note and review artifact disposition in bookkeeping section |
 | 0.15.4 | QA role: build validation scope rule, rule ordering aligned |
 | 0.15.3 | DEV role: rename Using Sync/Enhance to Governa Templating Maintenance, distinguish consumer sync from governa enhance |
 | 0.15.2 | Sync review doc: bookkeeping note clarifying TEMPLATE_VERSION and manifest are not review items |

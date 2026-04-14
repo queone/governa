@@ -4287,6 +4287,12 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 	if !strings.Contains(output, "not review items") {
 		t.Fatal("review doc bookkeeping note should state these are not review items")
 	}
+	if !strings.Contains(output, "both will show the same version") {
+		t.Fatal("review doc should state version markers match after sync")
+	}
+	if !strings.Contains(output, "Delete it after the sync pass is complete") {
+		t.Fatal("review doc should state review artifact disposition")
+	}
 }
 
 func TestRenderSyncReviewContentChanges(t *testing.T) {
