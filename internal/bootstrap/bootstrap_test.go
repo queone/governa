@@ -4390,6 +4390,49 @@ func TestSyncResyncWithManifest(t *testing.T) {
 	}
 }
 
+func TestSyncResyncUpdatesTemplateVersion(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	dir := t.TempDir()
+
+	// Write a manifest with an old template version
+	m := Manifest{
+		FormatVersion:   manifestFormatVersion,
+		TemplateVersion: "0.8.2",
+		Params: ManifestParams{
+			RepoName: "test-repo",
+			Purpose:  "test purpose",
+			Type:     "CODE",
+			Stack:    "Go",
+		},
+	}
+	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	// Pre-create AGENTS.md and TEMPLATE_VERSION at old version
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting.\n")
+	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.8.2")
+
+	cfg := Config{
+		Mode:   ModeSync,
+		Target: dir,
+		Input:  strings.NewReader(""),
+	}
+	if err := RunWithFS(templates.DiskFS(root), root, cfg); err != nil {
+		t.Fatalf("RunWithFS() error = %v", err)
+	}
+	// TEMPLATE_VERSION must be updated to current, not left at old version
+	tvBytes, err := os.ReadFile(filepath.Join(dir, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatal("TEMPLATE_VERSION should exist after re-sync")
+	}
+	got := strings.TrimSpace(string(tvBytes))
+	if got == "0.8.2" {
+		t.Fatal("TEMPLATE_VERSION should be updated on re-sync, still shows old version 0.8.2")
+	}
+	if got != templates.TemplateVersion {
+		t.Fatalf("TEMPLATE_VERSION = %q, want %q", got, templates.TemplateVersion)
+	}
+}
+
 // AT2: sync with all flags in empty dir (new path) produces no prompts
 func TestSyncNewWithAllFlags(t *testing.T) {
 	t.Parallel()

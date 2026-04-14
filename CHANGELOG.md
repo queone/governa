@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.15.7 | Fix: TEMPLATE_VERSION now updated on re-sync instead of skipped; bookkeeping note clarifies version markers are not cherry-picks |
 | 0.15.6 | Sync review: soften review artifact disposition to respect repo governance |
 | 0.15.5 | Sync review: version coherence note and review artifact disposition in bookkeeping section |
 | 0.15.4 | QA role: build validation scope rule, rule ordering aligned |
