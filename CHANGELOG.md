@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.14.0 | CLI help: version header, description, `h` alias; bold test-gate rule in AGENTS.md |
 | 0.13.4 | Pre-release checklist: tag and working-tree check moved to step 1 |
 | 0.13.3 | Sync review methodology: report and feedback steps for director visibility and governa improvement loop |
 | 0.13.2 | Sync review doc: 7-step evaluation methodology with report and feedback loop, IE1-IE2 in plan |

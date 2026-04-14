@@ -17,7 +17,7 @@ import (
 	"github.com/kquo/governa/internal/templates"
 )
 
-const programVersion = "0.13.4"
+const programVersion = "0.14.0"
 
 const sourceRepo = "github.com/kquo/governa"
 
@@ -42,7 +42,7 @@ func main() {
 	case "adopt":
 		fmt.Fprintf(os.Stderr, "unknown command: adopt (use \"governa sync\")\n")
 		os.Exit(2)
-	case "-h", "--help", "-?", "help":
+	case "-h", "--help", "-?", "help", "h":
 		printUsage()
 		return
 	default:
@@ -107,11 +107,13 @@ func main() {
 }
 
 func printUsage() {
+	fmt.Fprintf(os.Stderr, "%s v%s\n", color.BoldW("governa"), programVersion)
+	fmt.Fprintln(os.Stderr, color.Gra(fmt.Sprintf("Repo governance templates — %s", sourceRepo)))
 	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
 		{Flag: "sync", Desc: "bootstrap or update governance in a repo"},
 		{Flag: "enhance", Desc: "review a reference repo for template improvements"},
 		{Flag: "version, ver", Desc: "print version and source info"},
-		{Flag: "help", Desc: "show this help"},
+		{Flag: "help, h", Desc: "show this help"},
 	}, "Run 'governa <command> --help' for command-specific flags."))
 }
 

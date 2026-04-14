@@ -70,6 +70,7 @@ When asked to update it, propose the exact section names to change and keep edit
 - When a change adds a file, command, flag, or major decision, update affected docs in the same pass.
 - When a decision changes mid-implementation, complete the migration in one pass: update all affected files, docs, and tests together rather than leaving a half-migrated state.
 - Follow existing repo conventions unless the user asks to change them.
+- **Do not present a code change as complete without accompanying tests. No exceptions for "small" changes, CLI output, or formatting.**
 - **When an agent receives a correction about repo behavior (build process, release workflow, file conventions, review expectations), codify it in the appropriate governance doc — not in agent-local memory or session state. If the correction refines an existing rule, update that rule in place. If it is new, add it to the section that best fits. Agent-local memory must not be used as a shadow governance system.**
 
 ## Release Or Publish Triggers
