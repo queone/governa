@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.17.1 | Sync review: show proposed content for non-markdown content-changed files |
 | 0.17.0 | AC38: section-level overlay scoring, compact diffs for small deltas, enhance subsection drill-down; flattening rule in Governed Sections |
 | 0.16.1 | Fix: remove governa-specific propagation rule from consumer maintainer template; add `governa-sync-review.md` to .gitignore templates |
 | 0.16.0 | AC37: skout enhance — session persistence, AC critique gate, terse completion guidance, `ac<N>-<slug>.md` path format, planning-artifact fallback, partial-completion status |

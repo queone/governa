@@ -4325,10 +4325,11 @@ func TestRenderSyncReviewContentChanges(t *testing.T) {
 			proposedContent:        "# Dev Cycle\n\n## Cycle\n\nnew cycle content\n",
 		},
 		{
-			path:           "/tmp/repo/build.sh",
-			recommendation: "review: content changed",
-			reason:         "template changed since last sync",
-			contentChanged: true,
+			path:            "/tmp/repo/build.sh",
+			recommendation:  "review: content changed",
+			reason:          "template changed since last sync",
+			contentChanged:  true,
+			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\n",
 		},
 	}
 	output := renderSyncReview(scores)
@@ -4341,8 +4342,11 @@ func TestRenderSyncReviewContentChanges(t *testing.T) {
 	if !strings.Contains(output, "Changed sections: Cycle (cosmetic)") {
 		t.Fatal("output should list changed sections with classification tag")
 	}
-	if !strings.Contains(output, "Template content changed since last sync") {
-		t.Fatal("output should have generic message for non-markdown files")
+	if !strings.Contains(output, "non-markdown, no section detail") {
+		t.Fatal("output should note non-markdown file")
+	}
+	if !strings.Contains(output, "**Template version:**") {
+		t.Fatal("output should show proposed content for non-markdown files")
 	}
 }
 

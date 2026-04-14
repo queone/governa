@@ -2660,10 +2660,15 @@ func renderSyncReview(scores []collisionScore) string {
 					}
 				}
 			} else {
-				// Non-markdown file — no section detail available
+				// Non-markdown file — show proposed content so the agent can compare
 				fmt.Fprintf(&b, "### `%s`\n\n", rel)
-				fmt.Fprintln(&b, "Template content changed since last sync. Compare your version against the template and incorporate relevant updates.")
+				fmt.Fprintln(&b, "Template content changed since last sync (non-markdown, no section detail).")
 				fmt.Fprintln(&b, "")
+				if s.proposedContent != "" {
+					fmt.Fprintln(&b, "**Template version:**")
+					fmt.Fprintln(&b, "")
+					fmt.Fprintf(&b, "```\n%s\n```\n\n", strings.TrimSpace(s.proposedContent))
+				}
 			}
 		}
 	}
