@@ -17,7 +17,7 @@ import (
 	"github.com/kquo/governa/internal/templates"
 )
 
-const programVersion = "0.15.3"
+const programVersion = "0.15.4"
 
 const sourceRepo = "github.com/kquo/governa"
 
