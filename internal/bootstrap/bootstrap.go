@@ -2535,6 +2535,11 @@ func renderSyncReview(scores []collisionScore) string {
 	fmt.Fprintln(&b, "   - The director routes this feedback to governa DEV and QA to improve future sync output and methodology.")
 	fmt.Fprintln(&b, "")
 
+	fmt.Fprintln(&b, "## What sync writes automatically")
+	fmt.Fprintln(&b, "")
+	fmt.Fprintln(&b, "Every sync updates `TEMPLATE_VERSION` and `.governa-manifest` to record the current template version. These are baseline bookkeeping — not review items. Do not report them as findings or side-effects.")
+	fmt.Fprintln(&b, "")
+
 	fmt.Fprintln(&b, "## Recommendations")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "| File | Recommendation | Reason | Existing Lines | Proposed Lines |")

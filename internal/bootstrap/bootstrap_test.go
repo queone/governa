@@ -4272,6 +4272,12 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 			t.Fatalf("review doc should contain %q in methodology", phrase)
 		}
 	}
+	if !strings.Contains(output, "## What sync writes automatically") {
+		t.Fatal("review doc should contain bookkeeping note section")
+	}
+	if !strings.Contains(output, "not review items") {
+		t.Fatal("review doc bookkeeping note should state these are not review items")
+	}
 }
 
 func TestRenderSyncReviewContentChanges(t *testing.T) {
