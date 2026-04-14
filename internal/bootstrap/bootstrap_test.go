@@ -5559,3 +5559,104 @@ func TestDetectSectionRenamesTieBreaking(t *testing.T) {
 		t.Fatalf("expected exactly 1 rename pair, got %d: %v", len(renames), renames)
 	}
 }
+
+// Standing drift: template unchanged but file differs from template.
+func TestOverlayStandingDrift(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "dev.md")
+
+	existing := "# DEV Role\n\nOld intro line.\n\n## Rules\n\n- rule one\n"
+	proposed := "# DEV Role\n\nNew intro line.\n\n## Rules\n\n- rule one\n"
+	os.WriteFile(filePath, []byte(existing), 0o644)
+
+	// Same checksum = template unchanged since last sync
+	score := scoreOverlayCollision(filePath, proposed, "same-checksum", "same-checksum")
+	if score.standingDrift != true {
+		t.Fatal("expected standingDrift=true when template unchanged but content differs")
+	}
+	if len(score.driftSections) == 0 {
+		t.Fatal("expected driftSections to list differing sections")
+	}
+}
+
+func TestOverlayNoStandingDriftWhenIdentical(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "dev.md")
+
+	content := "# DEV Role\n\nIntro.\n\n## Rules\n\n- rule one\n"
+	os.WriteFile(filePath, []byte(content), 0o644)
+
+	score := scoreOverlayCollision(filePath, content, "same-checksum", "same-checksum")
+	if score.standingDrift {
+		t.Fatal("should not have standing drift when content is identical")
+	}
+}
+
+func TestRenderSyncReviewStandingDrift(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:           "/tmp/repo/docs/roles/dev.md",
+			recommendation: "review: no action likely",
+			reason:         "similar content",
+			existingLines:  20,
+			proposedLines:  22,
+			standingDrift:  true,
+			driftSections:  []string{"(preamble)", "Governa Templating Maintenance"},
+		},
+	}
+	output := renderSyncReview(scores, "", "")
+	if !strings.Contains(output, "## Advisory Notes") {
+		t.Fatalf("expected Advisory Notes for standing drift, got:\n%s", output)
+	}
+	if !strings.Contains(output, "standing drift") {
+		t.Fatalf("expected 'standing drift' note, got:\n%s", output)
+	}
+	if !strings.Contains(output, "(preamble)") {
+		t.Fatal("drift note should list preamble section")
+	}
+	if !strings.Contains(output, "Governa Templating Maintenance") {
+		t.Fatal("drift note should list differing section names")
+	}
+}
+
+func TestOverlayStandingDriftNonMarkdown(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "build.sh")
+
+	existing := "#!/bin/bash\ngo run ./cmd/build \"$@\"\n"
+	proposed := "#!/bin/bash\ngo run ./cmd/build \"$@\"\ngo run ./cmd/rel \"$@\"\n"
+	os.WriteFile(filePath, []byte(existing), 0o644)
+
+	score := scoreOverlayCollision(filePath, proposed, "same-checksum", "same-checksum")
+	if !score.standingDrift {
+		t.Fatal("expected standingDrift=true for non-markdown file with unchanged template")
+	}
+	if len(score.driftSections) != 0 {
+		t.Fatalf("non-markdown drift should have no driftSections, got: %v", score.driftSections)
+	}
+}
+
+func TestRenderSyncReviewStandingDriftNonMarkdown(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:           "/tmp/repo/build.sh",
+			recommendation: "review: no action likely",
+			reason:         "non-markdown file",
+			existingLines:  2,
+			proposedLines:  3,
+			standingDrift:  true,
+		},
+	}
+	output := renderSyncReview(scores, "", "")
+	if !strings.Contains(output, "file differs from template baseline") {
+		t.Fatalf("non-markdown drift should say 'file differs from template baseline', got:\n%s", output)
+	}
+	if strings.Contains(output, "sections that differ") {
+		t.Fatal("non-markdown drift should NOT mention sections")
+	}
+}

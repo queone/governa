@@ -2309,6 +2309,8 @@ type collisionScore struct {
 	governancePatch        string            // non-empty if this is an AGENTS.md patch with missing sections
 	structuralNotes        []structuralNote  // section-level structural observations
 	sectionRenames         map[string]string // old name → new name (detected renames)
+	standingDrift          bool              // true when file differs from template but template hasn't changed since last sync
+	driftSections          []string          // sections that differ from template (standing drift only)
 }
 
 func countLines(s string) int {
@@ -2369,6 +2371,9 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 		}
 		score.recommendation = "review: no action likely"
 		score.reason = fmt.Sprintf("non-markdown file (existing %d lines, proposed %d lines)", score.existingLines, score.proposedLines)
+		if !templateChanged && existingContent != proposedContent {
+			score.standingDrift = true
+		}
 		return score
 	}
 
@@ -2402,6 +2407,13 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 		if len(score.changedSections) > 0 {
 			score.contentChanged = true
 			score.changedClassifications = classifySections(existingContent, proposedContent, score.changedSections)
+		}
+	} else if existingContent != proposedContent {
+		// Template unchanged since last sync but file still differs — standing drift.
+		driftSections := detectChangedSections(existingContent, proposedContent)
+		if len(driftSections) > 0 {
+			score.standingDrift = true
+			score.driftSections = driftSections
 		}
 	}
 
@@ -2729,7 +2741,7 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 		}
 	}
 
-	// Advisory notes: keep files with missing sections, section renames
+	// Advisory notes: keep files with missing sections, section renames, standing drift
 	hasAdvisory := false
 	for _, s := range scores {
 		if s.recommendation == "keep" && len(s.missingSections) > 0 {
@@ -2737,6 +2749,10 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 			break
 		}
 		if len(s.sectionRenames) > 0 {
+			hasAdvisory = true
+			break
+		}
+		if s.standingDrift {
 			hasAdvisory = true
 			break
 		}
@@ -2758,6 +2774,13 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 				slices.Sort(renameKeys)
 				for _, oldName := range renameKeys {
 					fmt.Fprintf(&b, "- `%s`: Section renamed: %s → %s\n", rel, oldName, s.sectionRenames[oldName])
+				}
+			}
+			if s.standingDrift {
+				if len(s.driftSections) > 0 {
+					fmt.Fprintf(&b, "- `%s`: standing drift (unchanged since last sync) — sections that differ from template: %s\n", rel, strings.Join(s.driftSections, ", "))
+				} else {
+					fmt.Fprintf(&b, "- `%s`: standing drift (unchanged since last sync) — file differs from template baseline\n", rel)
 				}
 			}
 		}
