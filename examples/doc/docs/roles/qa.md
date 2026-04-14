@@ -1,6 +1,6 @@
 # QA Role
 
-Editorial-review-focused agent behavior. Follow these rules alongside `AGENTS.md`.
+Role-specific behavior for QA. Shared repo governance remains in `AGENTS.md`; this file adds editorial-review-focused rules for the session.
 
 All work — creation, review, and file changes — targets the current working directory. External repos (e.g., sync references) are read-only source material.
 

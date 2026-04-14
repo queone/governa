@@ -2,6 +2,8 @@
 
 This directory defines the delivery model for this repo. Each role file is a behavioral contract that an agent reads and follows alongside `AGENTS.md`.
 
+**Instruction traceability:** `AGENTS.md` is the shared repo contract loaded every session. Each file in this directory adds role-specific behavior for the assigned role. When both apply, follow `AGENTS.md` plus the assigned role file together. If a role file conflicts with `AGENTS.md`, `AGENTS.md` wins unless the repo intentionally says otherwise.
+
 ## Delivery Model
 
 - **Director (human).** Owns intent, priorities, and irreversible decisions: defining success criteria, approving requirements and acceptance criteria, prioritizing the backlog, making architectural bets, approving releases, and deciding what "done" means. Agents will otherwise either gold-plate or cut corners. The director also owns the meta-loop — reviewing how agents perform and adjusting their instructions.

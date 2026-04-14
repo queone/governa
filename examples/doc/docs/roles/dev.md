@@ -1,6 +1,6 @@
 # DEV Role
 
-Content-creation-focused agent behavior. Follow these rules alongside `AGENTS.md`.
+Role-specific behavior for DEV. Shared repo governance remains in `AGENTS.md`; this file adds content-creation-focused rules for the session.
 
 All work — creation, review, and file changes — targets the current working directory. External repos (e.g., sync references) are read-only source material.
 

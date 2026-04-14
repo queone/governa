@@ -1,6 +1,6 @@
 # DEV Role
 
-Implementation-focused agent behavior. Follow these rules alongside `AGENTS.md`.
+Role-specific behavior for DEV. Shared repo governance remains in `AGENTS.md`; this file adds implementation-focused rules for the session.
 
 All work — implementation, review, and file changes — targets the current working directory. External repos (e.g., sync references) are read-only source material.
 
@@ -21,5 +21,5 @@ All work — implementation, review, and file changes — targets the current wo
 ## Using Sync
 
 - Run `governa sync` periodically to check if the governance template has evolved.
-- Review `governa-adopt-review.md` for per-file recommendations (keep, review: cherry-pick, review: content changed, or review: no action likely). Missing files are written directly.
+- Review `governa-sync-review.md` for per-file recommendations (keep, review: cherry-pick, review: content changed, or review: no action likely). Missing files are written directly.
 - The drift summary shows how many files were unchanged vs need review.

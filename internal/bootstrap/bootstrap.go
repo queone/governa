@@ -573,7 +573,7 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 			}
 		}
 		if len(collisions) > 0 {
-			if err := writeAdoptReview(targetAbs, collisions, cfg.DryRun); err != nil {
+			if err := writeSyncReview(targetAbs, collisions, cfg.DryRun); err != nil {
 				return err
 			}
 		}
@@ -2494,7 +2494,7 @@ func detectChangedGovernedSections(existingContent, templateContent string) []st
 	return changed
 }
 
-func renderAdoptReview(scores []collisionScore) string {
+func renderSyncReview(scores []collisionScore) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, "# governa sync review")
 	fmt.Fprintln(&b, "")
@@ -2909,10 +2909,10 @@ func readmeMissingWhySection(targetDir string) bool {
 	return !strings.Contains(string(content), "## Why")
 }
 
-func writeAdoptReview(targetDir string, scores []collisionScore, dryRun bool) error {
-	reviewPath := filepath.Join(targetDir, "governa-adopt-review.md")
-	content := renderAdoptReview(scores)
-	fmt.Printf("%s %s (adopt review document)\n", formatAction(dryRun, "write"), reviewPath)
+func writeSyncReview(targetDir string, scores []collisionScore, dryRun bool) error {
+	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	content := renderSyncReview(scores)
+	fmt.Printf("%s %s (sync review document)\n", formatAction(dryRun, "write"), reviewPath)
 	if dryRun {
 		return nil
 	}

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.15.1 | Rename review doc to `governa-sync-review.md`; role traceability wording across AGENTS.md and all role files |
 | 0.15.0 | AC36: sync review classifies changed sections as structural or cosmetic for triage |
 | 0.14.0 | CLI help: version header, description, `h` alias; bold test-gate rule in AGENTS.md |
 | 0.13.4 | Pre-release checklist: tag and working-tree check moved to step 1 |

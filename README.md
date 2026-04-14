@@ -33,7 +33,7 @@ Or with flags to skip prompts:
 governa sync -y CODE -n my-service -p "API gateway for internal services" -s "Go CLI"
 ```
 
-**Existing repo** (governance artifacts or manifest found): applies governance with conservative behavior — fit assessment, content-aware collision scoring, and a single `governa-adopt-review.md` at the repo root. New files are written directly; collisions are scored as `keep`, `review: cherry-pick`, `review: content changed`, or `review: no action likely`.
+**Existing repo** (governance artifacts or manifest found): applies governance with conservative behavior — fit assessment, content-aware collision scoring, and a single `governa-sync-review.md` at the repo root. New files are written directly; collisions are scored as `keep`, `review: cherry-pick`, `review: content changed`, or `review: no action likely`.
 
 ```bash
 governa sync

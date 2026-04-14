@@ -1,6 +1,6 @@
 # Maintainer Role
 
-Combined content creation and editorial review for repos maintained by a single agent. Follow these rules alongside `AGENTS.md`.
+Role-specific behavior for Maintainer. Shared repo governance remains in `AGENTS.md`; this file adds combined content creation and editorial review rules for the session.
 
 All work — creation, review, and file changes — targets the current working directory. External repos (e.g., sync references) are read-only source material.
 

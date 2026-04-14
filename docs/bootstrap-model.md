@@ -202,7 +202,7 @@ Rules:
 
 - never overwrite an existing file silently
 - if a target file already exists, score the collision using content-aware comparison (line count ratio, section count, missing sections, template source changes) and classify as: `keep` (existing is more developed or identical to template), `review: cherry-pick` (proposed adds sections worth considering), `review: content changed` (template source changed since last sync and existing still differs), or `review: no action likely` (structurally different but not clearly better)
-- report all collisions in `governa-adopt-review.md` at the repo root — no `.template-proposed` files are written
+- report all collisions in `governa-sync-review.md` at the repo root — no `.template-proposed` files are written
 - for markdown files: identical content → `keep`; existing ≥2x lines → `keep` (unless template changed → `review: content changed`); existing has more sections → `keep` (unless template changed → `review: content changed`); proposed adds missing sections → `review: cherry-pick`; otherwise → `review: no action likely`
 - for non-markdown files: if template source-sha256 changed since last sync → `review: content changed`; otherwise → `review: no action likely`
 - content-change detection compares old manifest `source-sha256` against new template `source-sha256` and requires that existing content still differs from the new template (no false positives if the repo already absorbed the change manually)

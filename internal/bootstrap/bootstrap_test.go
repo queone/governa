@@ -2404,10 +2404,10 @@ func TestAdoptPatchesMissingSections(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root
-	reviewPath := filepath.Join(targetDir, "governa-adopt-review.md")
+	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
 	content, err := os.ReadFile(reviewPath)
 	if err != nil {
-		t.Fatalf("expected governa-adopt-review.md at repo root, got error: %v", err)
+		t.Fatalf("expected governa-sync-review.md at repo root, got error: %v", err)
 	}
 	if !strings.Contains(string(content), "AGENTS.md") {
 		t.Fatal("review doc should reference AGENTS.md")
@@ -2574,9 +2574,9 @@ func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root
-	reviewPath := filepath.Join(targetDir, "governa-adopt-review.md")
+	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
 	if _, err := os.Stat(reviewPath); err != nil {
-		t.Fatalf("expected governa-adopt-review.md, got error: %v", err)
+		t.Fatalf("expected governa-sync-review.md, got error: %v", err)
 	}
 }
 
@@ -2642,7 +2642,7 @@ func TestBootstrapAdoptProposesEnrichedDocs(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root with collision entries
-	reviewPath := filepath.Join(targetDir, "governa-adopt-review.md")
+	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
 	content, _ := os.ReadFile(reviewPath)
 	if !strings.Contains(string(content), "build-release.md") {
 		t.Fatal("review doc should reference colliding files")
@@ -2745,9 +2745,9 @@ func TestBootstrapAdoptDocProposesEnrichedFiles(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root
-	reviewPath := filepath.Join(targetDir, "governa-adopt-review.md")
+	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
 	if _, err := os.Stat(reviewPath); err != nil {
-		t.Fatal("expected governa-adopt-review.md at repo root")
+		t.Fatal("expected governa-sync-review.md at repo root")
 	}
 }
 
@@ -4250,12 +4250,12 @@ func TestScoreGovernanceKeepWhenTemplateUnchanged(t *testing.T) {
 	}
 }
 
-func TestRenderAdoptReviewMethodology(t *testing.T) {
+func TestRenderSyncReviewMethodology(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderAdoptReview(scores)
+	output := renderSyncReview(scores)
 	if !strings.Contains(output, "## Evaluation Methodology") {
 		t.Fatal("review doc should contain Evaluation Methodology section")
 	}
@@ -4274,7 +4274,7 @@ func TestRenderAdoptReviewMethodology(t *testing.T) {
 	}
 }
 
-func TestRenderAdoptReviewContentChanges(t *testing.T) {
+func TestRenderSyncReviewContentChanges(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
@@ -4295,7 +4295,7 @@ func TestRenderAdoptReviewContentChanges(t *testing.T) {
 			contentChanged: true,
 		},
 	}
-	output := renderAdoptReview(scores)
+	output := renderSyncReview(scores)
 	if !strings.Contains(output, "## Content Changes") {
 		t.Fatal("output should contain Content Changes section")
 	}
@@ -4871,8 +4871,8 @@ func TestClassifyChangeBulletCountDelta(t *testing.T) {
 	}
 }
 
-// AT5: renderAdoptReview tags sections with (structural) and (cosmetic).
-func TestRenderAdoptReviewClassificationTags(t *testing.T) {
+// AT5: renderSyncReview tags sections with (structural) and (cosmetic).
+func TestRenderSyncReviewClassificationTags(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
@@ -4890,7 +4890,7 @@ func TestRenderAdoptReviewClassificationTags(t *testing.T) {
 			proposedContent: "# Guide\n\n## Checklist\n\n1. Step A\n2. Step B\n\n## Style\n\nKeep it short.\n",
 		},
 	}
-	output := renderAdoptReview(scores)
+	output := renderSyncReview(scores)
 	if !strings.Contains(output, "(structural)") {
 		t.Fatalf("output should contain (structural) tag, got:\n%s", output)
 	}
@@ -4902,8 +4902,8 @@ func TestRenderAdoptReviewClassificationTags(t *testing.T) {
 	}
 }
 
-// AT6: renderAdoptReview renders structural before cosmetic subheadings.
-func TestRenderAdoptReviewStructuralBeforeCosmeticSubheadings(t *testing.T) {
+// AT6: renderSyncReview renders structural before cosmetic subheadings.
+func TestRenderSyncReviewStructuralBeforeCosmeticSubheadings(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
@@ -4921,7 +4921,7 @@ func TestRenderAdoptReviewStructuralBeforeCosmeticSubheadings(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\nKeep it short.\n\n## Checklist\n\n1. Step A\n2. Step B\n",
 		},
 	}
-	output := renderAdoptReview(scores)
+	output := renderSyncReview(scores)
 	structIdx := strings.Index(output, "#### Structural changes")
 	cosmeticIdx := strings.Index(output, "#### Cosmetic changes")
 	if structIdx < 0 {

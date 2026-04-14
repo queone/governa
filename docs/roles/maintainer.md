@@ -1,6 +1,6 @@
 # Maintainer Role
 
-Combined implementation and review behavior for repos maintained by a single agent. Follow these rules alongside `AGENTS.md`.
+Role-specific behavior for Maintainer. Shared repo governance remains in `AGENTS.md`; this file adds combined implementation and review rules for the session.
 
 All work — implementation, review, and file changes — targets the current working directory. External repos (e.g., enhance references) are read-only source material.
 
