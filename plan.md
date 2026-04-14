@@ -19,7 +19,7 @@ Pre-rubric ideas captured for future discussion. Prefix each with `IE<N>:` (sequ
 
 - IE1: Extract buildtool/reltool into a shared Go module (`devtools`) so governa, skout, utils, and iq import from one source instead of each carrying template-copied versions; relaxes "self-contained" constraint for build infrastructure only, not governance docs
 - IE2: Move repo from `github.com/kquo/governa` to `github.com/queone/governa` — requires go.mod module path change, all internal import paths, `sourceRepo` const, version-check URL, template references, and README/doc links
-
+- IE3: Rename `internal/bootstrap` package to `internal/governance` and `docs/bootstrap-model.md` to `docs/governance-model.md` — the package now handles sync scoring, enhance review, collision detection, and review doc generation, not just repo bootstrapping; update all imports, test file references, and doc cross-references
 
 ## Deferred
 

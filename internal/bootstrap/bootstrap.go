@@ -1602,14 +1602,28 @@ func firstExistingPath(root string, rels []string) (string, bool) {
 func parseLevel2Sections(content string) []markdownSection {
 	lines := strings.Split(content, "\n")
 	var sections []markdownSection
+	var preamble strings.Builder
+	inPreamble := true
 	current := markdownSection{}
 	for _, line := range lines {
 		if strings.HasPrefix(line, "## ") {
+			if inPreamble {
+				preambleText := strings.TrimSpace(preamble.String())
+				if preambleText != "" {
+					sections = append(sections, markdownSection{Name: "(preamble)", Body: preambleText})
+				}
+				inPreamble = false
+			}
 			if current.Name != "" {
 				current.Body = strings.TrimSpace(current.Body)
 				sections = append(sections, current)
 			}
 			current = markdownSection{Name: strings.TrimSpace(strings.TrimPrefix(line, "## "))}
+			continue
+		}
+		if inPreamble {
+			preamble.WriteString(line)
+			preamble.WriteString("\n")
 			continue
 		}
 		if current.Name == "" {
@@ -1621,7 +1635,10 @@ func parseLevel2Sections(content string) []markdownSection {
 			current.Body += "\n" + line
 		}
 	}
-	if current.Name != "" {
+	if inPreamble {
+		// File has no ## sections at all — no preamble section emitted
+		// (whole-file scoring handles this case)
+	} else if current.Name != "" {
 		current.Body = strings.TrimSpace(current.Body)
 		sections = append(sections, current)
 	}
@@ -2291,6 +2308,7 @@ type collisionScore struct {
 	proposedContent        string            // the template content for the review doc
 	governancePatch        string            // non-empty if this is an AGENTS.md patch with missing sections
 	structuralNotes        []structuralNote  // section-level structural observations
+	sectionRenames         map[string]string // old name → new name (detected renames)
 }
 
 func countLines(s string) int {
@@ -2369,6 +2387,11 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 			score.missingSections = append(score.missingSections, name)
 		}
 	}
+
+	// Section rename detection
+	existingMap := sectionMap(parseLevel2Sections(existingContent))
+	proposedMap := sectionMap(parseLevel2Sections(proposedContent))
+	score.sectionRenames = detectSectionRenames(existingNames, proposedNames, existingMap, proposedMap)
 
 	// Structural comparison for matching sections
 	score.structuralNotes = compareStructure(existingContent, proposedContent)
@@ -2699,6 +2722,41 @@ func renderSyncReview(scores []collisionScore) string {
 		}
 	}
 
+	// Advisory notes: keep files with missing sections, section renames
+	hasAdvisory := false
+	for _, s := range scores {
+		if s.recommendation == "keep" && len(s.missingSections) > 0 {
+			hasAdvisory = true
+			break
+		}
+		if len(s.sectionRenames) > 0 {
+			hasAdvisory = true
+			break
+		}
+	}
+	if hasAdvisory {
+		fmt.Fprintf(&b, "\n## Advisory Notes\n\n")
+		fmt.Fprintln(&b, "These notes are advisory — they do not change the recommendation for any file.")
+		fmt.Fprintln(&b, "")
+		for _, s := range scores {
+			rel := scoreRelPath(s.path)
+			if s.recommendation == "keep" && len(s.missingSections) > 0 {
+				fmt.Fprintf(&b, "- `%s`: template also has sections not in this file: %s — review if relevant to this repo\n", rel, strings.Join(s.missingSections, ", "))
+			}
+			if len(s.sectionRenames) > 0 {
+				renameKeys := make([]string, 0, len(s.sectionRenames))
+				for oldName := range s.sectionRenames {
+					renameKeys = append(renameKeys, oldName)
+				}
+				slices.Sort(renameKeys)
+				for _, oldName := range renameKeys {
+					fmt.Fprintf(&b, "- `%s`: Section renamed: %s → %s\n", rel, oldName, s.sectionRenames[oldName])
+				}
+			}
+		}
+		fmt.Fprintln(&b, "")
+	}
+
 	fmt.Fprintf(&b, "\n## Status\n\n`PENDING`\n")
 	return b.String()
 }
@@ -2898,6 +2956,86 @@ func filterByClassification(sections []string, classifications map[string]string
 		}
 	}
 	return result
+}
+
+// detectSectionRenames finds one-to-one best-match renames between sections
+// that exist in one version but not the other. Returns old→new name map.
+// Uses line overlap (shared lines / max lines) with a 50% threshold.
+// Document order breaks ties; consumed pairs can't match again.
+func detectSectionRenames(existingNames, proposedNames []string, existingMap, proposedMap map[string]string) map[string]string {
+	// Find unmatched sections on each side.
+	proposedSet := make(map[string]bool, len(proposedNames))
+	for _, n := range proposedNames {
+		proposedSet[n] = true
+	}
+	existingSet := make(map[string]bool, len(existingNames))
+	for _, n := range existingNames {
+		existingSet[n] = true
+	}
+	var unmatchedExisting []string
+	for _, n := range existingNames {
+		if !proposedSet[n] {
+			unmatchedExisting = append(unmatchedExisting, n)
+		}
+	}
+	var unmatchedProposed []string
+	for _, n := range proposedNames {
+		if !existingSet[n] {
+			unmatchedProposed = append(unmatchedProposed, n)
+		}
+	}
+
+	if len(unmatchedExisting) == 0 || len(unmatchedProposed) == 0 {
+		return nil
+	}
+
+	consumed := make(map[string]bool)
+	renames := make(map[string]string)
+
+	for _, pName := range unmatchedProposed {
+		bestOld := ""
+		bestOverlap := 0.0
+		for _, eName := range unmatchedExisting {
+			if consumed[eName] {
+				continue
+			}
+			overlap := lineOverlap(existingMap[eName], proposedMap[pName])
+			if overlap >= 0.5 && overlap > bestOverlap {
+				bestOverlap = overlap
+				bestOld = eName
+			}
+		}
+		if bestOld != "" {
+			renames[bestOld] = pName
+			consumed[bestOld] = true
+		}
+	}
+	if len(renames) == 0 {
+		return nil
+	}
+	return renames
+}
+
+// lineOverlap computes the fraction of shared lines between two bodies.
+// Returns shared / max(len(a), len(b)).
+func lineOverlap(bodyA, bodyB string) float64 {
+	aLines := strings.Split(strings.TrimSpace(bodyA), "\n")
+	bLines := strings.Split(strings.TrimSpace(bodyB), "\n")
+	if len(aLines) == 0 && len(bLines) == 0 {
+		return 1.0
+	}
+	bSet := make(map[string]bool, len(bLines))
+	for _, l := range bLines {
+		bSet[strings.TrimSpace(l)] = true
+	}
+	shared := 0
+	for _, l := range aLines {
+		if bSet[strings.TrimSpace(l)] {
+			shared++
+		}
+	}
+	maxLen := max(len(bLines), len(aLines))
+	return float64(shared) / float64(maxLen)
 }
 
 // classifySections builds a section-name → "structural"/"cosmetic" map

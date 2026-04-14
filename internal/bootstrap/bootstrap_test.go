@@ -5344,3 +5344,196 @@ myproject-specific rule about domain data.
 		t.Fatal("expected child 'Project Rules > Shell Tool Efficiency' with disposition accept")
 	}
 }
+
+// --- AC39 tests ---
+
+// AT1: parseLevel2Sections captures preamble.
+func TestParseLevel2SectionsPreamble(t *testing.T) {
+	t.Parallel()
+	content := "# Title\n\nIntro text here.\n\n## Section One\n\nBody one.\n"
+	sections := parseLevel2Sections(content)
+	if len(sections) < 2 {
+		t.Fatalf("expected at least 2 sections (preamble + real), got %d", len(sections))
+	}
+	if sections[0].Name != "(preamble)" {
+		t.Fatalf("first section name = %q, want (preamble)", sections[0].Name)
+	}
+	if !strings.Contains(sections[0].Body, "Intro text here.") {
+		t.Fatalf("preamble body should contain intro text, got: %q", sections[0].Body)
+	}
+}
+
+// AT2: parseLevel2Sections with no preamble content.
+func TestParseLevel2SectionsNoPreamble(t *testing.T) {
+	t.Parallel()
+	content := "## Section One\n\nBody one.\n"
+	sections := parseLevel2Sections(content)
+	for _, s := range sections {
+		if s.Name == "(preamble)" {
+			t.Fatal("should not have a preamble section when no pre-## content exists")
+		}
+	}
+}
+
+// AT3: detectChangedSections detects preamble change.
+func TestDetectChangedSectionsPreamble(t *testing.T) {
+	t.Parallel()
+	existing := "# Title\n\nOld intro.\n\n## Rules\n\n- rule one\n"
+	proposed := "# Title\n\nNew intro.\n\n## Rules\n\n- rule one\n"
+	changed := detectChangedSections(existing, proposed)
+	found := false
+	for _, name := range changed {
+		if name == "(preamble)" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected (preamble) in changed sections, got: %v", changed)
+	}
+}
+
+// AT4: scoreOverlayCollision "keep" with missing sections.
+func TestOverlayKeepWithMissingSections(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "guide.md")
+
+	// Existing is 2x larger but missing a template section.
+	existing := "# Guide\n\n## Alpha\n\nAlpha content line 1.\nAlpha content line 2.\nAlpha content line 3.\nAlpha content line 4.\nAlpha content line 5.\nAlpha content line 6.\nAlpha content line 7.\nAlpha content line 8.\n\n## Beta\n\nBeta content line 1.\nBeta content line 2.\nBeta content line 3.\nBeta content line 4.\nBeta content line 5.\nBeta content line 6.\nBeta content line 7.\nBeta content line 8.\n"
+	proposed := "# Guide\n\n## Alpha\n\nAlpha content.\n\n## Gamma\n\nGamma content.\n"
+	os.WriteFile(filePath, []byte(existing), 0o644)
+
+	score := scoreOverlayCollision(filePath, proposed, "old-checksum", "new-checksum")
+	if score.recommendation != "keep" && score.recommendation != "review: content changed" {
+		t.Fatalf("recommendation = %q, expected keep or review: content changed", score.recommendation)
+	}
+	found := false
+	for _, name := range score.missingSections {
+		if name == "Gamma" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missingSections should include Gamma, got: %v", score.missingSections)
+	}
+}
+
+// AT5: renderSyncReview Advisory Notes for keep files with missing sections.
+func TestRenderSyncReviewAdvisoryNotes(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/docs/guide.md",
+			recommendation:  "keep",
+			reason:          "existing is more developed",
+			existingLines:   100,
+			proposedLines:   40,
+			missingSections: []string{"Gamma", "Delta"},
+		},
+	}
+	output := renderSyncReview(scores)
+	if !strings.Contains(output, "## Advisory Notes") {
+		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Gamma") || !strings.Contains(output, "Delta") {
+		t.Fatalf("advisory note should list missing sections Gamma and Delta, got:\n%s", output)
+	}
+	// Should NOT appear in the recommendations table
+	var tableSection strings.Builder
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.HasPrefix(line, "| `") {
+			tableSection.WriteString(line + "\n")
+		}
+	}
+	if strings.Contains(tableSection.String(), "Gamma") {
+		t.Fatal("missing sections should not appear in the recommendations table")
+	}
+}
+
+// AT6: detectSectionRenames finds a rename.
+func TestDetectSectionRenamesMatch(t *testing.T) {
+	t.Parallel()
+	existingNames := []string{"Using Sync", "Rules"}
+	proposedNames := []string{"Governa Templating Maintenance", "Rules"}
+	existingMap := map[string]string{
+		"Using Sync": "- Run governa sync periodically.\n- Review governa-sync-review.md for recommendations.\n- The drift summary shows unchanged vs review.\n",
+		"Rules":      "- Start every response with DEV says.\n",
+	}
+	proposedMap := map[string]string{
+		"Governa Templating Maintenance": "- Run governa sync periodically.\n- Review governa-sync-review.md for recommendations.\n- The drift summary shows unchanged vs review.\n",
+		"Rules":                          "- Start every response with DEV says.\n",
+	}
+	renames := detectSectionRenames(existingNames, proposedNames, existingMap, proposedMap)
+	if renames == nil {
+		t.Fatal("expected rename detection, got nil")
+	}
+	if renames["Using Sync"] != "Governa Templating Maintenance" {
+		t.Fatalf("expected Using Sync → Governa Templating Maintenance, got: %v", renames)
+	}
+}
+
+// AT7: detectSectionRenames returns nil when bodies don't overlap.
+func TestDetectSectionRenamesNoMatch(t *testing.T) {
+	t.Parallel()
+	existingNames := []string{"Old Section"}
+	proposedNames := []string{"New Section"}
+	existingMap := map[string]string{
+		"Old Section": "completely different content here.\nnothing in common.\n",
+	}
+	proposedMap := map[string]string{
+		"New Section": "totally unrelated text.\nno overlap at all.\n",
+	}
+	renames := detectSectionRenames(existingNames, proposedNames, existingMap, proposedMap)
+	if renames != nil {
+		t.Fatalf("expected no renames, got: %v", renames)
+	}
+}
+
+// AT8: renderSyncReview shows rename note.
+func TestRenderSyncReviewRenameNote(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:           "/tmp/repo/docs/roles/dev.md",
+			recommendation: "review: content changed",
+			reason:         "template sections changed",
+			existingLines:  26,
+			proposedLines:  28,
+			sectionRenames: map[string]string{"Using Sync": "Governa Templating Maintenance"},
+		},
+	}
+	output := renderSyncReview(scores)
+	if !strings.Contains(output, "Section renamed:") {
+		t.Fatalf("expected rename note in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Using Sync") || !strings.Contains(output, "Governa Templating Maintenance") {
+		t.Fatal("rename note should contain both old and new section names")
+	}
+}
+
+// AT9: detectSectionRenames tie-breaking — first by document order wins.
+func TestDetectSectionRenamesTieBreaking(t *testing.T) {
+	t.Parallel()
+	existingNames := []string{"Old Section"}
+	proposedNames := []string{"New A", "New B"}
+	sharedContent := "- shared line one\n- shared line two\n- shared line three\n"
+	existingMap := map[string]string{
+		"Old Section": sharedContent,
+	}
+	proposedMap := map[string]string{
+		"New A": sharedContent,
+		"New B": sharedContent,
+	}
+	renames := detectSectionRenames(existingNames, proposedNames, existingMap, proposedMap)
+	if renames == nil {
+		t.Fatal("expected a rename, got nil")
+	}
+	// First by document order (New A) should win
+	if renames["Old Section"] != "New A" {
+		t.Fatalf("expected Old Section → New A (first by doc order), got: %v", renames)
+	}
+	// Old Section consumed — should not also map to New B
+	if len(renames) != 1 {
+		t.Fatalf("expected exactly 1 rename pair, got %d: %v", len(renames), renames)
+	}
+}

@@ -209,6 +209,9 @@ Rules:
 - for `review: content changed` items, each changed section is classified as `structural` (heading/list-item count changed, numbered steps reordered, paragraphs added/removed) or `cosmetic` (wording changes within same-shaped content). The classification appears in the reason string and the Content Changes detail section, with structural changes rendered before cosmetic ones
 - section-level scoring applies to all markdown overlay files with `##` sections (not just AGENTS.md). The recommendations table stays file-level; section-level detail appears in Content Changes
 - when a section diff has <=5 changed lines, the review doc renders a compact `diff` block instead of full "Your version" / "Template version" blocks
+- preamble content (text before the first `##` heading) is captured as a synthetic `(preamble)` section and participates in change detection and classification like any named section
+- for `keep` files that have template sections not present in the existing file: an advisory note appears under `## Advisory Notes` listing the missing sections. The recommendation stays `keep` — the note is informational
+- when a section exists in one version but not the other and their bodies share >=50% of lines, sync reports it as a section rename in Advisory Notes
 - never rewrite an existing `AGENTS.md` wholesale unless the user explicitly requests replacement
 - preserve unrelated local changes
 
