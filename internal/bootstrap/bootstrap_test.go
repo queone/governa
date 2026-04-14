@@ -2524,8 +2524,8 @@ func TestBootstrapNewProducesAgentRoles(t *testing.T) {
 	if !strings.Contains(string(maintContent), "self-review") {
 		t.Fatal("maintainer.md should require self-review")
 	}
-	if !strings.Contains(string(maintContent), "Propagate fixes") {
-		t.Fatal("maintainer.md should require propagation discipline")
+	if strings.Contains(string(maintContent), "Propagate fixes") {
+		t.Fatal("maintainer.md should NOT contain governa-specific propagation rule in consumer repos")
 	}
 }
 
@@ -3544,6 +3544,21 @@ func TestCodeOverlayDevRoleGovernaTemplating(t *testing.T) {
 	}
 	if !strings.Contains(selfHosted, "governa sync") {
 		t.Fatal("docs/roles/dev.md should reference governa sync")
+	}
+}
+
+func TestGitignoreTemplatesIgnoreSyncReview(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{
+		"internal/templates/overlays/code/files/.gitignore.tmpl",
+		"internal/templates/overlays/doc/files/.gitignore.tmpl",
+		"examples/code/.gitignore",
+		"examples/doc/.gitignore",
+	} {
+		content := readRepoFile(t, path)
+		if !strings.Contains(content, "governa-sync-review.md") {
+			t.Errorf("%s: should ignore governa-sync-review.md", path)
+		}
 	}
 }
 
