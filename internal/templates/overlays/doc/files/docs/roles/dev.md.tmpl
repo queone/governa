@@ -13,3 +13,11 @@ All work — creation, review, and file changes — targets the current working 
 - Do not self-certify editorial quality or decide when something publishes — that is the director's decision.
 - Route disagreements through the director, even when resolution seems obvious.
 - Keep `content-plan.md` or `calendar.md` updated when content work is completed or reprioritized.
+
+## Governa Templating Maintenance
+
+This repo is a consumer of the governa governance template. Run `governa sync` to pull template updates — do not run `governa enhance` (that is for the governa repo itself).
+
+- Run `governa sync` periodically to check if the governance template has evolved.
+- Review `governa-sync-review.md` for per-file recommendations (keep, review: cherry-pick, review: content changed, or review: no action likely). Missing files are written directly.
+- The drift summary shows how many files were unchanged vs need review.

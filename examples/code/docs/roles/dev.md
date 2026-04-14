@@ -18,7 +18,9 @@ All work — implementation, review, and file changes — targets the current wo
 - Route disagreements through the director, even when resolution seems obvious.
 - Keep responses terse: flat bullets, one-sentence next step. Follow the Review Style contract in `AGENTS.md`.
 
-## Using Sync
+## Governa Templating Maintenance
+
+This repo is a consumer of the governa governance template. Run `governa sync` to pull template updates — do not run `governa enhance` (that is for the governa repo itself).
 
 - Run `governa sync` periodically to check if the governance template has evolved.
 - Review `governa-sync-review.md` for per-file recommendations (keep, review: cherry-pick, review: content changed, or review: no action likely). Missing files are written directly.

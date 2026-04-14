@@ -3517,24 +3517,33 @@ func TestDevRoleDocEnhanceWorkflow(t *testing.T) {
 	}
 }
 
-func TestCodeOverlayDevRoleUsingAdopt(t *testing.T) {
+func TestCodeOverlayDevRoleGovernaTemplating(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{
 		"internal/templates/overlays/code/files/docs/roles/dev.md.tmpl",
 		"examples/code/docs/roles/dev.md",
 	} {
 		content := readRepoFile(t, path)
-		if !strings.Contains(content, "## Using Sync") {
-			t.Errorf("%s: should contain ## Using Sync section", path)
+		if !strings.Contains(content, "## Governa Templating Maintenance") {
+			t.Errorf("%s: should contain ## Governa Templating Maintenance section", path)
 		}
 		if !strings.Contains(content, "governa sync") {
 			t.Errorf("%s: should reference governa sync", path)
 		}
+		if strings.Contains(content, "### Enhance") {
+			t.Errorf("%s: consumer repo should not have an Enhance subsection", path)
+		}
 	}
-	// Self-hosted DEV role must NOT have "Using Sync" — governa uses enhance.
+	// Self-hosted DEV role should have both sync and enhance under the same section.
 	selfHosted := readRepoFile(t, "docs/roles/dev.md")
-	if strings.Contains(selfHosted, "## Using Sync") {
-		t.Fatal("docs/roles/dev.md should NOT contain Using Sync (governa uses enhance, not sync)")
+	if !strings.Contains(selfHosted, "## Governa Templating Maintenance") {
+		t.Fatal("docs/roles/dev.md should contain ## Governa Templating Maintenance section")
+	}
+	if !strings.Contains(selfHosted, "governa enhance") {
+		t.Fatal("docs/roles/dev.md should reference governa enhance")
+	}
+	if !strings.Contains(selfHosted, "governa sync") {
+		t.Fatal("docs/roles/dev.md should reference governa sync")
 	}
 }
 
