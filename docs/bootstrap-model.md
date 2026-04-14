@@ -202,7 +202,7 @@ Rules:
 
 - never overwrite an existing file silently
 - if a target file already exists, score the collision using content-aware comparison (line count ratio, section count, missing sections, template source changes) and classify as: `keep` (existing is more developed or identical to template), `review: cherry-pick` (proposed adds sections worth considering), `review: content changed` (template source changed since last sync and existing still differs), or `review: no action likely` (structurally different but not clearly better)
-- report all collisions in `governa-sync-review.md` at the repo root — no `.template-proposed` files are written. The review doc header shows the template version transition (e.g., `Template version: 0.17.0 → 0.18.0`)
+- report all collisions in `governa-sync-review.md` at the repo root. The review doc header shows the template version transition (e.g., `Template version: 0.17.0 → 0.18.0`). For files with `review:` recommendations, sync also writes the template version to `.governa-proposed/<path>` for direct comparison
 - for markdown files: identical content → `keep`; existing ≥2x lines → `keep` (unless template changed → `review: content changed`); existing has more sections → `keep` (unless template changed → `review: content changed`); proposed adds missing sections → `review: cherry-pick`; otherwise → `review: no action likely`
 - for non-markdown files: if template source-sha256 changed since last sync → `review: content changed` (renders proposed template content so the agent can compare); otherwise → `review: no action likely`
 - content-change detection compares old manifest `source-sha256` against new template `source-sha256` and requires that existing content still differs from the new template (no false positives if the repo already absorbed the change manually)
@@ -212,7 +212,7 @@ Rules:
 - preamble content (text before the first `##` heading) is captured as a synthetic `(preamble)` section and participates in change detection and classification like any named section
 - for `keep` files that have template sections not present in the existing file: an advisory note appears under `## Advisory Notes` listing the missing sections. The recommendation stays `keep` — the note is informational
 - when a section exists in one version but not the other and their bodies share >=50% of lines, sync reports it as a section rename in Advisory Notes
-- when the template source hasn't changed since last sync but the actual file still differs from the template, report it as **standing drift** in Advisory Notes with inline diffs: markdown files get per-section compact diff or full-block rendering, non-markdown files get the template content block. This surfaces un-adopted changes from previous sync rounds that would otherwise be invisible
+- when the template source hasn't changed since last sync but the actual file still differs from the template, classify as `review: standing drift` — a full recommendation that appears in the recommendations table and has its own `## Standing Drift` detail section with inline diffs (markdown: per-section compact diff or full blocks; non-markdown: template content block). This surfaces un-adopted changes from previous sync rounds that would otherwise be invisible
 - never rewrite an existing `AGENTS.md` wholesale unless the user explicitly requests replacement
 - preserve unrelated local changes
 

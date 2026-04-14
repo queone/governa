@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.21.0 | Proposed files in `.governa-proposed/`, standing drift promoted to recommendation, stronger adoption language |
 | 0.20.0 | Standing drift: inline diffs for un-adopted changes, director reporting instruction |
 | 0.19.1 | Advisory notes: instruct agents to report standing drift to director |
 | 0.19.0 | Standing drift detection: surfaces un-adopted template changes from previous sync rounds; sync lifecycle guidance in DEV role |

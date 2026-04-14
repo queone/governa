@@ -3550,7 +3550,7 @@ func TestCodeOverlayDevRoleGovernaTemplating(t *testing.T) {
 	}
 }
 
-func TestGitignoreTemplatesIgnoreSyncReview(t *testing.T) {
+func TestGitignoreTemplatesIgnoreGovernaArtifacts(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{
 		"internal/templates/overlays/code/files/.gitignore.tmpl",
@@ -3561,6 +3561,9 @@ func TestGitignoreTemplatesIgnoreSyncReview(t *testing.T) {
 		content := readRepoFile(t, path)
 		if !strings.Contains(content, "governa-sync-review.md") {
 			t.Errorf("%s: should ignore governa-sync-review.md", path)
+		}
+		if !strings.Contains(content, ".governa-proposed/") {
+			t.Errorf("%s: should ignore .governa-proposed/", path)
 		}
 	}
 }
@@ -5605,8 +5608,8 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:            devPath,
-			recommendation:  "review: no action likely",
-			reason:          "similar content",
+			recommendation:  "review: standing drift",
+			reason:          "un-adopted template differences in: (preamble), Governa Templating Maintenance",
 			existingLines:   7,
 			proposedLines:   7,
 			standingDrift:   true,
@@ -5615,11 +5618,11 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 		},
 	}
 	output := renderSyncReview(scores, "", "")
-	if !strings.Contains(output, "## Advisory Notes") {
-		t.Fatalf("expected Advisory Notes for standing drift, got:\n%s", output)
+	if !strings.Contains(output, "## Standing Drift") {
+		t.Fatalf("expected Standing Drift section, got:\n%s", output)
 	}
-	if !strings.Contains(output, "standing drift") {
-		t.Fatalf("expected 'standing drift' note, got:\n%s", output)
+	if !strings.Contains(output, "review: standing drift") {
+		t.Fatalf("expected 'review: standing drift' in recommendations table, got:\n%s", output)
 	}
 	if !strings.Contains(output, "#### (preamble)") {
 		t.Fatal("drift should render preamble section heading")
@@ -5631,8 +5634,8 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	if !strings.Contains(output, "old") || !strings.Contains(output, "new") {
 		t.Fatal("drift should show actual diff content, not just section names")
 	}
-	if !strings.Contains(output, "Report them to the director") {
-		t.Fatal("advisory notes should instruct reporting drift to director")
+	if !strings.Contains(output, "Report each item to the director") {
+		t.Fatal("standing drift section should instruct reporting to director")
 	}
 }
 
@@ -5649,8 +5652,10 @@ func TestOverlayStandingDriftNonMarkdown(t *testing.T) {
 	if !score.standingDrift {
 		t.Fatal("expected standingDrift=true for non-markdown file with unchanged template")
 	}
-	if len(score.driftSections) != 0 {
-		t.Fatalf("non-markdown drift should have no driftSections, got: %v", score.driftSections)
+	// After promotion, recommendation should change
+	promoteStandingDrift(&score)
+	if score.recommendation != "review: standing drift" {
+		t.Fatalf("expected 'review: standing drift' after promotion, got %q", score.recommendation)
 	}
 }
 
@@ -5659,8 +5664,8 @@ func TestRenderSyncReviewStandingDriftNonMarkdown(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:            "/tmp/repo/build.sh",
-			recommendation:  "review: no action likely",
-			reason:          "non-markdown file",
+			recommendation:  "review: standing drift",
+			reason:          "file differs from template baseline (unchanged since last sync)",
 			existingLines:   2,
 			proposedLines:   3,
 			standingDrift:   true,
@@ -5668,13 +5673,52 @@ func TestRenderSyncReviewStandingDriftNonMarkdown(t *testing.T) {
 		},
 	}
 	output := renderSyncReview(scores, "", "")
-	if !strings.Contains(output, "file differs from template baseline") {
-		t.Fatalf("non-markdown drift should say 'file differs from template baseline', got:\n%s", output)
+	if !strings.Contains(output, "## Standing Drift") {
+		t.Fatalf("expected Standing Drift section, got:\n%s", output)
 	}
 	if !strings.Contains(output, "**Template version:**") {
 		t.Fatal("non-markdown drift should show proposed template content")
 	}
-	if strings.Contains(output, "sections that differ") {
-		t.Fatal("non-markdown drift should NOT mention sections")
+}
+
+func TestWriteProposedFilesNestedPath(t *testing.T) {
+	t.Parallel()
+	targetDir := t.TempDir()
+
+	// Create a nested file path to simulate docs/roles/dev.md
+	nestedPath := filepath.Join(targetDir, "docs", "roles", "dev.md")
+
+	scores := []collisionScore{
+		{
+			path:            nestedPath,
+			recommendation:  "review: standing drift",
+			reason:          "un-adopted template differences",
+			proposedContent: "# DEV Role\n\nNew template content.\n",
+		},
+	}
+	if err := writeProposedFiles(targetDir, scores, false); err != nil {
+		t.Fatalf("writeProposedFiles() error = %v", err)
+	}
+
+	// Verify nested path is preserved
+	proposedPath := filepath.Join(targetDir, ".governa-proposed", "docs", "roles", "dev.md")
+	content, err := os.ReadFile(proposedPath)
+	if err != nil {
+		t.Fatalf("proposed file should exist at nested path %s: %v", proposedPath, err)
+	}
+	if !strings.Contains(string(content), "New template content") {
+		t.Fatal("proposed file should contain the template content")
+	}
+
+	// Verify README wording
+	readmeContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "README.md"))
+	if err != nil {
+		t.Fatal("README.md should exist in .governa-proposed/")
+	}
+	if !strings.Contains(string(readmeContent), "Repo governance decides cleanup") {
+		t.Fatal("README should use softened cleanup wording")
+	}
+	if strings.Contains(string(readmeContent), "Delete it") {
+		t.Fatal("README should NOT use 'Delete it' wording")
 	}
 }
