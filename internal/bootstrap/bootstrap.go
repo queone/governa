@@ -2539,7 +2539,7 @@ func renderSyncReview(scores []collisionScore) string {
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Every sync updates `TEMPLATE_VERSION` and `.governa-manifest` to record the current template version. After sync completes, both will show the same version. These are baseline bookkeeping — not review items. Do not report them as findings or side-effects.")
 	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "This file (`governa-sync-review.md`) is a working artifact. Delete it after the sync pass is complete — do not commit it to the repo.")
+	fmt.Fprintln(&b, "This file (`governa-sync-review.md`) is a working artifact, not intended to be committed. Repo governance decides cleanup.")
 	fmt.Fprintln(&b, "")
 
 	fmt.Fprintln(&b, "## Recommendations")

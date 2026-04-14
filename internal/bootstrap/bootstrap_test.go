@@ -4290,8 +4290,8 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 	if !strings.Contains(output, "both will show the same version") {
 		t.Fatal("review doc should state version markers match after sync")
 	}
-	if !strings.Contains(output, "Delete it after the sync pass is complete") {
-		t.Fatal("review doc should state review artifact disposition")
+	if !strings.Contains(output, "not intended to be committed") {
+		t.Fatal("review doc should state review artifact is not intended to be committed")
 	}
 }
 
