@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.16.0 | AC37: skout enhance — session persistence, AC critique gate, terse completion guidance, `ac<N>-<slug>.md` path format, planning-artifact fallback, partial-completion status |
 | 0.15.7 | Fix: TEMPLATE_VERSION now updated on re-sync instead of skipped; bookkeeping note clarifies version markers are not cherry-picks |
 | 0.15.6 | Sync review: soften review artifact disposition to respect repo governance |
 | 0.15.5 | Sync review: version coherence note and review artifact disposition in bookkeeping section |

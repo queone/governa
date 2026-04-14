@@ -2883,8 +2883,8 @@ func TestACFilenameConventionSurfacedInDocs(t *testing.T) {
 	}
 	for _, path := range hintFiles {
 		content := readRepoFile(t, path)
-		if !strings.Contains(content, "acN-short-slug.md") {
-			t.Errorf("%s: should contain literal `acN-short-slug.md` so contributors can name AC files from docs alone", path)
+		if !strings.Contains(content, "ac<N>-<slug>.md") {
+			t.Errorf("%s: should contain literal `ac<N>-<slug>.md` so contributors can name AC files from docs alone", path)
 		}
 	}
 }
@@ -2897,11 +2897,11 @@ func TestACDocsReadmeUsesCurrentConvention(t *testing.T) {
 	}
 	for _, path := range overlayReadmes {
 		content := readRepoFile(t, path)
-		if !strings.Contains(content, "acN-short-slug.md") {
-			t.Errorf("%s: should describe AC files using current `acN-short-slug.md` convention", path)
+		if !strings.Contains(content, "ac<N>-<slug>.md") {
+			t.Errorf("%s: should describe AC files using current `ac<N>-<slug>.md` convention", path)
 		}
 		if strings.Contains(content, "ac_<id>") {
-			t.Errorf("%s: should NOT use stale underscore form `ac_<id>` (replaced by `acN-short-slug.md` in AC13)", path)
+			t.Errorf("%s: should NOT use stale underscore form `ac_<id>` (replaced by `ac<N>-<slug>.md` in AC13)", path)
 		}
 		if strings.Contains(content, "critique") {
 			t.Errorf("%s: should NOT mention AC critiques (no critique files exist in repo; bullet was dropped in AC15)", path)
@@ -2909,8 +2909,8 @@ func TestACDocsReadmeUsesCurrentConvention(t *testing.T) {
 	}
 
 	selfHosted := readRepoFile(t, "docs/README.md")
-	if !strings.Contains(selfHosted, "acN-short-slug.md") {
-		t.Error("docs/README.md: should describe AC files using current `acN-short-slug.md` convention")
+	if !strings.Contains(selfHosted, "ac<N>-<slug>.md") {
+		t.Error("docs/README.md: should describe AC files using current `ac<N>-<slug>.md` convention")
 	}
 	if strings.Contains(selfHosted, "`ac-*.md`") {
 		t.Error("docs/README.md: should NOT use stale glob `ac-*.md` (matches keepers but not working AC files post-AC13)")
@@ -3455,8 +3455,8 @@ func TestACTemplateEnrichedStructure(t *testing.T) {
 		}
 
 		// Filename convention preserved.
-		if !strings.Contains(content, "acN-short-slug.md") {
-			t.Errorf("%s: should contain filename convention acN-short-slug.md", path)
+		if !strings.Contains(content, "ac<N>-<slug>.md") {
+			t.Errorf("%s: should contain filename convention ac<N>-<slug>.md", path)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-Copy this file to `docs/acN-short-slug.md`, where `N` is the next sequential AC number and `short-slug` is a kebab-case identifier. Set the file's heading to `# AC<N> Title`.
+Copy this file to `docs/ac<N>-<slug>.md`, where `N` is the next sequential AC number and `slug` is a kebab-case identifier. Set the file's heading to `# AC<N> Title`.
 
 The AC is the implementation contract for one approved roadmap item. The full development cycle that wraps around this template lives in `docs/development-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
 

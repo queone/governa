@@ -26,7 +26,7 @@ Only these sections may be edited through a guided update:
 - `Documentation Update Expectations`
 - `Project Rules`
 
-Do not add new sections, reorder sections, or rewrite the whole file unless the user explicitly asks for a contract change to this template itself.
+Do not add new sections, reorder sections, or rewrite the whole file unless the user explicitly asks for a contract change.
 Treat this file as a governed config artifact, not freeform prose.
 When asked to update it, propose the exact section names to change and keep edits local to those sections.
 
@@ -36,14 +36,15 @@ When asked to update it, propose the exact section names to change and keep edit
 - Do not create artifacts or make changes unless the user explicitly authorizes them.
 - When the user authorizes changes, make the smallest concrete change that satisfies the request.
 - Surface assumptions, ambiguities, and missing context plainly before taking action that could change project direction.
-- If `docs/roles/` exists and the user has not explicitly assigned a role: if `docs/roles/maintainer.md` is present, default to maintainer immediately and announce the active role in the first response (e.g., "Operating as maintainer (default)."). If no maintainer role exists, ask which role to assume. Role assignment requires an explicit instruction such as "act as DEV", "use docs/roles/qa.md", or "you are QA". After assignment, read `docs/roles/<role>.md` (case-insensitive lookup) and follow it alongside this file. `AGENTS.md` defines the shared repo contract; the assigned role file defines role-specific behavior for that session. If the requested role file does not exist, say so and continue under shared governance only. `director.md` is a reference document describing the human's role — it is not an assignable agent role. If asked to operate as director, decline and ask for a valid agent role.
+- If `docs/roles/` exists and the user has not explicitly assigned a role: if `docs/roles/maintainer.md` is present, default to maintainer immediately and announce the active role in the first response (e.g., "Operating as maintainer (default)."). If no maintainer role exists, ask which role to assume. Role assignment requires an explicit instruction such as "act as DEV", "use docs/roles/qa.md", or "you are QA". After assignment, read `docs/roles/<role>.md` (case-insensitive lookup) and follow it alongside this file. `AGENTS.md` defines the shared repo contract; the assigned role file defines role-specific behavior for that session. Assignment persists for the session unless the user explicitly switches. If the requested role file does not exist, say so and continue under shared governance only. `director.md` is a reference document describing the human's role — it is not an assignable agent role. If asked to operate as director, decline and ask for a valid agent role.
 
 ## Approval Boundaries
 
 - Authorization is per-scope. A user approving a change once does not authorize future changes by analogy.
 - Do not create, delete, rename, publish, release, or perform destructive changes without explicit user approval.
 - Do not change governance files, CI/release configuration, secrets handling, or external integrations without explicit user approval.
-- Use an AC-first workflow for non-trivial changes. Before implementation, draft an AC doc (`docs/acN-short-slug.md`) that defines scope, out-of-scope, objective fit, and required tests. Use `docs/ac-template.md` as the starting point if available. Do not begin implementation until the AC is reviewed and the user authorizes it.
+- Use an AC-first workflow for non-trivial changes. Before implementation, draft an AC doc (`docs/ac<N>-<slug>.md`) that defines scope, out-of-scope, objective fit, and required tests. Use `docs/ac-template.md` as the starting point if available. Do not begin implementation until the AC is reviewed and the user authorizes it.
+- **AC critique gate:** After drafting an AC, ask the user to initiate an external critique. Do not proceed to implementation until: (1) the critique has happened — its findings either saved as `docs/ac<N>-<slug>-critique.md` or integrated directly into the AC, and (2) the user explicitly confirms the AC is implementation-ready.
 - Before committing to an AC, every roadmap item must answer: (1) What user or system outcome does this serve? (2) Why is this a better next step than competing work? (3) What existing decisions or constraints does it depend on? (4) Is this direct roadmap work or an intentional pivot? These questions must be answered in the AC's Objective Fit section.
 - Normal in-scope edits to existing project files are allowed once the user has asked for implementation.
 - Never run the release command yourself; present it for the user to run.
@@ -56,7 +57,7 @@ When asked to update it, propose the exact section names to change and keep edit
 - Present findings before summaries.
 - Prefer concrete evidence: file paths, behavior, and missing coverage.
 - If no issues are found, say so directly and note any residual risk or verification gap.
-- Prefer terse completions: flat bullets, one-sentence next step. Do not add extra sections like "What's in it", "Main conclusion", or "Next steps" unless the user asks.
+- Prefer terse completions: lead with what changed, then flat bullets and a one-sentence next step. Do not add extra sections like "What's in it", "Main conclusion", or "Next steps" unless the user asks.
 - Prefer plain text and simple bullets over heavy Markdown tables or ASCII art. Use richer structure only when content clearly benefits.
 
 ## File-Change Discipline
@@ -64,7 +65,7 @@ When asked to update it, propose the exact section names to change and keep edit
 - Prefer targeted edits over broad rewrites.
 - Preserve user changes and unrelated local modifications.
 - Update only the files required for the task, plus directly affected docs. During implementation, keep docs current — do not defer doc updates to a follow-up.
-- When follow-on improvements are discovered but are not part of the current authorized change, record them in `plan.md` or the repo's planning artifact instead of expanding scope ad hoc.
+- When follow-on improvements are discovered but are not part of the current authorized change, record them in `plan.md` or the repo's planning artifact instead of expanding scope ad hoc. If neither exists, note them to the user.
 - Do not commit personal absolute filesystem paths in docs, templates, config, or generated artifacts; use repo-relative paths or clear placeholders such as `<template-root>`.
 - Keep generated repos self-contained; do not introduce runtime dependence on this template repo.
 - When a change adds a file, command, flag, or major decision, update affected docs in the same pass.
@@ -88,7 +89,7 @@ When asked to update it, propose the exact section names to change and keep edit
 - Update user-facing docs when commands, setup, workflows, outputs, published content structure, or operating instructions change.
 - Update architecture, planning, or style docs only when the change materially affects them.
 - Do not let docs silently drift from the implemented or published reality.
-- Every AC doc must end with a `## Status` section. Valid states: `PENDING`, `IN PROGRESS`, `DEFERRED` (with reason). Completed ACs are deleted per the development cycle — do not change status to DONE before deletion.
+- Every AC doc must end with a `## Status` section. Valid states: `PENDING`, `IN PROGRESS`, `DEFERRED` (with reason). For partial completion, list status by phase. Completed ACs are deleted per the development cycle — do not change status to DONE before deletion.
 
 ## Project Rules
 
