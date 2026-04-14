@@ -4282,7 +4282,7 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "## Evaluation Methodology") {
 		t.Fatal("review doc should contain Evaluation Methodology section")
 	}
@@ -4316,6 +4316,22 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 	}
 }
 
+func TestRenderSyncReviewVersionLine(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
+	}
+	output := renderSyncReview(scores, "0.17.0", "0.18.0")
+	if !strings.Contains(output, "Template version: 0.17.0 → 0.18.0") {
+		t.Fatalf("review doc should show version transition, got:\n%s", output)
+	}
+	// No version line when versions are empty
+	outputNoVer := renderSyncReview(scores, "", "")
+	if strings.Contains(outputNoVer, "Template version:") {
+		t.Fatal("review doc should not show version line when versions are empty")
+	}
+}
+
 func TestRenderSyncReviewContentChanges(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
@@ -4338,7 +4354,7 @@ func TestRenderSyncReviewContentChanges(t *testing.T) {
 			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\n",
 		},
 	}
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "## Content Changes") {
 		t.Fatal("output should contain Content Changes section")
 	}
@@ -4979,7 +4995,7 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 			proposedContent: "# Guide\n\n## Checklist\n\n1. Step A\n2. Step B\n\n## Style\n\nKeep it short.\n",
 		},
 	}
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "(structural)") {
 		t.Fatalf("output should contain (structural) tag, got:\n%s", output)
 	}
@@ -5010,7 +5026,7 @@ func TestRenderSyncReviewStructuralBeforeCosmeticSubheadings(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\nKeep it short.\n\n## Checklist\n\n1. Step A\n2. Step B\n",
 		},
 	}
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	structIdx := strings.Index(output, "#### Structural changes")
 	cosmeticIdx := strings.Index(output, "#### Cosmetic changes")
 	if structIdx < 0 {
@@ -5095,7 +5111,7 @@ func TestRenderSyncReviewCompactDiff(t *testing.T) {
 	os.WriteFile("/tmp/repo/docs/guide.md", []byte("# Guide\n\n## Style\n\n- Keep it brief.\n- Be direct.\n"), 0o644)
 	defer os.Remove("/tmp/repo/docs/guide.md")
 
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "```diff") {
 		t.Fatalf("expected fenced diff block for small delta, got:\n%s", output)
 	}
@@ -5128,7 +5144,7 @@ func TestRenderSyncReviewFullBlocks(t *testing.T) {
 	os.WriteFile("/tmp/repo/docs/big.md", []byte(existing), 0o644)
 	defer os.Remove("/tmp/repo/docs/big.md")
 
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "**Your version:**") {
 		t.Fatalf("expected full blocks for large delta, got:\n%s", output)
 	}
@@ -5156,7 +5172,7 @@ func TestRenderSyncReviewTableIsFileLevel(t *testing.T) {
 			proposedContent: "# Guide\n\n## Alpha\n\nnew alpha\n\n## Beta\n\nnew beta\n",
 		},
 	}
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	// Count table data rows (lines starting with "| `")
 	tableRows := 0
 	for line := range strings.SplitSeq(output, "\n") {
@@ -5437,7 +5453,7 @@ func TestRenderSyncReviewAdvisoryNotes(t *testing.T) {
 			missingSections: []string{"Gamma", "Delta"},
 		},
 	}
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "## Advisory Notes") {
 		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
 	}
@@ -5508,7 +5524,7 @@ func TestRenderSyncReviewRenameNote(t *testing.T) {
 			sectionRenames: map[string]string{"Using Sync": "Governa Templating Maintenance"},
 		},
 	}
-	output := renderSyncReview(scores)
+	output := renderSyncReview(scores, "", "")
 	if !strings.Contains(output, "Section renamed:") {
 		t.Fatalf("expected rename note in output, got:\n%s", output)
 	}

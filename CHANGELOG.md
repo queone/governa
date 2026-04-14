@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.18.2 | Sync review: version transition header, AC workflow nudge for cherry-picks |
 | 0.18.1 | Sync review and DEV role: nudge AC workflow for cherry-picks before applying |
 | 0.18.0 | AC39: preamble scoring, keep-with-missing-sections advisory, section rename detection |
 | 0.17.1 | Sync review: show proposed content for non-markdown content-changed files |

@@ -26,3 +26,4 @@ This repo is a consumer of the governa governance template. Run `governa sync` t
 - Review `governa-sync-review.md` for per-file recommendations (keep, review: cherry-pick, review: content changed, or review: no action likely). Missing files are written directly.
 - The drift summary shows how many files were unchanged vs need review.
 - Treat sync cherry-picks as non-trivial changes — draft an AC before applying adoptions so the work gets scoped and reviewed through the normal development cycle.
+- When no cherry-picks are needed: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa-manifest`) to record the new baseline. The review artifact (`governa-sync-review.md`) is not intended to be committed — repo governance decides cleanup.
