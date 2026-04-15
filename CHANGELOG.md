@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.24.1 | Remove stale `bootstrap` entry from `scriptOnlyCommands` in template and example |
 | 0.24.0 | AC42: module path migration from `github.com/kquo/governa` to `github.com/queone/governa` |
 | 0.23.1 | Fail-safe: `governa sync` refuses to run inside the governa repo itself |
 | 0.23.0 | AC41: rename `internal/bootstrap` to `internal/governance`, `docs/bootstrap-model.md` to `docs/governance-model.md` |

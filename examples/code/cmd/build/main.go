@@ -30,12 +30,11 @@ type semver struct {
 	patch int
 }
 
-// build, bootstrap, and rel are intentionally treated as go-run entrypoints
+// build and rel are intentionally treated as go-run entrypoints
 // rather than installed binaries for now. That may change in the future.
 var scriptOnlyCommands = map[string]struct{}{
-	"build":     {},
-	"bootstrap": {},
-	"rel":       {},
+	"build": {},
+	"rel":   {},
 }
 
 var programVersionInlineRe = regexp.MustCompile(`(?m)^\s*const\s+programVersion\s*(?:string\s*)?=\s*"([^"]*)"`)
