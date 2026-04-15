@@ -1253,6 +1253,7 @@ func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry,
 		case op.kind == "write" && op.note == "overlay file":
 			score := scoreOverlayCollision(op.path, op.content, oldEntry.SourceChecksum, newEntry.SourceChecksum)
 			promoteStandingDrift(&score)
+			promoteStructuralNotes(&score)
 			if score.recommendation == "accept" {
 				out[i] = op // file doesn't exist, write directly
 			} else {
@@ -2299,7 +2300,7 @@ type structuralNote struct {
 
 type collisionScore struct {
 	path                   string // target file path
-	recommendation         string // "keep", "review: cherry-pick", "review: content changed", "review: no action likely", "accept"
+	recommendation         string // "keep", "adopt", "accept"
 	reason                 string
 	existingLines          int
 	proposedLines          int
@@ -2368,12 +2369,12 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	isMarkdown := strings.HasSuffix(existingPath, ".md") || strings.HasSuffix(existingPath, ".md.tmpl")
 	if !isMarkdown {
 		if templateChanged && !alreadyAbsorbed {
-			score.recommendation = "review: content changed"
+			score.recommendation = "adopt"
 			score.reason = fmt.Sprintf("template changed since last sync (non-markdown, existing %d lines, proposed %d lines)", score.existingLines, score.proposedLines)
 			score.contentChanged = true
 			return score
 		}
-		score.recommendation = "review: no action likely"
+		score.recommendation = "keep"
 		score.reason = fmt.Sprintf("non-markdown file (existing %d lines, proposed %d lines)", score.existingLines, score.proposedLines)
 		if !templateChanged && existingContent != proposedContent {
 			score.standingDrift = true
@@ -2424,7 +2425,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	// Decision rules
 	if score.existingLines >= 2*score.proposedLines {
 		if score.contentChanged {
-			score.recommendation = "review: content changed"
+			score.recommendation = "adopt"
 			score.reason = fmt.Sprintf("existing is more developed (%d lines vs %d proposed) but template sections changed: %s", score.existingLines, score.proposedLines, taggedSectionList(score.changedSections, score.changedClassifications))
 			return score
 		}
@@ -2434,7 +2435,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	}
 	if score.existingSections > score.proposedSections {
 		if score.contentChanged {
-			score.recommendation = "review: content changed"
+			score.recommendation = "adopt"
 			score.reason = fmt.Sprintf("existing has richer structure (%d sections vs %d proposed) but template sections changed: %s", score.existingSections, score.proposedSections, taggedSectionList(score.changedSections, score.changedClassifications))
 			return score
 		}
@@ -2447,7 +2448,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	// specific headings — not a real cherry-pick opportunity.
 	if score.existingSections >= score.proposedSections && len(score.missingSections) > 0 {
 		if score.contentChanged {
-			score.recommendation = "review: content changed"
+			score.recommendation = "adopt"
 			score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications))
 			return score
 		}
@@ -2456,35 +2457,52 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 		return score
 	}
 	if len(score.missingSections) > 0 {
-		score.recommendation = "review: cherry-pick"
+		score.recommendation = "adopt"
 		score.reason = fmt.Sprintf("proposed adds sections: %s", strings.Join(score.missingSections, ", "))
 		return score
 	}
 
 	if score.contentChanged {
-		score.recommendation = "review: content changed"
+		score.recommendation = "adopt"
 		score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications))
 		return score
 	}
-	score.recommendation = "review: no action likely"
+	score.recommendation = "keep"
 	score.reason = fmt.Sprintf("similar content (%d lines vs %d proposed, %d sections vs %d)", score.existingLines, score.proposedLines, score.existingSections, score.proposedSections)
 	return score
 }
 
-// promoteStandingDrift overrides keep/no-action-likely to "review: standing drift"
-// when the file has un-adopted template differences. Called after initial scoring.
+// promoteStandingDrift overrides keep to "adopt" when the file has un-adopted
+// template differences from previous sync rounds. Called after initial scoring.
 func promoteStandingDrift(score *collisionScore) {
 	if !score.standingDrift {
 		return
 	}
-	if score.recommendation == "keep" || score.recommendation == "review: no action likely" {
+	if score.recommendation == "keep" {
 		if len(score.driftSections) > 0 {
-			score.recommendation = "review: standing drift"
+			score.recommendation = "adopt"
 			score.reason = fmt.Sprintf("un-adopted template differences in: %s", strings.Join(score.driftSections, ", "))
 		} else {
-			score.recommendation = "review: standing drift"
+			score.recommendation = "adopt"
 			score.reason = "file differs from template baseline (unchanged since last sync)"
 		}
+	}
+}
+
+// promoteStructuralNotes overrides keep to "adopt" when the file has structural
+// observations (e.g., subsection nesting deeper than template). Called after
+// promoteStandingDrift.
+func promoteStructuralNotes(score *collisionScore) {
+	if len(score.structuralNotes) == 0 {
+		return
+	}
+	if score.recommendation == "keep" {
+		var sections []string
+		for _, n := range score.structuralNotes {
+			sections = append(sections, n.section)
+		}
+		score.recommendation = "adopt"
+		score.reason = fmt.Sprintf("structural alignment needed in: %s", strings.Join(sections, ", "))
 	}
 }
 
@@ -2511,7 +2529,7 @@ func scoreGovernanceCollision(op operation, oldSourceChecksum string, newSourceC
 				cls := classifySections(string(existingContent), op.content, changedGoverned)
 				return collisionScore{
 					path:                   op.path,
-					recommendation:         "review: content changed",
+					recommendation:         "adopt",
 					reason:                 fmt.Sprintf("governed sections changed: %s", taggedSectionList(changedGoverned, cls)),
 					existingLines:          countLines(string(existingContent)),
 					proposedLines:          countLines(op.content),
@@ -2542,7 +2560,7 @@ func scoreGovernanceCollision(op operation, oldSourceChecksum string, newSourceC
 
 	return collisionScore{
 		path:            op.path,
-		recommendation:  "review: cherry-pick",
+		recommendation:  "adopt",
 		reason:          fmt.Sprintf("missing governed sections: %s", strings.Join(missing, ", ")),
 		existingLines:   countLines(string(existingContent)),
 		proposedLines:   countLines(op.content),
@@ -2571,59 +2589,59 @@ func detectChangedGovernedSections(existingContent, templateContent string) []st
 	return changed
 }
 
-func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) string {
+func renderSyncReview(targetDir string, scores []collisionScore, oldVersion, newVersion string) string {
+	relPath := func(absPath string) string {
+		if targetDir != "" {
+			if r, err := filepath.Rel(targetDir, absPath); err == nil {
+				return r
+			}
+		}
+		return filepath.Base(absPath)
+	}
 	var b strings.Builder
-	fmt.Fprintln(&b, "# governa sync review")
+	fmt.Fprintln(&b, "# Governa Sync Review")
 	fmt.Fprintln(&b, "")
 	if oldVersion != "" && newVersion != "" && oldVersion != newVersion {
 		fmt.Fprintf(&b, "Template version: %s → %s\n\n", oldVersion, newVersion)
 	} else if newVersion != "" {
 		fmt.Fprintf(&b, "Template version: %s\n\n", newVersion)
 	}
-	fmt.Fprintln(&b, "Generated by `governa sync`. Follow the evaluation methodology below before acting on recommendations. Template files for direct comparison are in `.governa-proposed/`.")
+	fmt.Fprintln(&b, "Generated by `governa sync`. Sync automatically updates `TEMPLATE_VERSION` and `.governa-manifest` to record the current template baseline — these are bookkeeping, not review items. This file (`governa-sync-review.md`) and `.governa-proposed/` are working artifacts, not intended to be committed.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "## Evaluation Methodology")
 	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "When reviewing sync recommendations, the repo agent must:")
+	fmt.Fprintln(&b, "**Default to adopting template content.** Keep existing content only when it is repo-specific and the reason is documented. Adoptions are non-trivial changes to governance docs — draft an AC before applying them so the work gets scoped and reviewed through the normal development cycle.")
 	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "1. **Structure pass — match the template shape first.**")
-	fmt.Fprintln(&b, "   - Adopt template section names and ordering unless the repo has a documented reason to diverge.")
-	fmt.Fprintln(&b, "   - Collapse repo subsections that add formatting but not semantic distinction to match the template's flatter structure.")
-	fmt.Fprintln(&b, "   - If collapsing would lose genuinely repo-specific detail, keep it inline under the template's section rather than adding new headings.")
+	fmt.Fprintln(&b, "The repo agent must follow these steps for every `adopt` item:")
+	fmt.Fprintln(&b, "")
+	fmt.Fprintln(&b, "1. **Structure pass — match the template shape.**")
+	fmt.Fprintln(&b, "   - The agent must adopt template section names and ordering unless the repo has a documented reason to diverge.")
+	fmt.Fprintln(&b, "   - The agent must collapse repo subsections that add formatting but not semantic distinction to match the template's flatter structure.")
+	fmt.Fprintln(&b, "   - If collapsing would lose genuinely repo-specific detail, the agent must keep it inline under the template's section rather than adding new headings.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "2. **Content pass — adopt template wording as the base.**")
-	fmt.Fprintln(&b, "   - For each section, start from the template text.")
-	fmt.Fprintln(&b, "   - Layer repo-specific additions (project names, file paths, domain rules) on top.")
-	fmt.Fprintln(&b, "   - If the template wording covers the same intent with better or more general phrasing, adopt it and drop the repo's version.")
-	fmt.Fprintln(&b, "   - Never sacrifice detail that is definitively specific to the repo.")
+	fmt.Fprintln(&b, "   - For each section, the agent must start from the template text in `.governa-proposed/<file>`.")
+	fmt.Fprintln(&b, "   - The agent must layer repo-specific additions (project names, file paths, domain rules) on top.")
+	fmt.Fprintln(&b, "   - If the template wording covers the same intent with better or more general phrasing, the agent must adopt it and drop the repo's version.")
+	fmt.Fprintln(&b, "   - The agent must not sacrifice detail that is definitively specific to the repo.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "3. **Residual check — minimize future drift.**")
-	fmt.Fprintln(&b, "   - After edits, each remaining difference from the template should be explainable as repo-specific with a clear reason.")
-	fmt.Fprintln(&b, "   - If a difference has no repo-specific justification, adopt the template version.")
+	fmt.Fprintln(&b, "   - After edits, each remaining difference from the template must be explainable as repo-specific with a clear reason.")
+	fmt.Fprintln(&b, "   - If a difference has no repo-specific justification, the agent must adopt the template version.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "4. **Role files pass — adopt directory and file renames.**")
-	fmt.Fprintln(&b, "   - When the template renames or restructures a directory, migrate rather than maintain a divergent path.")
+	fmt.Fprintln(&b, "   - When the template renames or restructures a directory, the agent must migrate rather than maintain a divergent path.")
 	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "5. **Manifest pass — confirm baseline after cherry-picks.**")
-	fmt.Fprintln(&b, "   - Sync has already written the updated manifest and TEMPLATE_VERSION. After applying review-driven changes, confirm these baseline artifacts remain correct so the next sync diffs against the right starting point.")
+	fmt.Fprintln(&b, "5. **Manifest pass — confirm baseline after adoptions.**")
+	fmt.Fprintln(&b, "   - Sync has already written the updated manifest and TEMPLATE_VERSION. After applying adoptions, the agent must confirm these baseline artifacts remain correct so the next sync diffs against the right starting point.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "6. **Report — explain each decision to the director.**")
-	fmt.Fprintln(&b, "   - For each file acted on, state what was adopted, what was kept as repo-specific (with reason), and what needs director judgment.")
-	fmt.Fprintln(&b, "   - Do not silently skip recommendations. Every \"review:\" item must have a stated disposition.")
+	fmt.Fprintln(&b, "   - For each `adopt` item, the agent must state one of: **adopted** (with summary of changes), **kept** (with documented repo-specific reason), or **needs director judgment** (with explanation).")
+	fmt.Fprintln(&b, "   - The agent must not silently skip any `adopt` item. Every item must have a stated disposition.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "7. **Feedback — surface improvements for the governance template.**")
-	fmt.Fprintln(&b, "   - Note any recommendations that were confusing, lacked sufficient context to evaluate, or didn't account for a common repo pattern.")
-	fmt.Fprintln(&b, "   - Note any methodology steps that were unclear or didn't apply well to this repo's structure.")
+	fmt.Fprintln(&b, "   - The agent must note any recommendations that were confusing, lacked sufficient context to evaluate, or didn't account for a common repo pattern.")
 	fmt.Fprintln(&b, "   - The director routes this feedback to governa DEV and QA to improve future sync output and methodology.")
-	fmt.Fprintln(&b, "")
-
-	fmt.Fprintln(&b, "## What sync writes automatically")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "Every sync updates `TEMPLATE_VERSION` and `.governa-manifest` to record the current template version. After sync completes, both will show the same version. These are baseline bookkeeping — not review items and not cherry-picks. Do not list them in your adoption summary or report them as findings.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "This file (`governa-sync-review.md`) and `.governa-proposed/` are working artifacts, not intended to be committed. Repo governance decides cleanup.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "**Adoption expectation:** Adopt as much as possible from each `review:` item without breaking the repo. Standing drift and content changes represent template improvements — default to adopting unless there is a documented repo-specific reason to keep the existing version. Cherry-picks and content adoptions are non-trivial changes to governance docs. Draft an AC before applying them — scope the work, get review, then implement.")
 	fmt.Fprintln(&b, "")
 
 	fmt.Fprintln(&b, "## Recommendations")
@@ -2631,111 +2649,49 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 	fmt.Fprintln(&b, "| File | Recommendation | Reason | Existing Lines | Proposed Lines |")
 	fmt.Fprintln(&b, "|------|----------------|--------|---------------|----------------|")
 	for _, s := range scores {
-		fmt.Fprintf(&b, "| `%s` | %s | %s | %d | %d |\n", scoreRelPath(s.path), s.recommendation, s.reason, s.existingLines, s.proposedLines)
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %d | %d |\n", relPath(s.path), s.recommendation, s.reason, s.existingLines, s.proposedLines)
 	}
 
 	// Action summary
-	keeps, cherryPicks, contentChanged, noAction, standingDriftCount := 0, 0, 0, 0, 0
+	keeps, adopts := 0, 0
 	for _, s := range scores {
 		switch s.recommendation {
 		case "keep":
 			keeps++
-		case "review: cherry-pick":
-			cherryPicks++
-		case "review: content changed":
-			contentChanged++
-		case "review: no action likely":
-			noAction++
-		case "review: standing drift":
-			standingDriftCount++
+		case "adopt":
+			adopts++
 		}
 	}
 	fmt.Fprintf(&b, "\n## Summary\n\n")
-	fmt.Fprintf(&b, "- **keep**: %d files (existing is more developed or identical, no action needed)\n", keeps)
-	fmt.Fprintf(&b, "- **review: cherry-pick**: %d files (proposed adds sections worth considering)\n", cherryPicks)
-	fmt.Fprintf(&b, "- **review: content changed**: %d files (template sections changed since last sync)\n", contentChanged)
-	fmt.Fprintf(&b, "- **review: standing drift**: %d files (un-adopted template differences from previous syncs — report to director)\n", standingDriftCount)
-	fmt.Fprintf(&b, "- **review: no action likely**: %d files (structurally different but not clearly better)\n", noAction)
+	fmt.Fprintf(&b, "- **keep**: %d files (no adoption work needed)\n", keeps)
+	fmt.Fprintf(&b, "- **adopt**: %d files (must compare `.governa-proposed/<file>` and adopt unless repo-specific)\n", adopts)
 
-	// Detail sections — point to .governa-proposed/ for full content
-	if cherryPicks > 0 {
-		fmt.Fprintf(&b, "\n## Cherry-Pick Candidates\n\n")
-		fmt.Fprintln(&b, "Compare your file against `.governa-proposed/<file>` and cherry-pick useful additions.")
+	// Adoption Items — single detail section for all adopt files
+	if adopts > 0 {
+		fmt.Fprintf(&b, "\n## Adoption Items\n\n")
+		fmt.Fprintln(&b, "For each file below, read `.governa-proposed/<file>` and adopt the template content. Keep only content that is definitively repo-specific with a documented reason.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
-			if s.recommendation != "review: cherry-pick" {
+			if s.recommendation != "adopt" {
 				continue
 			}
-			rel := scoreRelPath(s.path)
+			rel := relPath(s.path)
 			fmt.Fprintf(&b, "- `%s`", rel)
-			if len(s.missingSections) > 0 {
+			// Show relevant detail based on what triggered the adopt
+			if len(s.missingSections) > 0 && !s.contentChanged && !s.standingDrift {
 				fmt.Fprintf(&b, " — missing sections: %s", strings.Join(s.missingSections, ", "))
-			}
-			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
-		}
-		fmt.Fprintln(&b, "")
-	}
-
-	if contentChanged > 0 {
-		fmt.Fprintf(&b, "\n## Content Changes\n\n")
-		fmt.Fprintln(&b, "Template sections changed since the last sync. Compare and adopt relevant updates.")
-		fmt.Fprintln(&b, "")
-		for _, s := range scores {
-			if s.recommendation != "review: content changed" {
-				continue
-			}
-			rel := scoreRelPath(s.path)
-			fmt.Fprintf(&b, "- `%s`", rel)
-			if len(s.changedSections) > 0 {
+			} else if len(s.changedSections) > 0 {
 				fmt.Fprintf(&b, " — changed: %s", taggedSectionList(s.changedSections, s.changedClassifications))
-			}
-			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
-		}
-		fmt.Fprintln(&b, "")
-	}
-
-	if standingDriftCount > 0 {
-		fmt.Fprintf(&b, "\n## Standing Drift\n\n")
-		fmt.Fprintln(&b, "These files have un-adopted template improvements from previous sync rounds. Each item needs a disposition: **adopt** (update your file) or **keep** (with a documented repo-specific reason). Default to adopting.")
-		fmt.Fprintln(&b, "")
-		for _, s := range scores {
-			if s.recommendation != "review: standing drift" {
-				continue
-			}
-			rel := scoreRelPath(s.path)
-			fmt.Fprintf(&b, "- `%s`", rel)
-			if len(s.driftSections) > 0 {
+			} else if len(s.driftSections) > 0 {
 				fmt.Fprintf(&b, " — drifting sections: %s", strings.Join(s.driftSections, ", "))
 			}
+			// Structural observation text (no inline code blocks)
+			for _, note := range s.structuralNotes {
+				fmt.Fprintf(&b, " — %s: %s", note.section, note.observation)
+			}
 			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
 		}
 		fmt.Fprintln(&b, "")
-	}
-
-	// Structural notes
-	hasStructuralNotes := false
-	for _, s := range scores {
-		if len(s.structuralNotes) > 0 {
-			hasStructuralNotes = true
-			break
-		}
-	}
-	if hasStructuralNotes {
-		fmt.Fprintf(&b, "\n## Structural Observations\n\n")
-		fmt.Fprintln(&b, "The following sections use a more complex structure than the template version. Consider adopting the simpler format while preserving project-specific rules.")
-		fmt.Fprintln(&b, "")
-		for _, s := range scores {
-			for _, note := range s.structuralNotes {
-				fmt.Fprintf(&b, "### %s in `%s`\n\n", note.section, scoreRelPath(s.path))
-				fmt.Fprintf(&b, "%s\n\n", note.observation)
-				fmt.Fprintln(&b, "**Your version:**")
-				fmt.Fprintln(&b, "")
-				fmt.Fprintf(&b, "```markdown\n## %s\n\n%s\n```\n\n", note.section, note.existingBody)
-				fmt.Fprintln(&b, "**Template version:**")
-				fmt.Fprintln(&b, "")
-				fmt.Fprintf(&b, "```markdown\n## %s\n\n%s\n```\n\n", note.section, note.templateBody)
-			}
-		}
 	}
 
 	// Advisory notes: keep files with missing sections, section renames
@@ -2752,10 +2708,10 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 	}
 	if hasAdvisory {
 		fmt.Fprintf(&b, "\n## Advisory Notes\n\n")
-		fmt.Fprintln(&b, "These notes are advisory — they do not change the recommendation for any file.")
+		fmt.Fprintln(&b, "These notes are informational — they do not change the recommendation for any file.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
-			rel := scoreRelPath(s.path)
+			rel := relPath(s.path)
 			if s.recommendation == "keep" && len(s.missingSections) > 0 {
 				fmt.Fprintf(&b, "- `%s`: template also has sections not in this file: %s — review if relevant to this repo\n", rel, strings.Join(s.missingSections, ", "))
 			}
@@ -3079,16 +3035,6 @@ func parseLevel3Sections(body string) []markdownSection {
 	return sections
 }
 
-func scoreRelPath(path string) string {
-	rel := filepath.Base(path)
-	if idx := strings.Index(path, "/docs/"); idx >= 0 {
-		rel = path[idx+1:]
-	} else if idx := strings.Index(path, "/cmd/"); idx >= 0 {
-		rel = path[idx+1:]
-	}
-	return rel
-}
-
 // readmeMissingWhySection returns true if the target directory contains a
 // README.md that does not have a ## Why section. Returns false if README.md
 // is absent (template will generate one with the section).
@@ -3121,7 +3067,7 @@ func readmeMissingWhySection(targetDir string) bool {
 
 func writeSyncReview(targetDir string, scores []collisionScore, oldVersion, newVersion string, dryRun bool) error {
 	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
-	content := renderSyncReview(scores, oldVersion, newVersion)
+	content := renderSyncReview(targetDir, scores, oldVersion, newVersion)
 	fmt.Printf("%s %s (sync review document)\n", formatAction(dryRun, "write"), reviewPath)
 	if dryRun {
 		return nil
@@ -3138,10 +3084,7 @@ func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) 
 		if s.proposedContent == "" {
 			continue
 		}
-		switch s.recommendation {
-		case "review: content changed", "review: cherry-pick", "review: standing drift":
-			// Write proposed file
-		default:
+		if s.recommendation != "adopt" {
 			continue
 		}
 		rel, err := filepath.Rel(targetDir, s.path)

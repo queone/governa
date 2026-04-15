@@ -1104,8 +1104,8 @@ func TestScoreOverlayCollisionReviewNewSections(t *testing.T) {
 	existing := filepath.Join(dir, "doc.md")
 	mustWrite(t, existing, "# Doc\n\n## A\ncontent\n")
 	score := scoreOverlayCollision(existing, "# Doc\n\n## A\ncontent\n## B\nnew content\n", "", "")
-	if score.recommendation != "review: cherry-pick" {
-		t.Fatalf("recommendation = %q, want review: cherry-pick", score.recommendation)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt", score.recommendation)
 	}
 	if len(score.missingSections) == 0 || score.missingSections[0] != "B" {
 		t.Fatalf("missingSections = %v, want [B]", score.missingSections)
@@ -1126,8 +1126,8 @@ func TestScoreOverlayCollisionReviewNonMarkdown(t *testing.T) {
 	existing := filepath.Join(dir, "build.sh")
 	mustWrite(t, existing, "#!/bin/bash\necho hello\n")
 	score := scoreOverlayCollision(existing, "#!/bin/bash\necho world\n", "", "")
-	if score.recommendation != "review: no action likely" {
-		t.Fatalf("recommendation = %q, want review: no action likely for non-markdown", score.recommendation)
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep for non-markdown with unchanged template", score.recommendation)
 	}
 }
 
@@ -4175,8 +4175,8 @@ func TestScoreOverlayContentChangedMarkdown(t *testing.T) {
 	mustWrite(t, existing, "# Doc\n\n## Rules\n\nold rule 1\nold rule 2\nold rule 3\nold rule 4\nold rule 5\n\n## Notes\n\nextra content here\nextra content here\n")
 	proposed := "# Doc\n\n## Rules\n\nnew rule 1\n\n## Notes\n\nnote\n"
 	score := scoreOverlayCollision(existing, proposed, "oldchecksum", "newchecksum")
-	if score.recommendation != "review: content changed" {
-		t.Fatalf("recommendation = %q, want review: content changed", score.recommendation)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt", score.recommendation)
 	}
 	if !score.contentChanged {
 		t.Fatal("contentChanged should be true")
@@ -4201,8 +4201,8 @@ func TestScoreOverlayContentChangedNonMarkdown(t *testing.T) {
 	existing := filepath.Join(dir, "build.sh")
 	mustWrite(t, existing, "#!/bin/bash\necho hello\n")
 	score := scoreOverlayCollision(existing, "#!/bin/bash\necho world\n", "oldchecksum", "newchecksum")
-	if score.recommendation != "review: content changed" {
-		t.Fatalf("recommendation = %q, want review: content changed", score.recommendation)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt", score.recommendation)
 	}
 	if !score.contentChanged {
 		t.Fatal("contentChanged should be true")
@@ -4227,13 +4227,12 @@ func TestScoreOverlayNoContentChangedWhenTemplateUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "doc.md")
 	// Existing differs from proposed, but template hasn't changed (same checksums).
-	// The structural heuristic may return "keep" or "review: no action likely"
-	// depending on line/section counts — the key assertion is that it does NOT
-	// return "review: content changed".
+	// The structural heuristic should return "keep" when template unchanged.
+	// The key assertion is that contentChanged is false.
 	mustWrite(t, existing, "# Doc\n\n## Rules\n\nold rule 1\nold rule 2\nold rule 3\nold rule 4\nold rule 5\n\n## Notes\n\nextra\nextra\n")
 	score := scoreOverlayCollision(existing, "# Doc\n\n## Rules\n\nnew rule\n\n## Notes\n\nnote\n", "samechecksum", "samechecksum")
-	if score.recommendation == "review: content changed" {
-		t.Fatalf("recommendation = %q, should not be content changed when template unchanged", score.recommendation)
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep when template unchanged", score.recommendation)
 	}
 	if score.contentChanged {
 		t.Fatal("contentChanged should be false when template unchanged")
@@ -4253,8 +4252,8 @@ func TestScoreGovernanceContentChanged(t *testing.T) {
 
 	op := operation{kind: "write", path: agentsPath, content: template, note: "base governance contract"}
 	score := scoreGovernanceCollision(op, "oldchecksum", "newchecksum")
-	if score.recommendation != "review: content changed" {
-		t.Fatalf("recommendation = %q, want review: content changed", score.recommendation)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt", score.recommendation)
 	}
 	if !score.contentChanged {
 		t.Fatal("contentChanged should be true")
@@ -4285,7 +4284,7 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderSyncReview(scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
 	if !strings.Contains(output, "## Evaluation Methodology") {
 		t.Fatal("review doc should contain Evaluation Methodology section")
 	}
@@ -4302,20 +4301,21 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 			t.Fatalf("review doc should contain %q in methodology", phrase)
 		}
 	}
-	if !strings.Contains(output, "## What sync writes automatically") {
-		t.Fatal("review doc should contain bookkeeping note section")
+	// "What sync writes automatically" is merged into intro + methodology
+	if strings.Contains(output, "## What sync writes automatically") {
+		t.Fatal("review doc should not contain old bookkeeping section")
 	}
-	if !strings.Contains(output, "not review items") {
-		t.Fatal("review doc bookkeeping note should state these are not review items")
-	}
-	if !strings.Contains(output, "both will show the same version") {
-		t.Fatal("review doc should state version markers match after sync")
+	if !strings.Contains(output, "bookkeeping") {
+		t.Fatal("review doc intro should mention bookkeeping")
 	}
 	if !strings.Contains(output, "not intended to be committed") {
-		t.Fatal("review doc should state review artifact is not intended to be committed")
+		t.Fatal("review doc intro should state artifacts are not intended to be committed")
 	}
-	if !strings.Contains(output, "Draft an AC before applying") {
-		t.Fatal("review doc should nudge agents to use AC workflow for cherry-picks")
+	if !strings.Contains(output, "Default to adopting") {
+		t.Fatal("methodology should contain imperative adoption preamble")
+	}
+	if !strings.Contains(output, "draft an AC") {
+		t.Fatal("methodology should nudge agents to use AC workflow")
 	}
 }
 
@@ -4324,23 +4324,23 @@ func TestRenderSyncReviewVersionLine(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderSyncReview(scores, "0.17.0", "0.18.0")
+	output := renderSyncReview("/tmp/repo", scores, "0.17.0", "0.18.0")
 	if !strings.Contains(output, "Template version: 0.17.0 → 0.18.0") {
 		t.Fatalf("review doc should show version transition, got:\n%s", output)
 	}
 	// No version line when versions are empty
-	outputNoVer := renderSyncReview(scores, "", "")
+	outputNoVer := renderSyncReview("/tmp/repo", scores, "", "")
 	if strings.Contains(outputNoVer, "Template version:") {
 		t.Fatal("review doc should not show version line when versions are empty")
 	}
 }
 
-func TestRenderSyncReviewContentChanges(t *testing.T) {
+func TestRenderSyncReviewAdoptItems(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
 			path:                   "/tmp/repo/docs/dev-cycle.md",
-			recommendation:         "review: content changed",
+			recommendation:         "adopt",
 			reason:                 "template sections changed: Cycle (cosmetic)",
 			existingLines:          50,
 			proposedLines:          20,
@@ -4351,24 +4351,30 @@ func TestRenderSyncReviewContentChanges(t *testing.T) {
 		},
 		{
 			path:            "/tmp/repo/build.sh",
-			recommendation:  "review: content changed",
+			recommendation:  "adopt",
 			reason:          "template changed since last sync",
 			contentChanged:  true,
 			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\n",
 		},
 	}
-	output := renderSyncReview(scores, "", "")
-	if !strings.Contains(output, "## Content Changes") {
-		t.Fatal("output should contain Content Changes section")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
+	if !strings.Contains(output, "## Adoption Items") {
+		t.Fatal("output should contain Adoption Items section")
 	}
-	if !strings.Contains(output, "review: content changed**: 2") {
-		t.Fatalf("output should show 2 content-changed files, got:\n%s", output)
+	if !strings.Contains(output, "**adopt**: 2") {
+		t.Fatalf("output should show 2 adopt files, got:\n%s", output)
 	}
 	if !strings.Contains(output, "changed: Cycle (cosmetic)") {
 		t.Fatal("output should list changed sections with classification tag")
 	}
 	if !strings.Contains(output, ".governa-proposed/") {
 		t.Fatal("output should reference .governa-proposed/ for comparison")
+	}
+	// Must not contain old section names
+	for _, old := range []string{"## Cherry-Pick Candidates", "## Content Changes", "## Standing Drift", "## Structural Observations"} {
+		if strings.Contains(output, old) {
+			t.Fatalf("output should not contain old section %q", old)
+		}
 	}
 }
 
@@ -4982,7 +4988,7 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:            "/tmp/repo/docs/guide.md",
-			recommendation:  "review: content changed",
+			recommendation:  "adopt",
 			reason:          "template sections changed: Checklist (structural), Style (cosmetic)",
 			existingLines:   40,
 			proposedLines:   30,
@@ -4995,7 +5001,7 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 			proposedContent: "# Guide\n\n## Checklist\n\n1. Step A\n2. Step B\n\n## Style\n\nKeep it short.\n",
 		},
 	}
-	output := renderSyncReview(scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
 	if !strings.Contains(output, "(structural)") {
 		t.Fatalf("output should contain (structural) tag, got:\n%s", output)
 	}
@@ -5007,13 +5013,13 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 	}
 }
 
-// AT6: renderSyncReview content changes reference .governa-proposed/.
-func TestRenderSyncReviewContentChangesRefersToProposed(t *testing.T) {
+// AT6: renderSyncReview adopt items reference .governa-proposed/.
+func TestRenderSyncReviewAdoptRefersToProposed(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
 			path:            "/tmp/repo/docs/guide.md",
-			recommendation:  "review: content changed",
+			recommendation:  "adopt",
 			reason:          "template sections changed: Style (cosmetic), Checklist (structural)",
 			existingLines:   40,
 			proposedLines:   30,
@@ -5026,7 +5032,7 @@ func TestRenderSyncReviewContentChangesRefersToProposed(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\nKeep it short.\n\n## Checklist\n\n1. Step A\n2. Step B\n",
 		},
 	}
-	output := renderSyncReview(scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
 	if !strings.Contains(output, ".governa-proposed/") {
 		t.Fatalf("content changes should reference .governa-proposed/, got:\n%s", output)
 	}
@@ -5051,8 +5057,8 @@ func TestGovernanceCollisionClassifications(t *testing.T) {
 		"old-checksum",
 		"new-checksum",
 	)
-	if score.recommendation != "review: content changed" {
-		t.Fatalf("recommendation = %q, want 'review: content changed'", score.recommendation)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt", score.recommendation)
 	}
 	cls, ok := score.changedClassifications["Project Rules"]
 	if !ok {
@@ -5090,7 +5096,7 @@ func TestRenderSyncReviewLeanFormat(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:            "/tmp/repo/docs/guide.md",
-			recommendation:  "review: content changed",
+			recommendation:  "adopt",
 			reason:          "template sections changed: Style (cosmetic)",
 			existingLines:   20,
 			proposedLines:   20,
@@ -5102,7 +5108,7 @@ func TestRenderSyncReviewLeanFormat(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\n- Keep it short.\n",
 		},
 	}
-	output := renderSyncReview(scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
 	if !strings.Contains(output, ".governa-proposed/") {
 		t.Fatal("review doc should reference .governa-proposed/ for comparison")
 	}
@@ -5121,7 +5127,7 @@ func TestRenderSyncReviewTableIsFileLevel(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:            "/tmp/repo/docs/guide.md",
-			recommendation:  "review: content changed",
+			recommendation:  "adopt",
 			reason:          "template sections changed: Alpha (cosmetic), Beta (structural)",
 			existingLines:   30,
 			proposedLines:   25,
@@ -5134,7 +5140,7 @@ func TestRenderSyncReviewTableIsFileLevel(t *testing.T) {
 			proposedContent: "# Guide\n\n## Alpha\n\nnew alpha\n\n## Beta\n\nnew beta\n",
 		},
 	}
-	output := renderSyncReview(scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
 	// Count table data rows (lines starting with "| `")
 	tableRows := 0
 	for line := range strings.SplitSeq(output, "\n") {
@@ -5388,8 +5394,8 @@ func TestOverlayKeepWithMissingSections(t *testing.T) {
 	os.WriteFile(filePath, []byte(existing), 0o644)
 
 	score := scoreOverlayCollision(filePath, proposed, "old-checksum", "new-checksum")
-	if score.recommendation != "keep" && score.recommendation != "review: content changed" {
-		t.Fatalf("recommendation = %q, expected keep or review: content changed", score.recommendation)
+	if score.recommendation != "keep" && score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, expected keep or adopt", score.recommendation)
 	}
 	found := false
 	for _, name := range score.missingSections {
@@ -5415,7 +5421,7 @@ func TestRenderSyncReviewAdvisoryNotes(t *testing.T) {
 			missingSections: []string{"Gamma", "Delta"},
 		},
 	}
-	output := renderSyncReview(scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
 	if !strings.Contains(output, "## Advisory Notes") {
 		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
 	}
@@ -5479,14 +5485,14 @@ func TestRenderSyncReviewRenameNote(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:           "/tmp/repo/docs/roles/dev.md",
-			recommendation: "review: content changed",
+			recommendation: "adopt",
 			reason:         "template sections changed",
 			existingLines:  26,
 			proposedLines:  28,
 			sectionRenames: map[string]string{"Using Sync": "Governa Templating Maintenance"},
 		},
 	}
-	output := renderSyncReview(scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, "", "")
 	if !strings.Contains(output, "Section renamed:") {
 		t.Fatalf("expected rename note in output, got:\n%s", output)
 	}
@@ -5567,7 +5573,7 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:            devPath,
-			recommendation:  "review: standing drift",
+			recommendation:  "adopt",
 			reason:          "un-adopted template differences in: (preamble), Governa Templating Maintenance",
 			existingLines:   7,
 			proposedLines:   7,
@@ -5576,12 +5582,12 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 			proposedContent: proposed,
 		},
 	}
-	output := renderSyncReview(scores, "", "")
-	if !strings.Contains(output, "## Standing Drift") {
-		t.Fatalf("expected Standing Drift section, got:\n%s", output)
+	output := renderSyncReview(dir, scores, "", "")
+	if !strings.Contains(output, "## Adoption Items") {
+		t.Fatalf("expected Adoption Items section, got:\n%s", output)
 	}
-	if !strings.Contains(output, "review: standing drift") {
-		t.Fatalf("expected 'review: standing drift' in recommendations table, got:\n%s", output)
+	if !strings.Contains(output, "adopt") {
+		t.Fatalf("expected 'adopt' in recommendations table, got:\n%s", output)
 	}
 	if !strings.Contains(output, "(preamble)") {
 		t.Fatal("drift should list preamble in drifting sections")
@@ -5592,8 +5598,9 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	if !strings.Contains(output, ".governa-proposed/") {
 		t.Fatal("drift should reference .governa-proposed/ for comparison")
 	}
-	if !strings.Contains(output, "Default to adopting") {
-		t.Fatal("standing drift section should instruct defaulting to adoption")
+	// Verify the diff command uses the correct relative path
+	if !strings.Contains(output, "diff dev.md .governa-proposed/dev.md") {
+		t.Fatalf("diff command should use repo-relative path, got:\n%s", output)
 	}
 }
 
@@ -5612,17 +5619,17 @@ func TestOverlayStandingDriftNonMarkdown(t *testing.T) {
 	}
 	// After promotion, recommendation should change
 	promoteStandingDrift(&score)
-	if score.recommendation != "review: standing drift" {
-		t.Fatalf("expected 'review: standing drift' after promotion, got %q", score.recommendation)
+	if score.recommendation != "adopt" {
+		t.Fatalf("expected 'adopt' after standing drift promotion, got %q", score.recommendation)
 	}
 }
 
-func TestRenderSyncReviewStandingDriftNonMarkdown(t *testing.T) {
+func TestRenderSyncReviewAdoptNonMarkdown(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
 			path:            "/tmp/repo/build.sh",
-			recommendation:  "review: standing drift",
+			recommendation:  "adopt",
 			reason:          "file differs from template baseline (unchanged since last sync)",
 			existingLines:   2,
 			proposedLines:   3,
@@ -5630,12 +5637,12 @@ func TestRenderSyncReviewStandingDriftNonMarkdown(t *testing.T) {
 			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\ngo run ./cmd/rel \"$@\"\n",
 		},
 	}
-	output := renderSyncReview(scores, "", "")
-	if !strings.Contains(output, "## Standing Drift") {
-		t.Fatalf("expected Standing Drift section, got:\n%s", output)
+	output := renderSyncReview("/tmp/repo", scores, "", "")
+	if !strings.Contains(output, "## Adoption Items") {
+		t.Fatalf("expected Adoption Items section, got:\n%s", output)
 	}
 	if !strings.Contains(output, ".governa-proposed/") {
-		t.Fatal("non-markdown drift should reference .governa-proposed/ for comparison")
+		t.Fatal("non-markdown adopt should reference .governa-proposed/ for comparison")
 	}
 }
 
@@ -5649,7 +5656,7 @@ func TestWriteProposedFilesNestedPath(t *testing.T) {
 	scores := []collisionScore{
 		{
 			path:            nestedPath,
-			recommendation:  "review: standing drift",
+			recommendation:  "adopt",
 			reason:          "un-adopted template differences",
 			proposedContent: "# DEV Role\n\nNew template content.\n",
 		},

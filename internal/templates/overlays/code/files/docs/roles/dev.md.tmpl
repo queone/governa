@@ -23,7 +23,7 @@ All work — implementation, review, and file changes — targets the current wo
 This repo is a consumer of the governa governance template. Run `governa sync` to pull template updates — do not run `governa enhance` (that is for the governa repo itself).
 
 - Run `governa sync` periodically to check if the governance template has evolved.
-- Review `governa-sync-review.md` for per-file recommendations (keep, review: cherry-pick, review: content changed, or review: no action likely). Missing files are written directly.
-- The drift summary shows how many files were unchanged vs need review.
-- Treat sync cherry-picks as non-trivial changes — draft an AC before applying adoptions so the work gets scoped and reviewed through the normal development cycle.
-- When no cherry-picks are needed: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa-manifest`) to record the new baseline. The review artifact (`governa-sync-review.md`) is not intended to be committed — repo governance decides cleanup.
+- Review `governa-sync-review.md` for per-file recommendations (`keep` or `adopt`). Missing files are written directly.
+- The summary shows how many files need no action vs need adoption.
+- Treat adoptions as non-trivial changes — draft an AC before applying them so the work gets scoped and reviewed through the normal development cycle.
+- When no adoptions are needed: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa-manifest`) to record the new baseline. The review artifact (`governa-sync-review.md`) is not intended to be committed — repo governance decides cleanup.
