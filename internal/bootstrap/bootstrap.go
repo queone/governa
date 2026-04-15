@@ -2657,129 +2657,59 @@ func renderSyncReview(scores []collisionScore, oldVersion, newVersion string) st
 	fmt.Fprintf(&b, "- **review: standing drift**: %d files (un-adopted template differences from previous syncs — report to director)\n", standingDriftCount)
 	fmt.Fprintf(&b, "- **review: no action likely**: %d files (structurally different but not clearly better)\n", noAction)
 
+	// Detail sections — point to .governa-proposed/ for full content
 	if cherryPicks > 0 {
 		fmt.Fprintf(&b, "\n## Cherry-Pick Candidates\n\n")
-		fmt.Fprintln(&b, "These files have sections or content worth considering. Compare against your existing file and cherry-pick useful additions.")
+		fmt.Fprintln(&b, "Compare your file against `.governa-proposed/<file>` and cherry-pick useful additions.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
 			if s.recommendation != "review: cherry-pick" {
 				continue
 			}
 			rel := scoreRelPath(s.path)
-			if s.governancePatch != "" {
-				fmt.Fprintf(&b, "### `%s` (governance patch)\n\n", rel)
-				fmt.Fprintf(&b, "Missing governed sections: %s\n\n", strings.Join(s.missingSections, ", "))
-				fmt.Fprintf(&b, "Patched content that includes the missing sections:\n\n")
-				fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", s.governancePatch)
-			} else {
-				fmt.Fprintf(&b, "### `%s`\n\n", rel)
-				if len(s.missingSections) > 0 {
-					fmt.Fprintf(&b, "Proposed adds sections: %s\n\n", strings.Join(s.missingSections, ", "))
-				}
-				fmt.Fprintf(&b, "Proposed content:\n\n")
-				fmt.Fprintf(&b, "```\n%s\n```\n\n", s.proposedContent)
+			fmt.Fprintf(&b, "- `%s`", rel)
+			if len(s.missingSections) > 0 {
+				fmt.Fprintf(&b, " — missing sections: %s", strings.Join(s.missingSections, ", "))
 			}
+			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
 		}
+		fmt.Fprintln(&b, "")
 	}
 
-	// Content changes
 	if contentChanged > 0 {
 		fmt.Fprintf(&b, "\n## Content Changes\n\n")
-		fmt.Fprintln(&b, "The template content for these files changed since the last sync. Review the changed sections and incorporate relevant updates.")
+		fmt.Fprintln(&b, "Template sections changed since the last sync. Compare and adopt relevant updates.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
 			if s.recommendation != "review: content changed" {
 				continue
 			}
 			rel := scoreRelPath(s.path)
+			fmt.Fprintf(&b, "- `%s`", rel)
 			if len(s.changedSections) > 0 {
-				fmt.Fprintf(&b, "### `%s`\n\n", rel)
-				fmt.Fprintf(&b, "Changed sections: %s\n\n", taggedSectionList(s.changedSections, s.changedClassifications))
-				existingBytes, _ := os.ReadFile(s.path)
-				existingMap := sectionMap(parseLevel2Sections(string(existingBytes)))
-				proposedMap := sectionMap(parseLevel2Sections(s.proposedContent))
-				// Render structural changes first, then cosmetic.
-				for _, tier := range []string{"structural", "cosmetic"} {
-					sections := filterByClassification(s.changedSections, s.changedClassifications, tier)
-					if len(sections) == 0 {
-						continue
-					}
-					fmt.Fprintf(&b, "#### %s changes\n\n", strings.ToUpper(tier[:1])+tier[1:])
-					for _, sec := range sections {
-						fmt.Fprintf(&b, "##### %s\n\n", sec)
-						diffLines, diffCount := lineDiff(existingMap[sec], proposedMap[sec])
-						if diffCount > 0 && diffCount <= 5 {
-							fmt.Fprintln(&b, "```diff")
-							for _, dl := range diffLines {
-								fmt.Fprintln(&b, dl)
-							}
-							fmt.Fprintln(&b, "```")
-							fmt.Fprintln(&b, "")
-						} else {
-							fmt.Fprintln(&b, "**Your version:**")
-							fmt.Fprintln(&b, "")
-							fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
-							fmt.Fprintln(&b, "**Template version:**")
-							fmt.Fprintln(&b, "")
-							fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
-						}
-					}
-				}
-			} else {
-				// Non-markdown file — show proposed content so the agent can compare
-				fmt.Fprintf(&b, "### `%s`\n\n", rel)
-				fmt.Fprintln(&b, "Template content changed since last sync (non-markdown, no section detail).")
-				fmt.Fprintln(&b, "")
-				if s.proposedContent != "" {
-					fmt.Fprintln(&b, "**Template version:**")
-					fmt.Fprintln(&b, "")
-					fmt.Fprintf(&b, "```\n%s\n```\n\n", strings.TrimSpace(s.proposedContent))
-				}
+				fmt.Fprintf(&b, " — changed: %s", taggedSectionList(s.changedSections, s.changedClassifications))
 			}
+			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
 		}
+		fmt.Fprintln(&b, "")
 	}
 
-	// Standing drift detail
 	if standingDriftCount > 0 {
 		fmt.Fprintf(&b, "\n## Standing Drift\n\n")
-		fmt.Fprintln(&b, "These files differ from the template baseline but the template has not changed since the last sync. These are un-adopted improvements from previous sync rounds. Report each item to the director for disposition.")
+		fmt.Fprintln(&b, "These files have un-adopted template improvements from previous sync rounds. Each item needs a disposition: **adopt** (update your file) or **keep** (with a documented repo-specific reason). Default to adopting.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
 			if s.recommendation != "review: standing drift" {
 				continue
 			}
 			rel := scoreRelPath(s.path)
+			fmt.Fprintf(&b, "- `%s`", rel)
 			if len(s.driftSections) > 0 {
-				fmt.Fprintf(&b, "### `%s`\n\n", rel)
-				existingBytes, _ := os.ReadFile(s.path)
-				existingMap := sectionMap(parseLevel2Sections(string(existingBytes)))
-				proposedMap := sectionMap(parseLevel2Sections(s.proposedContent))
-				for _, sec := range s.driftSections {
-					fmt.Fprintf(&b, "#### %s\n\n", sec)
-					diffLines, diffCount := lineDiff(existingMap[sec], proposedMap[sec])
-					if diffCount > 0 && diffCount <= 10 {
-						fmt.Fprintln(&b, "```diff")
-						for _, dl := range diffLines {
-							fmt.Fprintln(&b, dl)
-						}
-						fmt.Fprintln(&b, "```")
-						fmt.Fprintln(&b, "")
-					} else {
-						fmt.Fprintln(&b, "**Your version:**")
-						fmt.Fprintln(&b, "")
-						fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(existingMap[sec]))
-						fmt.Fprintln(&b, "**Template version:**")
-						fmt.Fprintln(&b, "")
-						fmt.Fprintf(&b, "```markdown\n%s\n```\n\n", strings.TrimSpace(proposedMap[sec]))
-					}
-				}
-			} else if s.proposedContent != "" {
-				fmt.Fprintf(&b, "### `%s`\n\n", rel)
-				fmt.Fprintln(&b, "**Template version:**")
-				fmt.Fprintln(&b, "")
-				fmt.Fprintf(&b, "```\n%s\n```\n\n", strings.TrimSpace(s.proposedContent))
+				fmt.Fprintf(&b, " — drifting sections: %s", strings.Join(s.driftSections, ", "))
 			}
+			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
 		}
+		fmt.Fprintln(&b, "")
 	}
 
 	// Structural notes
@@ -3033,17 +2963,6 @@ func taggedSectionList(sections []string, classifications map[string]string) str
 	return strings.Join(parts, ", ")
 }
 
-// filterByClassification returns sections matching the given classification tier.
-func filterByClassification(sections []string, classifications map[string]string, tier string) []string {
-	var result []string
-	for _, name := range sections {
-		if classifications[name] == tier {
-			result = append(result, name)
-		}
-	}
-	return result
-}
-
 // detectSectionRenames finds one-to-one best-match renames between sections
 // that exist in one version but not the other. Returns old→new name map.
 // Uses line overlap (shared lines / max lines) with a 50% threshold.
@@ -3134,38 +3053,6 @@ func classifySections(existingContent, proposedContent string, changedSections [
 		result[name] = classifyChange(existingMap[name], proposedMap[name])
 	}
 	return result
-}
-
-// lineDiff computes a set-difference diff between two section bodies.
-// Lines in existing but not proposed get "- " prefix; lines in proposed
-// but not existing get "+ " prefix. Returns the diff lines and the count
-// of changed lines (added + removed). Order follows existing lines first
-// (removals), then proposed lines (additions).
-func lineDiff(existingBody, proposedBody string) ([]string, int) {
-	eLines := strings.Split(strings.TrimSpace(existingBody), "\n")
-	pLines := strings.Split(strings.TrimSpace(proposedBody), "\n")
-
-	pSet := make(map[string]bool, len(pLines))
-	for _, l := range pLines {
-		pSet[l] = true
-	}
-	eSet := make(map[string]bool, len(eLines))
-	for _, l := range eLines {
-		eSet[l] = true
-	}
-
-	var diff []string
-	for _, l := range eLines {
-		if !pSet[l] {
-			diff = append(diff, "- "+l)
-		}
-	}
-	for _, l := range pLines {
-		if !eSet[l] {
-			diff = append(diff, "+ "+l)
-		}
-	}
-	return diff, len(diff)
 }
 
 // parseLevel3Sections parses ### subsections within a ## section body.

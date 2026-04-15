@@ -4364,14 +4364,11 @@ func TestRenderSyncReviewContentChanges(t *testing.T) {
 	if !strings.Contains(output, "review: content changed**: 2") {
 		t.Fatalf("output should show 2 content-changed files, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Changed sections: Cycle (cosmetic)") {
+	if !strings.Contains(output, "changed: Cycle (cosmetic)") {
 		t.Fatal("output should list changed sections with classification tag")
 	}
-	if !strings.Contains(output, "non-markdown, no section detail") {
-		t.Fatal("output should note non-markdown file")
-	}
-	if !strings.Contains(output, "**Template version:**") {
-		t.Fatal("output should show proposed content for non-markdown files")
+	if !strings.Contains(output, ".governa-proposed/") {
+		t.Fatal("output should reference .governa-proposed/ for comparison")
 	}
 }
 
@@ -5005,13 +5002,13 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 	if !strings.Contains(output, "(cosmetic)") {
 		t.Fatalf("output should contain (cosmetic) tag, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Changed sections: Checklist (structural), Style (cosmetic)") {
-		t.Fatalf("output should have tagged Changed sections line, got:\n%s", output)
+	if !strings.Contains(output, "changed: Checklist (structural), Style (cosmetic)") {
+		t.Fatalf("output should have tagged changed sections in content changes, got:\n%s", output)
 	}
 }
 
-// AT6: renderSyncReview renders structural before cosmetic subheadings.
-func TestRenderSyncReviewStructuralBeforeCosmeticSubheadings(t *testing.T) {
+// AT6: renderSyncReview content changes reference .governa-proposed/.
+func TestRenderSyncReviewContentChangesRefersToProposed(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
@@ -5030,16 +5027,12 @@ func TestRenderSyncReviewStructuralBeforeCosmeticSubheadings(t *testing.T) {
 		},
 	}
 	output := renderSyncReview(scores, "", "")
-	structIdx := strings.Index(output, "#### Structural changes")
-	cosmeticIdx := strings.Index(output, "#### Cosmetic changes")
-	if structIdx < 0 {
-		t.Fatalf("output should contain '#### Structural changes' subheading, got:\n%s", output)
+	if !strings.Contains(output, ".governa-proposed/") {
+		t.Fatalf("content changes should reference .governa-proposed/, got:\n%s", output)
 	}
-	if cosmeticIdx < 0 {
-		t.Fatalf("output should contain '#### Cosmetic changes' subheading, got:\n%s", output)
-	}
-	if structIdx >= cosmeticIdx {
-		t.Fatalf("structural subheading (pos %d) should appear before cosmetic (pos %d)", structIdx, cosmeticIdx)
+	// Should NOT contain inline diff blocks
+	if strings.Contains(output, "**Your version:**") {
+		t.Fatal("content changes should not have inline diff blocks — use .governa-proposed/ instead")
 	}
 }
 
@@ -5091,8 +5084,8 @@ func TestOverlaySectionLevelScoring(t *testing.T) {
 	}
 }
 
-// AT2: renderSyncReview uses fenced diff block for small deltas.
-func TestRenderSyncReviewCompactDiff(t *testing.T) {
+// AT2/AT3: renderSyncReview uses lean format — no inline diffs, points to .governa-proposed/.
+func TestRenderSyncReviewLeanFormat(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{
@@ -5106,53 +5099,19 @@ func TestRenderSyncReviewCompactDiff(t *testing.T) {
 				"Style": "cosmetic",
 			},
 			contentChanged:  true,
-			proposedContent: "# Guide\n\n## Style\n\n- Keep it short.\n- Be direct.\n",
+			proposedContent: "# Guide\n\n## Style\n\n- Keep it short.\n",
 		},
 	}
-	// Create the existing file so renderSyncReview can read it.
-	os.MkdirAll("/tmp/repo/docs", 0o755)
-	os.WriteFile("/tmp/repo/docs/guide.md", []byte("# Guide\n\n## Style\n\n- Keep it brief.\n- Be direct.\n"), 0o644)
-	defer os.Remove("/tmp/repo/docs/guide.md")
-
 	output := renderSyncReview(scores, "", "")
-	if !strings.Contains(output, "```diff") {
-		t.Fatalf("expected fenced diff block for small delta, got:\n%s", output)
+	if !strings.Contains(output, ".governa-proposed/") {
+		t.Fatal("review doc should reference .governa-proposed/ for comparison")
+	}
+	// Should NOT contain inline diffs or full blocks
+	if strings.Contains(output, "```diff") {
+		t.Fatal("review doc should not have inline diff blocks — use .governa-proposed/ instead")
 	}
 	if strings.Contains(output, "**Your version:**") {
-		t.Fatal("should NOT have full blocks for small delta")
-	}
-}
-
-// AT3: renderSyncReview uses full blocks for large deltas.
-func TestRenderSyncReviewFullBlocks(t *testing.T) {
-	t.Parallel()
-	existing := "# Guide\n\n## Style\n\n- rule one\n- rule two\n- rule three\n- rule four\n- rule five\n- rule six\n"
-	proposed := "# Guide\n\n## Style\n\n- new one\n- new two\n- new three\n- new four\n- new five\n- new six\n"
-	scores := []collisionScore{
-		{
-			path:            "/tmp/repo/docs/big.md",
-			recommendation:  "review: content changed",
-			reason:          "template sections changed: Style (structural)",
-			existingLines:   20,
-			proposedLines:   20,
-			changedSections: []string{"Style"},
-			changedClassifications: map[string]string{
-				"Style": "structural",
-			},
-			contentChanged:  true,
-			proposedContent: proposed,
-		},
-	}
-	os.MkdirAll("/tmp/repo/docs", 0o755)
-	os.WriteFile("/tmp/repo/docs/big.md", []byte(existing), 0o644)
-	defer os.Remove("/tmp/repo/docs/big.md")
-
-	output := renderSyncReview(scores, "", "")
-	if !strings.Contains(output, "**Your version:**") {
-		t.Fatalf("expected full blocks for large delta, got:\n%s", output)
-	}
-	if strings.Contains(output, "```diff") {
-		t.Fatal("should NOT have compact diff for large delta")
+		t.Fatal("review doc should not have full blocks — use .governa-proposed/ instead")
 	}
 }
 
@@ -5624,18 +5583,17 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	if !strings.Contains(output, "review: standing drift") {
 		t.Fatalf("expected 'review: standing drift' in recommendations table, got:\n%s", output)
 	}
-	if !strings.Contains(output, "#### (preamble)") {
-		t.Fatal("drift should render preamble section heading")
+	if !strings.Contains(output, "(preamble)") {
+		t.Fatal("drift should list preamble in drifting sections")
 	}
-	if !strings.Contains(output, "#### Governa Templating Maintenance") {
-		t.Fatal("drift should render section heading")
+	if !strings.Contains(output, "Governa Templating Maintenance") {
+		t.Fatal("drift should list drifting section names")
 	}
-	// Should contain actual diff content (compact or full blocks)
-	if !strings.Contains(output, "old") || !strings.Contains(output, "new") {
-		t.Fatal("drift should show actual diff content, not just section names")
+	if !strings.Contains(output, ".governa-proposed/") {
+		t.Fatal("drift should reference .governa-proposed/ for comparison")
 	}
-	if !strings.Contains(output, "Report each item to the director") {
-		t.Fatal("standing drift section should instruct reporting to director")
+	if !strings.Contains(output, "Default to adopting") {
+		t.Fatal("standing drift section should instruct defaulting to adoption")
 	}
 }
 
@@ -5676,8 +5634,8 @@ func TestRenderSyncReviewStandingDriftNonMarkdown(t *testing.T) {
 	if !strings.Contains(output, "## Standing Drift") {
 		t.Fatalf("expected Standing Drift section, got:\n%s", output)
 	}
-	if !strings.Contains(output, "**Template version:**") {
-		t.Fatal("non-markdown drift should show proposed template content")
+	if !strings.Contains(output, ".governa-proposed/") {
+		t.Fatal("non-markdown drift should reference .governa-proposed/ for comparison")
 	}
 }
 

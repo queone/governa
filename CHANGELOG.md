@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.21.1 | Lean review doc (no inline diffs, points to `.governa-proposed/`), dead code cleanup, doc alignment |
 | 0.21.0 | Proposed files in `.governa-proposed/`, standing drift promoted to recommendation, stronger adoption language |
 | 0.20.0 | Standing drift: inline diffs for un-adopted changes, director reporting instruction |
 | 0.19.1 | Advisory notes: instruct agents to report standing drift to director |
