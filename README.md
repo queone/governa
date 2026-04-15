@@ -79,4 +79,4 @@ Generated examples:
 - [`examples/code/`](examples/code/)
 - [`examples/doc/`](examples/doc/)
 
-See [`docs/bootstrap-model.md`](docs/bootstrap-model.md).
+See [`docs/governance-model.md`](docs/governance-model.md).

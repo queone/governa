@@ -1,4 +1,4 @@
-package bootstrap
+package governance
 
 import (
 	"crypto/sha256"

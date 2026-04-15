@@ -1,4 +1,4 @@
-# Bootstrap Model
+# Governance Model
 
 This template supports two workflows:
 

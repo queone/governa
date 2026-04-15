@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kquo/governa/internal/bootstrap"
 	"github.com/kquo/governa/internal/color"
+	"github.com/kquo/governa/internal/governance"
 	"github.com/kquo/governa/internal/templates"
 )
 
-const programVersion = "0.22.0"
+const programVersion = "0.23.0"
 
 const sourceRepo = "github.com/kquo/governa"
 
@@ -51,9 +51,9 @@ func main() {
 		os.Exit(2)
 	}
 
-	mode := bootstrap.Mode(subcmd)
+	mode := governance.Mode(subcmd)
 
-	cfg, help, err := bootstrap.ParseModeArgs(mode, args)
+	cfg, help, err := governance.ParseModeArgs(mode, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -69,7 +69,7 @@ func main() {
 	var tfs fs.FS
 	var repoRoot string
 
-	if mode == bootstrap.ModeEnhance {
+	if mode == governance.ModeEnhance {
 		root, err := detectGovernaCheckout()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -79,22 +79,22 @@ func main() {
 
 		if cfg.Reference == "" {
 			// Self-review: compare on-disk templates against embedded baseline.
-			deltas, err := bootstrap.RunSelfReview(templates.EmbeddedFS, templates.DiskFS(root), templates.TemplateVersion)
+			deltas, err := governance.RunSelfReview(templates.EmbeddedFS, templates.DiskFS(root), templates.TemplateVersion)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
-			bootstrap.PrintSelfReview(deltas, templates.TemplateVersion)
+			governance.PrintSelfReview(deltas, templates.TemplateVersion)
 		} else {
 			tfs = templates.DiskFS(root)
-			if err := bootstrap.RunWithFS(tfs, repoRoot, cfg); err != nil {
+			if err := governance.RunWithFS(tfs, repoRoot, cfg); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
 		}
 	} else {
 		tfs = templates.EmbeddedFS
-		if err := bootstrap.RunWithFS(tfs, repoRoot, cfg); err != nil {
+		if err := governance.RunWithFS(tfs, repoRoot, cfg); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

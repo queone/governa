@@ -1,4 +1,4 @@
-package bootstrap
+package governance
 
 import (
 	"bufio"
@@ -3229,7 +3229,7 @@ func TestImportPathsUseGitHub(t *testing.T) {
 	for _, rel := range []string{
 		"cmd/build/main.go",
 		"cmd/governa/main.go",
-		"internal/bootstrap/bootstrap.go",
+		"internal/governance/governance.go",
 	} {
 		content, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
@@ -3404,12 +3404,12 @@ func TestScriptOnlyCommandsDoesNotContainBootstrap(t *testing.T) {
 func TestEnhanceMappingDoesNotReferenceCmdBootstrap(t *testing.T) {
 	t.Parallel()
 	root := repoRoot(t)
-	content, err := os.ReadFile(filepath.Join(root, "internal", "bootstrap", "bootstrap.go"))
+	content, err := os.ReadFile(filepath.Join(root, "internal", "governance", "governance.go"))
 	if err != nil {
-		t.Fatalf("read bootstrap.go: %v", err)
+		t.Fatalf("read governance.go: %v", err)
 	}
 	if strings.Contains(string(content), `"cmd/bootstrap`) {
-		t.Fatal("bootstrap.go enhance mappings still reference cmd/bootstrap")
+		t.Fatal("governance.go enhance mappings still reference cmd/bootstrap")
 	}
 }
 
