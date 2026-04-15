@@ -5675,15 +5675,176 @@ func TestWriteProposedFilesNestedPath(t *testing.T) {
 		t.Fatal("proposed file should contain the template content")
 	}
 
-	// Verify README wording
+	// Verify ABOUT.md wording (renamed from README.md to avoid collision)
+	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	if err != nil {
+		t.Fatal("ABOUT.md should exist in .governa-proposed/")
+	}
+	if !strings.Contains(string(aboutContent), "Repo governance decides cleanup") {
+		t.Fatal("ABOUT.md should use softened cleanup wording")
+	}
+	if strings.Contains(string(aboutContent), "Delete it") {
+		t.Fatal("ABOUT.md should NOT use 'Delete it' wording")
+	}
+	// Verify no README.md collision — README.md should not exist unless it's a proposed repo file
+	if _, err := os.Stat(filepath.Join(targetDir, ".governa-proposed", "README.md")); err == nil {
+		t.Fatal(".governa-proposed/README.md should not exist — directory explanation is ABOUT.md")
+	}
+}
+
+// --- AC43 tests ---
+
+// AT1: writeProposedFiles writes ABOUT.md when README.md is an adopt item.
+func TestWriteProposedFilesReadmeNoCollision(t *testing.T) {
+	t.Parallel()
+	targetDir := t.TempDir()
+
+	readmePath := filepath.Join(targetDir, "README.md")
+	scores := []collisionScore{
+		{
+			path:            readmePath,
+			recommendation:  "adopt",
+			reason:          "un-adopted template differences",
+			proposedContent: "# my-project\n\nReal project README content.\n",
+		},
+	}
+	if err := writeProposedFiles(targetDir, scores, false); err != nil {
+		t.Fatalf("writeProposedFiles() error = %v", err)
+	}
+
+	// ABOUT.md should contain the directory explanation
+	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	if err != nil {
+		t.Fatal("ABOUT.md should exist in .governa-proposed/")
+	}
+	if !strings.Contains(string(aboutContent), "Proposed Template Files") {
+		t.Fatal("ABOUT.md should contain directory explanation")
+	}
+
+	// README.md should contain the proposed template content, NOT the directory explanation
 	readmeContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "README.md"))
 	if err != nil {
-		t.Fatal("README.md should exist in .governa-proposed/")
+		t.Fatal("proposed README.md should exist in .governa-proposed/")
 	}
-	if !strings.Contains(string(readmeContent), "Repo governance decides cleanup") {
-		t.Fatal("README should use softened cleanup wording")
+	if !strings.Contains(string(readmeContent), "Real project README content") {
+		t.Fatal("proposed README.md should contain template content, not directory explanation")
 	}
-	if strings.Contains(string(readmeContent), "Delete it") {
-		t.Fatal("README should NOT use 'Delete it' wording")
+	if strings.Contains(string(readmeContent), "Proposed Template Files") {
+		t.Fatal("proposed README.md should NOT contain directory explanation — that goes in ABOUT.md")
+	}
+}
+
+// AT2: demoteScaffold returns keep for scaffold file with replaced placeholders.
+func TestDemoteScaffoldReplacedContent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	readmePath := filepath.Join(dir, "README.md")
+	// Existing has real content, no scaffold markers
+	os.WriteFile(readmePath, []byte("# skout\n\nReal project description with actual content.\n\n## Why\n\nBecause we need this.\n"), 0o644)
+
+	score := collisionScore{
+		path:            readmePath,
+		recommendation:  "adopt",
+		reason:          "un-adopted template differences in: Why, Overview",
+		proposedContent: "# {{REPO_NAME}}\n\n## Why\n\nState why this repo exists — not just what it does.\n\n## Replace Me\n\nReplace this starter content.\n",
+		standingDrift:   true,
+	}
+	demoteScaffold(&score)
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep (repo replaced scaffold)", score.recommendation)
+	}
+	if !strings.Contains(score.reason, "scaffolding") {
+		t.Fatalf("reason = %q, want mention of scaffolding", score.reason)
+	}
+}
+
+// AT3: demoteScaffold does NOT demote for non-scaffold files.
+func TestDemoteScaffoldNonScaffoldFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	buildReleasePath := filepath.Join(dir, "build-release.md")
+	os.WriteFile(buildReleasePath, []byte("# Build\n\nOld build instructions.\n"), 0o644)
+
+	score := collisionScore{
+		path:            buildReleasePath,
+		recommendation:  "adopt",
+		reason:          "template sections changed: Build (structural)",
+		proposedContent: "# Build\n\nNew build instructions with structural changes.\n",
+		contentChanged:  true,
+	}
+	demoteScaffold(&score)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt (not a scaffold file)", score.recommendation)
+	}
+}
+
+// AT3 supplement: demoteScaffold does NOT demote when reason is content-changed.
+func TestDemoteScaffoldContentChangedNotDemoted(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	readmePath := filepath.Join(dir, "README.md")
+	os.WriteFile(readmePath, []byte("# skout\n\nReal content.\n"), 0o644)
+
+	score := collisionScore{
+		path:            readmePath,
+		recommendation:  "adopt",
+		reason:          "template sections changed",
+		proposedContent: "# {{REPO_NAME}}\n\nState why this repo exists.\n## Replace Me\n",
+		contentChanged:  true, // template evolved — should NOT demote
+	}
+	demoteScaffold(&score)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt (content-changed reason should not be demoted)", score.recommendation)
+	}
+}
+
+// AT4: demoteExtractedPackage returns keep when existing imports a local package.
+func TestDemoteExtractedPackageWithImport(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	buildPath := filepath.Join(dir, "main.go")
+	// 5 lines — existing is small, imports a local package
+	existing := "package main\n\nimport (\n\t\"myproject/internal/buildtool\"\n)\n"
+	os.WriteFile(buildPath, []byte(existing), 0o644)
+
+	score := collisionScore{
+		path:            buildPath,
+		recommendation:  "adopt",
+		reason:          "template changed since last sync",
+		existingLines:   5,
+		proposedLines:   100, // template is much larger
+		proposedContent: "package main\n// ... 100 lines of monolithic build logic ...\n",
+		contentChanged:  true,
+	}
+	demoteExtractedPackage(&score, "myproject")
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep (extracted to local package)", score.recommendation)
+	}
+	if !strings.Contains(score.reason, "extracted") {
+		t.Fatalf("reason = %q, want mention of extracted", score.reason)
+	}
+}
+
+// AT5: demoteExtractedPackage does NOT demote when no local import.
+func TestDemoteExtractedPackageNoImport(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	buildPath := filepath.Join(dir, "main.go")
+	// Small file but no local package import
+	existing := "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"hello\") }\n"
+	os.WriteFile(buildPath, []byte(existing), 0o644)
+
+	score := collisionScore{
+		path:            buildPath,
+		recommendation:  "adopt",
+		reason:          "template changed since last sync",
+		existingLines:   5,
+		proposedLines:   100,
+		proposedContent: "package main\n// ... 100 lines ...\n",
+		contentChanged:  true,
+	}
+	demoteExtractedPackage(&score, "myproject")
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt (no local import)", score.recommendation)
 	}
 }

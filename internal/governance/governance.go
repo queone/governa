@@ -1228,6 +1228,7 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry, newManifest map[string]ManifestEntry, targetDir string) ([]operation, []collisionScore) {
 	out := make([]operation, len(ops))
 	var scores []collisionScore
+	modulePath := readModulePath(targetDir)
 	for i, op := range ops {
 		// Derive repo-relative path for manifest lookup.
 		var repoRel string
@@ -1254,6 +1255,8 @@ func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry,
 			score := scoreOverlayCollision(op.path, op.content, oldEntry.SourceChecksum, newEntry.SourceChecksum)
 			promoteStandingDrift(&score)
 			promoteStructuralNotes(&score)
+			demoteScaffold(&score)
+			demoteExtractedPackage(&score, modulePath)
 			if score.recommendation == "accept" {
 				out[i] = op // file doesn't exist, write directly
 			} else {
@@ -2506,6 +2509,107 @@ func promoteStructuralNotes(score *collisionScore) {
 	}
 }
 
+// scaffoldFiles are the known template files that contain placeholder content
+// intended to be replaced by the repo. When the repo has replaced the
+// placeholders, these files should not score as adopt.
+var scaffoldFiles = map[string]bool{
+	"README.md": true,
+	"arch.md":   true,
+	"plan.md":   true,
+}
+
+// scaffoldMarkers are placeholder strings from template scaffold files.
+// If the proposed content contains any of these and the existing content
+// does not, the repo has replaced the scaffold with real content.
+var scaffoldMarkers = []string{
+	"State why this repo exists",
+	"Document the system's major components",
+	"## Replace Me",
+	"project-specific anti-patterns and guardrails here",
+	"active work items only; remove when shipped",
+}
+
+// demoteScaffold overrides adopt to keep for known scaffold files (README.md,
+// arch.md, plan.md) when the proposed content contains placeholder markers
+// and the existing content does not. Only applies when the adopt reason is
+// scaffold-driven (standing drift or cherry-pick), not content-changed or structural.
+func demoteScaffold(score *collisionScore) {
+	if score.recommendation != "adopt" {
+		return
+	}
+	// Only demote for scaffold-driven reasons, not template evolution or structural
+	if score.contentChanged || len(score.structuralNotes) > 0 {
+		return
+	}
+	base := filepath.Base(score.path)
+	if !scaffoldFiles[base] {
+		return
+	}
+	existing, err := os.ReadFile(score.path)
+	if err != nil {
+		return
+	}
+	existingStr := string(existing)
+	proposedHasMarker := false
+	for _, marker := range scaffoldMarkers {
+		if strings.Contains(score.proposedContent, marker) {
+			proposedHasMarker = true
+			break
+		}
+	}
+	if !proposedHasMarker {
+		return
+	}
+	existingHasMarker := false
+	for _, marker := range scaffoldMarkers {
+		if strings.Contains(existingStr, marker) {
+			existingHasMarker = true
+			break
+		}
+	}
+	if existingHasMarker {
+		return // repo still has placeholder content — adopt is appropriate
+	}
+	score.recommendation = "keep"
+	score.reason = "repo has replaced template scaffolding with project content"
+}
+
+// demoteExtractedPackage overrides adopt to keep for non-markdown files where
+// the existing file is ≤ ¼ the lines of the proposed content and imports a
+// local package (module-path-prefixed). This indicates the repo has extracted
+// the template's monolithic logic into a reusable package.
+func demoteExtractedPackage(score *collisionScore, modulePath string) {
+	if score.recommendation != "adopt" {
+		return
+	}
+	if modulePath == "" {
+		return
+	}
+	isMarkdown := strings.HasSuffix(score.path, ".md") || strings.HasSuffix(score.path, ".md.tmpl")
+	if isMarkdown {
+		return
+	}
+	if score.existingLines == 0 || score.proposedLines == 0 {
+		return
+	}
+	if score.existingLines > score.proposedLines/4 {
+		return
+	}
+	existing, err := os.ReadFile(score.path)
+	if err != nil {
+		return
+	}
+	// Check for an import of a local package under the repo's module path
+	importPrefix := fmt.Sprintf(`"%s/`, modulePath)
+	for line := range strings.SplitSeq(string(existing), "\n") {
+		if strings.Contains(strings.TrimSpace(line), importPrefix) {
+			score.recommendation = "keep"
+			score.reason = "repo has extracted template logic into a local package"
+			return
+		}
+	}
+}
+
 func scoreGovernanceCollision(op operation, oldSourceChecksum string, newSourceChecksum string) collisionScore {
 	existingContent, err := os.ReadFile(op.path)
 	if err != nil {
@@ -3112,11 +3216,12 @@ func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) 
 	if !wrote {
 		return nil
 	}
-	// Write a README explaining the directory
-	readmePath := filepath.Join(proposedDir, "README.md")
+	// Write an explanation file for the directory (ABOUT.md, not README.md,
+	// to avoid colliding with a proposed repo README.md).
+	aboutPath := filepath.Join(proposedDir, "ABOUT.md")
 	if !dryRun {
-		readme := "# Proposed Template Files\n\nThese are the template versions of files that differ from your repo.\nUse them for direct comparison: `diff <your-file> .governa-proposed/<file>`.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
-		os.WriteFile(readmePath, []byte(readme), 0o644)
+		about := "# Proposed Template Files\n\nThese are the template versions of files that differ from your repo.\nUse them for direct comparison: `diff <your-file> .governa-proposed/<file>`.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
+		os.WriteFile(aboutPath, []byte(about), 0o644)
 	}
 	return nil
 }

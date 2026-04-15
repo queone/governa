@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.25.0 | AC43: scoring false positive fixes — `.governa-proposed/ABOUT.md` collision fix, scaffold file demotion, extracted-package demotion |
 | 0.24.1 | Remove stale `bootstrap` entry from `scriptOnlyCommands` in template and example |
 | 0.24.0 | AC42: module path migration from `github.com/kquo/governa` to `github.com/queone/governa` |
 | 0.23.1 | Fail-safe: `governa sync` refuses to run inside the governa repo itself |

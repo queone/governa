@@ -212,7 +212,9 @@ Rules:
 - for `keep` files that have template sections not present in the existing file: an advisory note appears under `## Advisory Notes` listing the missing sections. The recommendation stays `keep` — the note is informational
 - when a section exists in one version but not the other and their bodies share >=50% of lines, sync reports it as a section rename in Advisory Notes
 - when the template source hasn't changed since last sync but the actual file still differs from the template, promote from `keep` to `adopt` — this surfaces un-adopted changes from previous sync rounds
-- the review doc is a lean action list: each `adopt` item lists affected sections and a `diff` command pointing to `.governa-proposed/<file>`. Full file content lives on disk, not inline in the review doc
+- the review doc is a lean action list: each `adopt` item lists affected sections and a `diff` command pointing to `.governa-proposed/<file>`. Full file content lives on disk, not inline in the review doc. The directory explanation is `.governa-proposed/ABOUT.md` (not `README.md`, to avoid collision with a proposed repo README)
+- scaffold demotion: for known scaffold files (`README.md`, `arch.md`, `plan.md`), if the proposed content contains placeholder markers (e.g., "State why this repo exists", "## Replace Me") and the existing content does not, demote `adopt` to `keep` — the repo has replaced the starter content with real project content. Does not apply when the adopt reason is content-changed or structural
+- extracted-package demotion: for non-markdown files where the existing file is ≤ ¼ the proposed line count and imports a local package (module-path-prefixed), demote `adopt` to `keep` — the repo has intentionally extracted the template's monolithic logic into a reusable package
 - never rewrite an existing `AGENTS.md` wholesale unless the user explicitly requests replacement
 - preserve unrelated local changes
 
