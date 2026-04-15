@@ -2,7 +2,7 @@ package governance
 
 import (
 	"bufio"
-	"github.com/kquo/governa/internal/templates"
+	"github.com/queone/governa/internal/templates"
 	"io"
 	"io/fs"
 	"os"
@@ -2943,7 +2943,7 @@ func TestReadmeConsolidatedStructure(t *testing.T) {
 	}
 
 	// Install section
-	if !strings.Contains(content, "go install github.com/kquo/governa/cmd/governa@latest") {
+	if !strings.Contains(content, "go install github.com/queone/governa/cmd/governa@latest") {
 		t.Error("README.md: should contain go install command")
 	}
 
@@ -3217,8 +3217,8 @@ func TestModulePathIsGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read go.mod: %v", err)
 	}
-	if !strings.Contains(string(content), "module github.com/kquo/governa") {
-		t.Fatal("go.mod module path must be github.com/kquo/governa")
+	if !strings.Contains(string(content), "module github.com/queone/governa") {
+		t.Fatal("go.mod module path must be github.com/queone/governa")
 	}
 }
 
@@ -3236,7 +3236,7 @@ func TestImportPathsUseGitHub(t *testing.T) {
 			t.Fatalf("read %s: %v", rel, err)
 		}
 		if strings.Contains(string(content), `"governa/internal/`) {
-			t.Errorf("%s: import path uses old module name \"governa/internal/\" instead of \"github.com/kquo/governa/internal/\"", rel)
+			t.Errorf("%s: import path uses old module name \"governa/internal/\" instead of \"github.com/queone/governa/internal/\"", rel)
 		}
 	}
 }

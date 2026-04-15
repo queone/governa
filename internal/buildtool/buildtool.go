@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kquo/governa/internal/color"
+	"github.com/queone/governa/internal/color"
 )
 
 type Config struct {

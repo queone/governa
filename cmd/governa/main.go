@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kquo/governa/internal/color"
-	"github.com/kquo/governa/internal/governance"
-	"github.com/kquo/governa/internal/templates"
+	"github.com/queone/governa/internal/color"
+	"github.com/queone/governa/internal/governance"
+	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.23.1"
+const programVersion = "0.24.0"
 
-const sourceRepo = "github.com/kquo/governa"
+const sourceRepo = "github.com/queone/governa"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -133,8 +133,8 @@ func detectGovernaCheckout() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("enhance must be run from inside a governa checkout (no go.mod found)")
 	}
-	if !strings.Contains(string(gomod), "module github.com/kquo/governa") {
-		return "", fmt.Errorf("enhance must be run from inside a governa checkout (go.mod module is not github.com/kquo/governa)")
+	if !strings.Contains(string(gomod), "module github.com/queone/governa") {
+		return "", fmt.Errorf("enhance must be run from inside a governa checkout (go.mod module is not github.com/queone/governa)")
 	}
 	if _, err := os.Stat(filepath.Join(cwd, "internal", "templates", "base")); err != nil {
 		return "", fmt.Errorf("enhance must be run from inside a governa checkout (internal/templates/base not found)")
@@ -176,7 +176,7 @@ func checkLatestVersion(result chan<- string) {
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://raw.githubusercontent.com/kquo/governa/main/TEMPLATE_VERSION", nil)
+		"https://raw.githubusercontent.com/queone/governa/main/TEMPLATE_VERSION", nil)
 	if err != nil {
 		return
 	}

@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kquo/governa/internal/color"
-	"github.com/kquo/governa/internal/templates"
+	"github.com/queone/governa/internal/color"
+	"github.com/queone/governa/internal/templates"
 )
 
 type Mode string

@@ -11,7 +11,7 @@ AI-assisted repository work often breaks down not because of model limitations, 
 ## Install
 
 ```bash
-go install github.com/kquo/governa/cmd/governa@latest
+go install github.com/queone/governa/cmd/governa@latest
 ```
 
 ## Modes

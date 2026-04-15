@@ -93,7 +93,7 @@ Reasons:
 - requiring Go is acceptable for the target audience
 - argument parsing, file operations, and dry-run reporting are easier to keep deterministic in Go
 
-The canonical entrypoint is `cmd/governa/main.go`, installed via `go install github.com/kquo/governa/cmd/governa@latest`.
+The canonical entrypoint is `cmd/governa/main.go`, installed via `go install github.com/queone/governa/cmd/governa@latest`.
 
 ## CLI Convention
 
@@ -158,7 +158,7 @@ For sync on existing repos, template-owned sections should be narrow and explici
 The canonical entrypoint is an installable binary:
 
 ```
-go install github.com/kquo/governa/cmd/governa@latest
+go install github.com/queone/governa/cmd/governa@latest
 ```
 
 Subcommand interface:

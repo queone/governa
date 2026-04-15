@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kquo/governa/examples/code/internal/color"
+	"github.com/queone/governa/examples/code/internal/color"
 )
 
 type buildConfig struct {

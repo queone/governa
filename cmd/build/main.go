@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kquo/governa/internal/buildtool"
+	"github.com/queone/governa/internal/buildtool"
 )
 
 func main() {
