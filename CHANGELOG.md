@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.23.1 | Fail-safe: `governa sync` refuses to run inside the governa repo itself |
 | 0.23.0 | AC41: rename `internal/bootstrap` to `internal/governance`, `docs/bootstrap-model.md` to `docs/governance-model.md` |
 | 0.22.0 | AC40: imperative sync review — 2-category model (`keep`/`adopt`), imperative methodology language, structural observation promotion, consolidated Adoption Items section, repo-relative diff paths |
 | 0.21.1 | Lean review doc (no inline diffs, points to `.governa-proposed/`), dead code cleanup, doc alignment |

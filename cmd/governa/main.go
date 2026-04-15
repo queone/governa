@@ -17,7 +17,7 @@ import (
 	"github.com/kquo/governa/internal/templates"
 )
 
-const programVersion = "0.23.0"
+const programVersion = "0.23.1"
 
 const sourceRepo = "github.com/kquo/governa"
 
@@ -93,6 +93,11 @@ func main() {
 			}
 		}
 	} else {
+		// Fail-safe: refuse to sync against the governa repo itself.
+		if _, err := detectGovernaCheckout(); err == nil {
+			fmt.Fprintln(os.Stderr, "error: cannot run sync inside the governa repo — sync is for consumer repos, use enhance for self-review")
+			os.Exit(1)
+		}
 		tfs = templates.EmbeddedFS
 		if err := governance.RunWithFS(tfs, repoRoot, cfg); err != nil {
 			fmt.Fprintln(os.Stderr, err)
