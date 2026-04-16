@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.29.0 | AC47: sync polish bundle — `type: (inferred)` provenance line, suppressed redundant `collisions:`, `.governa-proposed/` covers keep-with-advisory via shared predicate, truthful ABOUT.md, AGENTS.md Purpose rewording |
 | 0.28.0 | AC46: operator clarity bundle — consistent first-sync/re-sync assessment, dropped `recommendation:` line, structured conflict descriptions (heading + numbered steps), merge hint for `.gitignore`, `AGENTS.md` intent note, `## Next Steps` block |
 | 0.27.0 | AC45: sync conflict follow-through — non-zero exit via `ErrConflictsPresent`, safe migration guidance in conflict description, truthful ABOUT.md, repo-relative stderr paths, `disposition:` label distinct from pre-sync assessment |
 | 0.26.0 | AC44: agent-agnostic invariant — symlink-vs-regular-file conflict detection, `## Conflicts` review doc section, post-transform status line, manifest filters blocked symlinks, adopt count in drift summary, first-sync wording |

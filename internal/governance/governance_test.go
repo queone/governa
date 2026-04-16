@@ -6113,15 +6113,15 @@ func TestAboutMdTruthfulWording(t *testing.T) {
 	s := string(aboutContent)
 	// Must NOT claim "files that differ from your repo"
 	if strings.Contains(s, "files that differ from your repo") {
-		t.Fatal("ABOUT.md should not claim to hold all files that differ — only adopt items are materialized")
+		t.Fatal("ABOUT.md should not claim to hold all files that differ — only adopt/keep-with-advisory items are materialized")
 	}
-	// Must say files flagged as adopt are here
-	if !strings.Contains(s, "flagged as `adopt`") {
-		t.Fatalf("ABOUT.md should say files flagged as adopt, got:\n%s", s)
+	// Must say files marked adopt are here (AC47 wording)
+	if !strings.Contains(s, "`adopt`") {
+		t.Fatalf("ABOUT.md should mention `adopt`, got:\n%s", s)
 	}
-	// Must clarify keep items are not here
-	if !strings.Contains(s, "`keep`") || !strings.Contains(s, "not materialized here") {
-		t.Fatalf("ABOUT.md should clarify keep items are not materialized, got:\n%s", s)
+	// Must clarify which keep items are not materialized
+	if !strings.Contains(s, "not materialized here") {
+		t.Fatalf("ABOUT.md should clarify pure keep items are not materialized, got:\n%s", s)
 	}
 }
 
@@ -6469,4 +6469,283 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// --- AC47 tests ---
+
+// AT1: type: <TYPE> (inferred) line emitted whenever type was inferred from shape.
+// AT1a: new-repo bootstrap (empty dir + no flag + no manifest) prints (inferred).
+// Not t.Parallel() — swaps os.Stdout, which races with parallel tests.
+func TestRunSyncTypeInferredNewRepo(t *testing.T) {
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+	// Seed CODE signals so AssessTarget resolves to "likely CODE"
+	mustWrite(t, filepath.Join(targetDir, "go.mod"), "module example\n")
+	mustWrite(t, filepath.Join(targetDir, "main.go"), "package main\n")
+
+	cfg := Config{
+		Mode:     ModeSync,
+		Target:   targetDir,
+		RepoName: "new-repo",
+		Purpose:  "test",
+		Stack:    "Go CLI",
+	}
+	// Capture stdout
+	r, w, _ := os.Pipe()
+	origStdout := os.Stdout
+	os.Stdout = w
+	err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg)
+	w.Close()
+	os.Stdout = origStdout
+	if err != nil {
+		t.Fatalf("runSync: %v", err)
+	}
+	buf := make([]byte, 16384)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+	if !strings.Contains(output, "type: CODE (inferred)") {
+		t.Fatalf("expected 'type: CODE (inferred)' in output, got:\n%s", output)
+	}
+}
+
+// AT1b: first-sync of existing repo with governance artifacts but no manifest
+// still triggers the (inferred) line (adopt branch, but cfg.Type came from shape).
+// Not t.Parallel() — swaps os.Stdout.
+func TestRunSyncTypeInferredAdoptWithoutManifest(t *testing.T) {
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+	// Pre-existing artifacts to trigger adopt branch, but no manifest
+	mustWrite(t, filepath.Join(targetDir, "CLAUDE.md"), "# existing\n")
+	mustWrite(t, filepath.Join(targetDir, "README.md"), "# example\n")
+	mustWrite(t, filepath.Join(targetDir, "go.mod"), "module example\n")
+	mustWrite(t, filepath.Join(targetDir, "main.go"), "package main\n")
+
+	cfg := Config{
+		Mode:     ModeSync,
+		Target:   targetDir,
+		RepoName: "adopt-no-manifest",
+		Purpose:  "test",
+		Stack:    "Go CLI",
+	}
+	r, w, _ := os.Pipe()
+	origStdout := os.Stdout
+	os.Stdout = w
+	err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg)
+	w.Close()
+	os.Stdout = origStdout
+	// CLAUDE.md as regular file may trigger ErrConflictsPresent; both ErrConflictsPresent and nil are acceptable here
+	if err != nil && !errors.Is(err, ErrConflictsPresent) {
+		t.Fatalf("runSync: %v", err)
+	}
+	buf := make([]byte, 32768)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+	if !strings.Contains(output, "type: CODE (inferred)") {
+		t.Fatalf("expected 'type: CODE (inferred)' in first-sync output (adopt branch, no manifest), got:\n%s", output)
+	}
+}
+
+// AT1c: re-sync with manifest does NOT print the (inferred) line;
+// printParamSources prints (manifest) provenance instead.
+// Not t.Parallel() — swaps os.Stdout.
+func TestRunSyncTypeManifestNoInferred(t *testing.T) {
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+	// Seed a .governa-manifest so resolveAdoptParams populates cfg.Type from it
+	mustWrite(t, filepath.Join(targetDir, manifestFileName),
+		"governa-manifest-v1\ntemplate-version: 0.28.0\nrepo-name: test-repo\npurpose: test\ntype: CODE\nstack: Go CLI\n")
+
+	cfg := Config{
+		Mode:   ModeSync,
+		Target: targetDir,
+	}
+	r, w, _ := os.Pipe()
+	origStdout := os.Stdout
+	os.Stdout = w
+	err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg)
+	w.Close()
+	os.Stdout = origStdout
+	if err != nil && !errors.Is(err, ErrConflictsPresent) {
+		t.Fatalf("runSync: %v", err)
+	}
+	buf := make([]byte, 32768)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+	if strings.Contains(output, "type: CODE (inferred)") {
+		t.Fatalf("manifest re-sync should NOT print '(inferred)'; got:\n%s", output)
+	}
+	if !strings.Contains(output, "type: CODE (manifest)") {
+		t.Fatalf("manifest re-sync should print '(manifest)' provenance via printParamSources, got:\n%s", output)
+	}
+}
+
+// AT2: collisions: line suppressed when ExistingArtifacts == CollidingArtifacts;
+// printed when they differ.
+// Not t.Parallel() — swaps os.Stdout.
+func TestPrintAssessmentCollisionsSuppression(t *testing.T) {
+	// Case A: equal lists → collisions: suppressed
+	aEqual := Assessment{
+		RepoShape:          "likely CODE",
+		ExistingArtifacts:  []string{"README.md", "arch.md"},
+		CollidingArtifacts: []string{"README.md", "arch.md"},
+		CollisionRisk:      "medium",
+	}
+	r, w, _ := os.Pipe()
+	orig := os.Stdout
+	os.Stdout = w
+	printAssessment(ModeSync, "/tmp/repo", aEqual)
+	w.Close()
+	os.Stdout = orig
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	outputEqual := string(buf[:n])
+	if strings.Contains(outputEqual, "collisions:") {
+		t.Fatalf("collisions: line should be suppressed when equal to existing-artifacts, got:\n%s", outputEqual)
+	}
+
+	// Case B: different lists → collisions: printed
+	aDiff := Assessment{
+		RepoShape:          "likely CODE",
+		ExistingArtifacts:  []string{"README.md", "arch.md", "empty.md"},
+		CollidingArtifacts: []string{"README.md", "arch.md"}, // empty.md is zero-size
+		CollisionRisk:      "medium",
+	}
+	r2, w2, _ := os.Pipe()
+	os.Stdout = w2
+	printAssessment(ModeSync, "/tmp/repo", aDiff)
+	w2.Close()
+	os.Stdout = orig
+	n2, _ := r2.Read(buf)
+	outputDiff := string(buf[:n2])
+	if !strings.Contains(outputDiff, "collisions:") {
+		t.Fatalf("collisions: line should be printed when different from existing-artifacts, got:\n%s", outputDiff)
+	}
+}
+
+// AT3: shouldMaterializeProposal — adopt/keep-with-advisory return true; pure keep returns false.
+func TestShouldMaterializeProposal(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		s    collisionScore
+		want bool
+	}{
+		{"adopt", collisionScore{recommendation: "adopt"}, true},
+		{"keep-pure", collisionScore{recommendation: "keep"}, false},
+		{"keep-missing-sections", collisionScore{recommendation: "keep", missingSections: []string{"Foo"}}, true},
+		{"keep-section-renames", collisionScore{recommendation: "keep", sectionRenames: map[string]string{"A": "B"}}, true},
+		{"accept", collisionScore{recommendation: "accept"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldMaterializeProposal(tc.s); got != tc.want {
+				t.Fatalf("shouldMaterializeProposal(%v) = %v, want %v", tc.s, got, tc.want)
+			}
+		})
+	}
+}
+
+// AT3 supplement: writeProposedFiles writes keep-with-advisory files.
+func TestWriteProposedFilesKeepWithAdvisory(t *testing.T) {
+	t.Parallel()
+	targetDir := t.TempDir()
+	scores := []collisionScore{
+		{
+			path:            filepath.Join(targetDir, "keep-with-missing.md"),
+			recommendation:  "keep",
+			missingSections: []string{"Extras"},
+			proposedContent: "# keep-with-missing\n\n## Extras\n\ntemplate content\n",
+		},
+		{
+			path:            filepath.Join(targetDir, "pure-keep.md"),
+			recommendation:  "keep",
+			proposedContent: "# pure\n",
+		},
+	}
+	if err := writeProposedFiles(targetDir, scores, false); err != nil {
+		t.Fatalf("writeProposedFiles: %v", err)
+	}
+	// Should exist
+	if _, err := os.Stat(filepath.Join(targetDir, ".governa-proposed", "keep-with-missing.md")); err != nil {
+		t.Fatalf("keep-with-advisory file should be materialized: %v", err)
+	}
+	// Should NOT exist
+	if _, err := os.Stat(filepath.Join(targetDir, ".governa-proposed", "pure-keep.md")); err == nil {
+		t.Fatal("pure keep file should NOT be materialized")
+	}
+}
+
+// AT4: Advisory Notes entries get a diff command suffix when the counterpart is materialized.
+func TestRenderSyncReviewAdvisoryDiffSuffix(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/keep-with-missing.md",
+			recommendation:  "keep",
+			reason:          "existing is more developed",
+			missingSections: []string{"Extras"},
+			proposedContent: "# keep-with-missing\n",
+		},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	if !strings.Contains(output, "## Advisory Notes") {
+		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
+	}
+	if !strings.Contains(output, "diff keep-with-missing.md .governa-proposed/keep-with-missing.md") {
+		t.Fatalf("advisory entry for keep-with-advisory should include diff suffix, got:\n%s", output)
+	}
+}
+
+// AT5: ABOUT.md reflects expanded content (adopt + keep-with-advisory).
+func TestAboutMdReflectsExpandedContent(t *testing.T) {
+	t.Parallel()
+	targetDir := t.TempDir()
+	scores := []collisionScore{
+		{
+			path:            filepath.Join(targetDir, "some.md"),
+			recommendation:  "adopt",
+			proposedContent: "# some\n",
+		},
+	}
+	if err := writeProposedFiles(targetDir, scores, false); err != nil {
+		t.Fatalf("writeProposedFiles: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	if err != nil {
+		t.Fatalf("read ABOUT.md: %v", err)
+	}
+	s := string(content)
+	// Mentions both adopt and keep-with-advisory
+	if !strings.Contains(s, "`adopt`") {
+		t.Fatal("ABOUT.md should mention adopt")
+	}
+	if !strings.Contains(s, "`keep` with advisory notes") {
+		t.Fatalf("ABOUT.md should mention keep-with-advisory, got:\n%s", s)
+	}
+	// Must NOT claim keep files are never materialized
+	if strings.Contains(s, "Files flagged as `keep` are not materialized here") {
+		t.Fatalf("ABOUT.md should NOT claim keep files are never materialized — only pure keep are not materialized, got:\n%s", s)
+	}
+}
+
+// AT6: AGENTS.md Purpose no longer contains "Keep it short" in any of the 4 copies.
+func TestAgentsMdPurposeRewording(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"internal/templates/base/AGENTS.md",
+		"AGENTS.md",
+		"examples/code/AGENTS.md",
+		"examples/doc/AGENTS.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if strings.Contains(c, "Keep it short, stable, and cross-repo only") {
+				t.Fatalf("%s still contains old 'Keep it short' wording", rel)
+			}
+			if !strings.Contains(c, "Keep content here focused on cross-repo governance") {
+				t.Fatalf("%s should contain new focused wording", rel)
+			}
+		})
+	}
 }

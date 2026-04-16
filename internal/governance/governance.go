@@ -547,7 +547,12 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	if cfg.Type == "" && assessment.ResolvedType != "" {
+	// Track whether the type was inferred from repo shape (vs supplied by
+	// flag or resolved from a manifest). Only the inferred case should
+	// print a `type: <TYPE> (inferred)` line below — flag/manifest
+	// provenance is already covered by printParamSources on the adopt path.
+	typeInferred := cfg.Type == "" && assessment.ResolvedType != ""
+	if typeInferred {
 		cfg.Type = assessment.ResolvedType
 	}
 
@@ -560,6 +565,9 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 
 	printAssessment(cfg.Mode, targetAbs, assessment)
+	if typeInferred {
+		fmt.Printf("type: %s (inferred)\n", cfg.Type)
+	}
 
 	canonical, err := planCanonical(tfs, repoRoot, cfg, targetAbs)
 	if err != nil {
@@ -1507,7 +1515,11 @@ func printAssessment(mode Mode, target string, a Assessment) {
 	// repo-shape + collision-risk (both still printed) and created perceived
 	// contradiction with the final `disposition:` line when conflicts existed.
 	// The Assessment.Recommendation struct field stays for any programmatic use.
-	if len(a.CollidingArtifacts) > 0 {
+	//
+	// The `collisions:` line is suppressed when it's redundant with
+	// `existing-artifacts:` (the common case). Only print when the two
+	// differ — e.g., when a file exists at an expected path but is empty.
+	if len(a.CollidingArtifacts) > 0 && !slices.Equal(a.CollidingArtifacts, a.ExistingArtifacts) {
 		fmt.Printf("collisions: %s\n", strings.Join(a.CollidingArtifacts, ", "))
 	}
 }
@@ -2990,8 +3002,16 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
 			rel := relPath(s.path)
+			// Append a diff command suffix only when the proposed counterpart
+			// was actually materialized by writeProposedFiles. Both surfaces
+			// delegate to shouldMaterializeProposal so the review doc can
+			// never point at a missing file.
+			diffSuffix := ""
+			if shouldMaterializeProposal(s) {
+				diffSuffix = fmt.Sprintf(" — `diff %s .governa-proposed/%s`", rel, rel)
+			}
 			if s.recommendation == "keep" && len(s.missingSections) > 0 {
-				fmt.Fprintf(&b, "- `%s`: template also has sections not in this file: %s — review if relevant to this repo\n", rel, strings.Join(s.missingSections, ", "))
+				fmt.Fprintf(&b, "- `%s`: template also has sections not in this file: %s — review if relevant to this repo%s\n", rel, strings.Join(s.missingSections, ", "), diffSuffix)
 			}
 			if len(s.sectionRenames) > 0 {
 				renameKeys := make([]string, 0, len(s.sectionRenames))
@@ -3000,7 +3020,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 				}
 				slices.Sort(renameKeys)
 				for _, oldName := range renameKeys {
-					fmt.Fprintf(&b, "- `%s`: Section renamed: %s → %s\n", rel, oldName, s.sectionRenames[oldName])
+					fmt.Fprintf(&b, "- `%s`: Section renamed: %s → %s%s\n", rel, oldName, s.sectionRenames[oldName], diffSuffix)
 				}
 			}
 		}
@@ -3400,6 +3420,22 @@ func printConflictsSummary(targetDir string, conflicts []conflict) {
 
 // writeProposedFiles writes the template version of each reviewable file
 // to .governa-proposed/<path> so agents can diff directly against their files.
+// shouldMaterializeProposal reports whether a score warrants writing its
+// template counterpart into .governa-proposed/. Used by writeProposedFiles
+// (the producer) and by renderSyncReview's Advisory Notes section (the
+// consumer that points operators at the diff command). Having a single
+// predicate guarantees the two surfaces stay aligned — the review doc
+// never points to a file that wasn't materialized.
+func shouldMaterializeProposal(s collisionScore) bool {
+	if s.recommendation == "adopt" {
+		return true
+	}
+	if s.recommendation == "keep" && (len(s.missingSections) > 0 || len(s.sectionRenames) > 0) {
+		return true
+	}
+	return false
+}
+
 func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) error {
 	proposedDir := filepath.Join(targetDir, ".governa-proposed")
 	wrote := false
@@ -3407,7 +3443,7 @@ func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) 
 		if s.proposedContent == "" {
 			continue
 		}
-		if s.recommendation != "adopt" {
+		if !shouldMaterializeProposal(s) {
 			continue
 		}
 		rel, err := filepath.Rel(targetDir, s.path)
@@ -3439,7 +3475,7 @@ func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) 
 	// to avoid colliding with a proposed repo README.md).
 	aboutPath := filepath.Join(proposedDir, "ABOUT.md")
 	if !dryRun {
-		about := "# Proposed Template Files\n\nEach file here is the template version of a file flagged as `adopt` in `governa-sync-review.md`. Use them for direct comparison:\n\n    diff <your-file> .governa-proposed/<file>\n\nFiles flagged as `keep` are not materialized here — there is no adoption work expected for them. Advisory notes in the review doc may reference template sections that are missing from `keep` files; consult the template source in the governa repo if you want to see those.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
+		about := "# Proposed Template Files\n\nEach file here is the template version of a file flagged in `governa-sync-review.md`:\n\n- files marked `adopt` — compare and adopt the template content\n- files marked `keep` with advisory notes (missing sections or section renames) — compare to see what the advisory references\n\nUse them for direct comparison:\n\n    diff <your-file> .governa-proposed/<file>\n\nFiles marked `keep` with no advisory notes are not materialized here — there is no review work expected for them.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
 		os.WriteFile(aboutPath, []byte(about), 0o644)
 	}
 	return nil
