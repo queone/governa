@@ -122,6 +122,16 @@ Recommended flag mapping (mode is determined by subcommand, not a flag):
 
 This convention should be documented and kept consistent across governa subcommands.
 
+## Agent Agnosticism
+
+Governa is agent-agnostic. `AGENTS.md` is the canonical governance contract. Agent-specific entrypoints (`CLAUDE.md` for Claude Code, future names like `CURSOR.md` or `COPILOT.md` as they emerge) **must** be symlinks to `AGENTS.md` so every agent loads exactly the same rules. One contract, many agent-specific names pointing at it.
+
+This invariant is enforced during sync. When sync plans a `CLAUDE.md → AGENTS.md` symlink and finds an existing regular file at `CLAUDE.md`, it does not overwrite the file (preserving operator content) but records a conflict in the review doc and prints a post-transform `needs manual resolution` status line. The operator must back up or remove the existing `CLAUDE.md`, then re-run sync to create the symlink.
+
+The same rule applies to any planned symlink-to-AGENTS.md op that collides with a regular file, so future agent-specific entrypoints inherit the same protection without code changes.
+
+The `## Conflicts` section in `governa-sync-review.md` is the operator-facing surface for these invariant violations. It renders before `## Recommendations` because conflicts must be resolved before the rest of the review is actionable.
+
 ## Ownership Model
 
 The template should define which files are:

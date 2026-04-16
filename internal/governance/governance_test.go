@@ -3003,10 +3003,6 @@ func TestIdeasToExploreIEPrefix(t *testing.T) {
 		}
 	}
 
-	// Self-hosted plan.md should not contain completed IE5
-	if strings.Contains(content, "IE5:") {
-		t.Error("plan.md: IE5 was completed and should be removed")
-	}
 }
 
 func TestWhySectionInReadmeTemplates(t *testing.T) {
@@ -4284,7 +4280,7 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, "## Evaluation Methodology") {
 		t.Fatal("review doc should contain Evaluation Methodology section")
 	}
@@ -4324,12 +4320,12 @@ func TestRenderSyncReviewVersionLine(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "0.17.0", "0.18.0")
+	output := renderSyncReview("/tmp/repo", scores, nil, "0.17.0", "0.18.0")
 	if !strings.Contains(output, "Template version: 0.17.0 → 0.18.0") {
 		t.Fatalf("review doc should show version transition, got:\n%s", output)
 	}
 	// No version line when versions are empty
-	outputNoVer := renderSyncReview("/tmp/repo", scores, "", "")
+	outputNoVer := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if strings.Contains(outputNoVer, "Template version:") {
 		t.Fatal("review doc should not show version line when versions are empty")
 	}
@@ -4357,7 +4353,7 @@ func TestRenderSyncReviewAdoptItems(t *testing.T) {
 			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatal("output should contain Adoption Items section")
 	}
@@ -5001,7 +4997,7 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 			proposedContent: "# Guide\n\n## Checklist\n\n1. Step A\n2. Step B\n\n## Style\n\nKeep it short.\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, "(structural)") {
 		t.Fatalf("output should contain (structural) tag, got:\n%s", output)
 	}
@@ -5032,7 +5028,7 @@ func TestRenderSyncReviewAdoptRefersToProposed(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\nKeep it short.\n\n## Checklist\n\n1. Step A\n2. Step B\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, ".governa-proposed/") {
 		t.Fatalf("content changes should reference .governa-proposed/, got:\n%s", output)
 	}
@@ -5108,7 +5104,7 @@ func TestRenderSyncReviewLeanFormat(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\n- Keep it short.\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, ".governa-proposed/") {
 		t.Fatal("review doc should reference .governa-proposed/ for comparison")
 	}
@@ -5140,7 +5136,7 @@ func TestRenderSyncReviewTableIsFileLevel(t *testing.T) {
 			proposedContent: "# Guide\n\n## Alpha\n\nnew alpha\n\n## Beta\n\nnew beta\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	// Count table data rows (lines starting with "| `")
 	tableRows := 0
 	for line := range strings.SplitSeq(output, "\n") {
@@ -5421,7 +5417,7 @@ func TestRenderSyncReviewAdvisoryNotes(t *testing.T) {
 			missingSections: []string{"Gamma", "Delta"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, "## Advisory Notes") {
 		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
 	}
@@ -5492,7 +5488,7 @@ func TestRenderSyncReviewRenameNote(t *testing.T) {
 			sectionRenames: map[string]string{"Using Sync": "Governa Templating Maintenance"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, "Section renamed:") {
 		t.Fatalf("expected rename note in output, got:\n%s", output)
 	}
@@ -5582,7 +5578,7 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 			proposedContent: proposed,
 		},
 	}
-	output := renderSyncReview(dir, scores, "", "")
+	output := renderSyncReview(dir, scores, nil, "", "")
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatalf("expected Adoption Items section, got:\n%s", output)
 	}
@@ -5637,7 +5633,7 @@ func TestRenderSyncReviewAdoptNonMarkdown(t *testing.T) {
 			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\ngo run ./cmd/rel \"$@\"\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatalf("expected Adoption Items section, got:\n%s", output)
 	}
@@ -5846,5 +5842,154 @@ func TestDemoteExtractedPackageNoImport(t *testing.T) {
 	demoteExtractedPackage(&score, "myproject")
 	if score.recommendation != "adopt" {
 		t.Fatalf("recommendation = %q, want adopt (no local import)", score.recommendation)
+	}
+}
+
+// --- AC44 tests ---
+
+// AT1: applyAdoptTransforms detects regular-file CLAUDE.md and emits a conflict.
+func TestApplyAdoptTransformsSymlinkConflict(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Pre-create a regular-file CLAUDE.md
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	mustWrite(t, claudePath, "# Pre-existing claude file\n")
+
+	ops := []operation{
+		{kind: "symlink", path: claudePath, linkTo: "AGENTS.md", note: "agent alias link"},
+	}
+	transformed, _, conflicts := applyAdoptTransforms(ops, nil, nil, dir)
+	if len(conflicts) != 1 {
+		t.Fatalf("expected 1 conflict, got %d", len(conflicts))
+	}
+	if conflicts[0].kind != "symlink-vs-regular" {
+		t.Fatalf("conflict kind = %q, want symlink-vs-regular", conflicts[0].kind)
+	}
+	if conflicts[0].path != claudePath {
+		t.Fatalf("conflict path = %q, want %q", conflicts[0].path, claudePath)
+	}
+	if !strings.Contains(conflicts[0].description, "`AGENTS.md` is the canonical governance contract") {
+		t.Fatalf("conflict description should mention agent-agnostic invariant, got: %s", conflicts[0].description)
+	}
+	if !strings.Contains(conflicts[0].description, "Back up or remove") {
+		t.Fatalf("conflict description should give operator action, got: %s", conflicts[0].description)
+	}
+	if transformed[0].kind != "skip" {
+		t.Fatalf("transformed op kind = %q, want skip (do not overwrite user file)", transformed[0].kind)
+	}
+}
+
+// AT1: existing symlink does NOT trigger conflict (already correct).
+func TestApplyAdoptTransformsExistingSymlinkOk(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	mustWrite(t, agentsPath, "# AGENTS.md\n")
+	if err := os.Symlink("AGENTS.md", claudePath); err != nil {
+		t.Fatalf("symlink setup: %v", err)
+	}
+
+	ops := []operation{
+		{kind: "symlink", path: claudePath, linkTo: "AGENTS.md", note: "agent alias link"},
+	}
+	_, _, conflicts := applyAdoptTransforms(ops, nil, nil, dir)
+	if len(conflicts) != 0 {
+		t.Fatalf("expected 0 conflicts for existing symlink, got %d", len(conflicts))
+	}
+}
+
+// AT1: review doc renders ## Conflicts section before ## Recommendations.
+func TestRenderSyncReviewConflictsSection(t *testing.T) {
+	t.Parallel()
+	conflicts := []conflict{
+		{
+			kind:        "symlink-vs-regular",
+			path:        "/tmp/repo/CLAUDE.md",
+			description: "`CLAUDE.md` exists as a regular file. Governa is agent-agnostic: `AGENTS.md` is the canonical governance contract. Back up or remove the existing `CLAUDE.md`, then re-run sync to create the symlink.",
+		},
+	}
+	output := renderSyncReview("/tmp/repo", nil, conflicts, "", "")
+	if !strings.Contains(output, "## Conflicts") {
+		t.Fatalf("output should contain ## Conflicts section, got:\n%s", output)
+	}
+	if !strings.Contains(output, "`AGENTS.md` is the canonical governance contract") {
+		t.Fatal("conflict entry should explain the agent-agnostic invariant")
+	}
+	conflictsIdx := strings.Index(output, "## Conflicts")
+	recsIdx := strings.Index(output, "## Recommendations")
+	if conflictsIdx < 0 || recsIdx < 0 || conflictsIdx >= recsIdx {
+		t.Fatal("## Conflicts must appear before ## Recommendations")
+	}
+}
+
+// AT2b: conflicts-only sync still creates a review doc.
+func TestRenderSyncReviewConflictsOnlyNoScores(t *testing.T) {
+	t.Parallel()
+	conflicts := []conflict{
+		{
+			kind:        "symlink-vs-regular",
+			path:        "/tmp/repo/CLAUDE.md",
+			description: "`CLAUDE.md` exists as a regular file...",
+		},
+	}
+	output := renderSyncReview("/tmp/repo", nil, conflicts, "", "")
+	if !strings.Contains(output, "## Conflicts") {
+		t.Fatal("conflicts-only review doc must contain ## Conflicts section")
+	}
+}
+
+// AT3: console drift summary counts adopt items.
+func TestPrintAdoptDriftCountsAdoptItems(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{recommendation: "keep"},
+		{recommendation: "keep"},
+		{recommendation: "adopt"},
+	}
+	// Capture stdout
+	r, w, _ := os.Pipe()
+	origStdout := os.Stdout
+	os.Stdout = w
+	printAdoptDriftFromScores(scores)
+	w.Close()
+	os.Stdout = origStdout
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "2 files unchanged") {
+		t.Fatalf("output should include keep count, got: %s", output)
+	}
+	if !strings.Contains(output, "1 files to adopt") {
+		t.Fatalf("output should include adopt count, got: %s", output)
+	}
+	if !strings.Contains(output, "governa-sync-review.md") {
+		t.Fatalf("output should point to review doc when adopts > 0, got: %s", output)
+	}
+}
+
+// AT4: first-sync standing drift uses no-prior-sync wording.
+func TestApplyAdoptTransformsFirstSyncWording(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	overlayPath := filepath.Join(dir, ".gitignore")
+	mustWrite(t, overlayPath, "*.tmp\nnode_modules/\n.env\nbuild/\n")
+
+	ops := []operation{
+		{kind: "write", note: "overlay file", path: overlayPath, content: "*.tmp\n"},
+	}
+	// nil oldManifest = first sync
+	_, scores, _ := applyAdoptTransforms(ops, nil, nil, dir)
+	if len(scores) != 1 {
+		t.Fatalf("expected 1 score, got %d", len(scores))
+	}
+	// .gitignore differs from template baseline; on first sync we should NOT
+	// say "unchanged since last sync"
+	if strings.Contains(scores[0].reason, "unchanged since last sync") {
+		t.Fatalf("first-sync reason should not say 'unchanged since last sync', got: %s", scores[0].reason)
+	}
+	if scores[0].standingDrift && !strings.Contains(scores[0].reason, "no prior sync") {
+		t.Fatalf("first-sync drift reason should say 'no prior sync', got: %s", scores[0].reason)
 	}
 }

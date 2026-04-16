@@ -99,6 +99,17 @@ type operation struct {
 	source  string
 }
 
+// conflict represents a pre-apply condition that blocks a planned operation
+// from landing safely. Conflicts are surfaced in the review doc under a
+// ## Conflicts section and trigger a post-transform `needs manual resolution`
+// status line. They are distinct from collision scores (which represent
+// existing-vs-proposed content differences).
+type conflict struct {
+	kind        string // "symlink-vs-regular"
+	path        string // absolute path of the blocked op target
+	description string // operator-facing explanation including required action
+}
+
 type flagValues struct {
 	target             string
 	reference          string
@@ -558,22 +569,56 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		oldManifest, _, _ := readManifest(targetAbs)
 		oldEntryMap := manifestEntryMap(oldManifest)
 		newEntryMap := manifestEntryMap(manifest)
-		transformed, scores := applyAdoptTransforms(canonical, oldEntryMap, newEntryMap, targetAbs)
+		transformed, scores, conflicts := applyAdoptTransforms(canonical, oldEntryMap, newEntryMap, targetAbs)
+
+		// If any symlink ops were blocked by conflicts, rebuild the manifest
+		// without those entries. Other skip ops (overlay collisions) retain
+		// their baseline source checksums — those are load-bearing for
+		// future standing drift detection.
+		if len(conflicts) > 0 {
+			blockedPaths := make(map[string]bool, len(conflicts))
+			for _, c := range conflicts {
+				blockedPaths[c.path] = true
+			}
+			filteredCanonical := make([]operation, 0, len(canonical))
+			for _, op := range canonical {
+				if op.kind == "symlink" && blockedPaths[op.path] {
+					continue
+				}
+				filteredCanonical = append(filteredCanonical, op)
+			}
+			manifest = buildManifest(filteredCanonical, templateVersion, tfs, repoRoot, targetAbs)
+			manifest.Params = ManifestParams{
+				RepoName:           cfg.RepoName,
+				Purpose:            cfg.Purpose,
+				Type:               string(cfg.Type),
+				Stack:              cfg.Stack,
+				PublishingPlatform: cfg.PublishingPlatform,
+				Style:              cfg.Style,
+			}
+			manifestOp = operation{
+				kind:    "write",
+				path:    filepath.Join(targetAbs, manifestFileName),
+				content: formatManifest(manifest),
+				note:    "bootstrap manifest",
+			}
+		}
+
 		ops = compactOperations(transformed)
 		emitAdoptAdvisories(targetAbs)
 		ops = append(ops, manifestOp)
 		if err := applyOperations(ops, cfg.DryRun); err != nil {
 			return err
 		}
-		// Filter to only collision scores (keep/review) for the review doc
+		// Filter to only collision scores (keep/adopt) for the review doc
 		var collisions []collisionScore
 		for _, s := range scores {
 			if s.recommendation != "accept" {
 				collisions = append(collisions, s)
 			}
 		}
-		if len(collisions) > 0 {
-			if err := writeSyncReview(targetAbs, collisions, oldManifest.TemplateVersion, templateVersion, cfg.DryRun); err != nil {
+		if len(collisions) > 0 || len(conflicts) > 0 {
+			if err := writeSyncReview(targetAbs, collisions, conflicts, oldManifest.TemplateVersion, templateVersion, cfg.DryRun); err != nil {
 				return err
 			}
 			if err := writeProposedFiles(targetAbs, collisions, cfg.DryRun); err != nil {
@@ -581,6 +626,9 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 			}
 		}
 		printAdoptDriftFromScores(collisions)
+		if len(conflicts) > 0 {
+			printConflictsSummary(conflicts)
+		}
 	} else {
 		ops = compactOperations(canonical)
 		ops = append(ops, manifestOp)
@@ -1116,7 +1164,7 @@ func planRender(tfs fs.FS, repoRoot string, cfg Config, targetRoot string, adopt
 	if !adopt {
 		return compactOperations(canonical), nil
 	}
-	transformed, _ := applyAdoptTransforms(canonical, nil, nil, targetRoot)
+	transformed, _, _ := applyAdoptTransforms(canonical, nil, nil, targetRoot)
 	return compactOperations(transformed), nil
 }
 
@@ -1225,10 +1273,12 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 	return ops, nil
 }
 
-func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry, newManifest map[string]ManifestEntry, targetDir string) ([]operation, []collisionScore) {
+func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry, newManifest map[string]ManifestEntry, targetDir string) ([]operation, []collisionScore, []conflict) {
 	out := make([]operation, len(ops))
 	var scores []collisionScore
+	var conflicts []conflict
 	modulePath := readModulePath(targetDir)
+	firstSync := len(oldManifest) == 0
 	for i, op := range ops {
 		// Derive repo-relative path for manifest lookup.
 		var repoRel string
@@ -1250,10 +1300,21 @@ func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry,
 		case op.kind == "write" && op.note == "template version marker":
 			out[i] = op // always write — must match manifest version
 		case op.kind == "symlink":
-			out[i] = skipIfExists(op)
+			// Detect symlink-vs-regular-file collision. Use Lstat so we don't
+			// follow symlinks — an existing symlink is fine, a regular file is not.
+			if info, err := os.Lstat(op.path); err == nil && info.Mode()&os.ModeSymlink == 0 {
+				conflicts = append(conflicts, symlinkConflict(op, repoRel))
+				out[i] = operation{kind: "skip"}
+			} else {
+				out[i] = skipIfExists(op)
+			}
 		case op.kind == "write" && op.note == "overlay file":
 			score := scoreOverlayCollision(op.path, op.content, oldEntry.SourceChecksum, newEntry.SourceChecksum)
 			promoteStandingDrift(&score)
+			if firstSync && score.standingDrift {
+				// Rewrite reason for first-sync: no prior history to reference
+				score.reason = firstSyncDriftReason(score)
+			}
 			promoteStructuralNotes(&score)
 			demoteScaffold(&score)
 			demoteExtractedPackage(&score, modulePath)
@@ -1267,7 +1328,39 @@ func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry,
 			out[i] = op
 		}
 	}
-	return out, scores
+	return out, scores, conflicts
+}
+
+// symlinkConflict builds the operator-facing conflict description for a
+// symlink op that was blocked by an existing regular file. The message
+// enforces governa's agent-agnostic invariant: AGENTS.md is the canonical
+// governance contract, and any agent-specific entrypoint (CLAUDE.md, future
+// names) must be a symlink to it so every agent loads the same rules.
+func symlinkConflict(op operation, repoRel string) conflict {
+	if repoRel == "" {
+		repoRel = filepath.Base(op.path)
+	}
+	linkTarget := op.linkTo
+	if linkTarget == "" {
+		linkTarget = "AGENTS.md"
+	}
+	return conflict{
+		kind: "symlink-vs-regular",
+		path: op.path,
+		description: fmt.Sprintf(
+			"`%s` exists as a regular file. Governa is agent-agnostic: `%s` is the canonical governance contract, and agent-specific entrypoints (`CLAUDE.md` for Claude Code, others as they emerge) must be symlinks to it so all agents load the same rules. Back up or remove the existing `%s`, then re-run sync to create the symlink.",
+			repoRel, linkTarget, repoRel,
+		),
+	}
+}
+
+// firstSyncDriftReason produces a standing-drift reason string that does
+// not imply a prior sync history. Used when oldManifest is empty.
+func firstSyncDriftReason(score collisionScore) string {
+	if len(score.driftSections) > 0 {
+		return fmt.Sprintf("differs from template baseline in: %s (no prior sync)", strings.Join(score.driftSections, ", "))
+	}
+	return "differs from template baseline (no prior sync)"
 }
 
 func compactOperations(ops []operation) []operation {
@@ -2693,7 +2786,7 @@ func detectChangedGovernedSections(existingContent, templateContent string) []st
 	return changed
 }
 
-func renderSyncReview(targetDir string, scores []collisionScore, oldVersion, newVersion string) string {
+func renderSyncReview(targetDir string, scores []collisionScore, conflicts []conflict, oldVersion, newVersion string) string {
 	relPath := func(absPath string) string {
 		if targetDir != "" {
 			if r, err := filepath.Rel(targetDir, absPath); err == nil {
@@ -2747,6 +2840,17 @@ func renderSyncReview(targetDir string, scores []collisionScore, oldVersion, new
 	fmt.Fprintln(&b, "   - The agent must note any recommendations that were confusing, lacked sufficient context to evaluate, or didn't account for a common repo pattern.")
 	fmt.Fprintln(&b, "   - The director routes this feedback to governa DEV and QA to improve future sync output and methodology.")
 	fmt.Fprintln(&b, "")
+
+	if len(conflicts) > 0 {
+		fmt.Fprintln(&b, "## Conflicts")
+		fmt.Fprintln(&b, "")
+		fmt.Fprintln(&b, "**These conflicts block sync from completing correctly. Resolve them before acting on the recommendations below.**")
+		fmt.Fprintln(&b, "")
+		for _, c := range conflicts {
+			fmt.Fprintf(&b, "- %s\n", c.description)
+		}
+		fmt.Fprintln(&b, "")
+	}
 
 	fmt.Fprintln(&b, "## Recommendations")
 	fmt.Fprintln(&b, "")
@@ -3169,14 +3273,30 @@ func readmeMissingWhySection(targetDir string) bool {
 	return !strings.Contains(string(content), "## Why")
 }
 
-func writeSyncReview(targetDir string, scores []collisionScore, oldVersion, newVersion string, dryRun bool) error {
+func writeSyncReview(targetDir string, scores []collisionScore, conflicts []conflict, oldVersion, newVersion string, dryRun bool) error {
 	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
-	content := renderSyncReview(targetDir, scores, oldVersion, newVersion)
+	content := renderSyncReview(targetDir, scores, conflicts, oldVersion, newVersion)
 	fmt.Printf("%s %s (sync review document)\n", formatAction(dryRun, "write"), reviewPath)
 	if dryRun {
 		return nil
 	}
 	return os.WriteFile(reviewPath, []byte(content), 0o644)
+}
+
+// printConflictsSummary emits the post-transform status line when conflicts
+// are detected. This does not mutate the Assessment struct — it is a
+// separate, layered report that corrects the operator's final takeaway after
+// the pre-transform assessment has already been printed.
+func printConflictsSummary(conflicts []conflict) {
+	plural := "conflict"
+	if len(conflicts) != 1 {
+		plural = "conflicts"
+	}
+	fmt.Fprintf(os.Stderr, "%s needs manual resolution — %d %s detected — see governa-sync-review.md\n",
+		color.Yel("assessment (post-transform):"), len(conflicts), plural)
+	for _, c := range conflicts {
+		fmt.Fprintf(os.Stderr, "  %s %s\n", color.Yel("conflict:"), c.path)
+	}
 }
 
 // writeProposedFiles writes the template version of each reviewable file
@@ -3231,22 +3351,27 @@ func printAdoptDriftFromScores(scores []collisionScore) {
 		fmt.Printf("%s none detected\n", color.Yel("drift:"))
 		return
 	}
-	keeps, reviews := 0, 0
+	keeps, adopts := 0, 0
 	for _, s := range scores {
-		if s.recommendation == "keep" {
+		switch s.recommendation {
+		case "keep":
 			keeps++
-		} else if strings.HasPrefix(s.recommendation, "review") {
-			reviews++
+		case "adopt":
+			adopts++
 		}
 	}
 	parts := []string{}
 	if keeps > 0 {
-		parts = append(parts, fmt.Sprintf("%d files unchanged (existing more developed)", keeps))
+		parts = append(parts, fmt.Sprintf("%d files unchanged", keeps))
 	}
-	if reviews > 0 {
-		parts = append(parts, fmt.Sprintf("%d files to review", reviews))
+	if adopts > 0 {
+		parts = append(parts, fmt.Sprintf("%d files to adopt", adopts))
 	}
-	fmt.Printf("%s %s\n", color.Yel("drift:"), strings.Join(parts, ", "))
+	suffix := ""
+	if adopts > 0 {
+		suffix = " — see governa-sync-review.md"
+	}
+	fmt.Printf("%s %s%s\n", color.Yel("drift:"), strings.Join(parts, ", "), suffix)
 }
 
 func emitAdoptAdvisories(targetDir string) {
