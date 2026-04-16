@@ -35,7 +35,11 @@ If the grep turns up no other matches, the fix is contained. If it does, propaga
 
 | Source | Template Copy | Example Copy |
 |--------|--------------|--------------|
-| `internal/buildtool/` | `internal/templates/overlays/code/files/cmd/build/main.go.tmpl` | `examples/code/cmd/build/main.go` |
-| `internal/reltool/` | `internal/templates/overlays/code/files/cmd/rel/main.go.tmpl`, `internal/templates/overlays/doc/files/cmd/rel/main.go.tmpl` | `examples/code/cmd/rel/main.go`, `examples/doc/cmd/rel/main.go` |
+| `internal/buildtool/buildtool.go`, `internal/buildtool/buildtool_test.go` | `internal/templates/overlays/code/files/internal/buildtool/buildtool.go.tmpl`, `internal/templates/overlays/code/files/internal/buildtool/buildtool_test.go.tmpl` | `examples/code/internal/buildtool/buildtool.go`, `examples/code/internal/buildtool/buildtool_test.go` |
+| `internal/reltool/reltool.go`, `internal/reltool/reltool_test.go` | `internal/templates/overlays/code/files/internal/reltool/reltool.go.tmpl`, `internal/templates/overlays/code/files/internal/reltool/reltool_test.go.tmpl`, `internal/templates/overlays/doc/files/internal/reltool/reltool.go.tmpl`, `internal/templates/overlays/doc/files/internal/reltool/reltool_test.go.tmpl` | `examples/code/internal/reltool/reltool.go`, `examples/code/internal/reltool/reltool_test.go`, `examples/doc/internal/reltool/reltool.go`, `examples/doc/internal/reltool/reltool_test.go` |
+| `cmd/build/main.go` (delegator entrypoint) | `internal/templates/overlays/code/files/cmd/build/main.go.tmpl` | `examples/code/cmd/build/main.go` |
+| `cmd/rel/main.go` (delegator entrypoint) | `internal/templates/overlays/code/files/cmd/rel/main.go.tmpl`, `internal/templates/overlays/doc/files/cmd/rel/main.go.tmpl` | `examples/code/cmd/rel/main.go`, `examples/doc/cmd/rel/main.go` |
 | `internal/color/` | `internal/templates/overlays/code/files/internal/color/color.go.tmpl`, `internal/templates/overlays/doc/files/internal/color/color.go.tmpl` | `examples/code/internal/color/color.go`, `examples/doc/internal/color/color.go` |
 | `build.sh` | `internal/templates/overlays/code/files/build.sh.tmpl` | `examples/code/build.sh` |
+
+When propagating a `buildtool`/`reltool`/`color` source change, the only edit between source and template copy is the import-path rewrite `github.com/queone/governa/internal/<pkg>` → `{{MODULE_PATH}}/internal/<pkg>`. The example copy resolves `{{MODULE_PATH}}` to `github.com/queone/governa/examples/code` (or `…/examples/doc`).

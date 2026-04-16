@@ -1406,11 +1406,16 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 		if cfg.Type == RepoTypeCode && !stackSuggestsGo(cfg.Stack) &&
 			(rel == "cmd/rel/main.go.tmpl" ||
 				rel == "cmd/build/main.go.tmpl" ||
-				strings.HasPrefix(rel, "internal/color/")) {
+				strings.HasPrefix(rel, "internal/color/") ||
+				strings.HasPrefix(rel, "internal/buildtool/") ||
+				strings.HasPrefix(rel, "internal/reltool/")) {
 			return nil
 		}
-		// Skip internal/color when module path is unknown (adopt without go.mod)
-		if strings.HasPrefix(rel, "internal/color/") && modulePath == "" {
+		// Skip Go internal packages when module path is unknown (adopt without go.mod)
+		if modulePath == "" &&
+			(strings.HasPrefix(rel, "internal/color/") ||
+				strings.HasPrefix(rel, "internal/buildtool/") ||
+				strings.HasPrefix(rel, "internal/reltool/")) {
 			return nil
 		}
 		// Skip docs/knowledge/README.md if the target doesn't use docs/knowledge/

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.32.0 | AC52: template emits extracted `internal/buildtool` and `internal/reltool` packages with delegator entrypoints, matching canonical and closing day-one template drift; renderer skip list extended for non-Go-stack CODE; `docs/development-cycle.md` step 3 codifies QA-critique iteration loop; propagation table updated. (addresses utils feedback from v0.31.0 sync) |
 | 0.31.0 | AC51: sync quality bundle — manifest sha reflects on-disk state, stack-aware `.gitignore` (Go block), step 5 code-block example restored, Adoption Items surfaces new sections, per-sync feedback obligation codified in template, `## Template Changes` summary, `.governa-proposed/` cleanup at sync start, consumer-feedback CHANGELOG credit convention (addresses utils feedback from v0.30.0 sync) |
 | 0.30.0 | AC48+AC49+AC50: signal hygiene (skip `.governa-proposed/` and governa-owned paths), context-aware `## Status`, CHANGELOG stub template + format spec with ≤ 500 char summaries, role files name counterparts explicitly via intro + `## Counterparts` section |
 | 0.29.0 | AC47: sync polish bundle — `type: (inferred)` provenance line, suppressed redundant `collisions:`, `.governa-proposed/` covers keep-with-advisory via shared predicate, truthful ABOUT.md, AGENTS.md Purpose rewording |
