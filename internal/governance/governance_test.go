@@ -5873,8 +5873,8 @@ func TestApplyAdoptTransformsSymlinkConflict(t *testing.T) {
 	if !strings.Contains(conflicts[0].description, "`AGENTS.md` is the canonical governance contract") {
 		t.Fatalf("conflict description should mention agent-agnostic invariant, got: %s", conflicts[0].description)
 	}
-	if !strings.Contains(conflicts[0].description, "diff") || !strings.Contains(conflicts[0].description, "then delete") {
-		t.Fatalf("conflict description should give safe migration action (diff, then delete), got: %s", conflicts[0].description)
+	if !strings.Contains(conflicts[0].description, "diff CLAUDE.md AGENTS.md") || !strings.Contains(conflicts[0].description, "Delete the existing `CLAUDE.md`") {
+		t.Fatalf("conflict description should give safe migration action (diff cmd + Delete step), got: %s", conflicts[0].description)
 	}
 	if transformed[0].kind != "skip" {
 		t.Fatalf("transformed op kind = %q, want skip (do not overwrite user file)", transformed[0].kind)
@@ -6081,7 +6081,7 @@ func TestSymlinkConflictMigrationSequence(t *testing.T) {
 	op := operation{kind: "symlink", path: "/tmp/repo/CLAUDE.md", linkTo: "AGENTS.md"}
 	c := symlinkConflict(op, "CLAUDE.md")
 	desc := c.description
-	for _, phrase := range []string{"diff", "migrate any unique repo-specific rules", "then delete"} {
+	for _, phrase := range []string{"diff CLAUDE.md AGENTS.md", "Migrate any unique repo-specific rules", "Delete the existing `CLAUDE.md`"} {
 		if !strings.Contains(desc, phrase) {
 			t.Fatalf("conflict description should contain %q, got:\n%s", phrase, desc)
 		}
@@ -6179,4 +6179,294 @@ func TestPrintConflictsSummaryDispositionLabel(t *testing.T) {
 	if !strings.Contains(output, "needs manual resolution") {
 		t.Fatalf("output should still say 'needs manual resolution', got: %s", output)
 	}
+}
+
+// --- AC46 tests ---
+
+// AT1a: AssessTarget auto-resolves empty type from RepoShape so expected-artifacts
+// check is consistent whether cfg.Type was pre-populated or not.
+func TestAssessTargetAutoResolvesEmptyType(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Seed CODE signals so RepoShape resolves to "likely CODE"
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n")
+	mustWrite(t, filepath.Join(dir, "README.md"), "# Example\n")
+
+	// Call with empty type — should auto-resolve internally
+	assessmentEmpty, err := AssessTarget(dir, "")
+	if err != nil {
+		t.Fatalf("AssessTarget(empty): %v", err)
+	}
+	if assessmentEmpty.RepoShape != "likely CODE" {
+		t.Fatalf("RepoShape = %q, want 'likely CODE'", assessmentEmpty.RepoShape)
+	}
+	if assessmentEmpty.ResolvedType != RepoTypeCode {
+		t.Fatalf("ResolvedType = %q, want RepoTypeCode (auto-resolved from shape)", assessmentEmpty.ResolvedType)
+	}
+
+	// Call with explicit type — same disk state, same output for existing/collision
+	assessmentTyped, err := AssessTarget(dir, RepoTypeCode)
+	if err != nil {
+		t.Fatalf("AssessTarget(CODE): %v", err)
+	}
+	if assessmentTyped.ResolvedType != RepoTypeCode {
+		t.Fatalf("ResolvedType = %q, want RepoTypeCode (explicit)", assessmentTyped.ResolvedType)
+	}
+
+	// The two assessments must match on the artifact-scan outputs
+	if assessmentEmpty.CollisionRisk != assessmentTyped.CollisionRisk {
+		t.Fatalf("CollisionRisk mismatch: empty=%q typed=%q — assessment should be consistent across caller type source",
+			assessmentEmpty.CollisionRisk, assessmentTyped.CollisionRisk)
+	}
+	if !equalStringSlices(assessmentEmpty.ExistingArtifacts, assessmentTyped.ExistingArtifacts) {
+		t.Fatalf("ExistingArtifacts mismatch: empty=%v typed=%v", assessmentEmpty.ExistingArtifacts, assessmentTyped.ExistingArtifacts)
+	}
+}
+
+// AT1b: two sibling repos with identical pre-existing files produce the same assessment
+// whether a manifest is seeded or not. The assessment must not depend on manifest presence.
+func TestAssessTargetConsistentAcrossManifestPresence(t *testing.T) {
+	t.Parallel()
+	seed := func(root string) {
+		mustWrite(t, filepath.Join(root, "go.mod"), "module example\n")
+		mustWrite(t, filepath.Join(root, "main.go"), "package main\n")
+		mustWrite(t, filepath.Join(root, "README.md"), "# Example\n")
+	}
+
+	// Repo A: no manifest (first-sync state)
+	dirA := t.TempDir()
+	seed(dirA)
+	a, err := AssessTarget(dirA, "")
+	if err != nil {
+		t.Fatalf("AssessTarget(A): %v", err)
+	}
+
+	// Repo B: same files, plus a manifest — but we're calling AssessTarget
+	// with RepoTypeCode as a manifest-backed re-sync would.
+	dirB := t.TempDir()
+	seed(dirB)
+	mustWrite(t, filepath.Join(dirB, manifestFileName), "governa-manifest-v1\ntemplate-version: 0.27.0\ntype: CODE\n")
+	b, err := AssessTarget(dirB, RepoTypeCode)
+	if err != nil {
+		t.Fatalf("AssessTarget(B): %v", err)
+	}
+
+	// The assessments should match on repo-shape and existing-artifacts counts.
+	// (Note: .governa-manifest itself isn't in expectedArtifactPaths, so its
+	// presence should not change the comparison.)
+	if a.RepoShape != b.RepoShape {
+		t.Fatalf("RepoShape mismatch: no-manifest=%q with-manifest=%q", a.RepoShape, b.RepoShape)
+	}
+	if a.CollisionRisk != b.CollisionRisk {
+		t.Fatalf("CollisionRisk mismatch: no-manifest=%q with-manifest=%q — assessment must not depend on manifest presence",
+			a.CollisionRisk, b.CollisionRisk)
+	}
+}
+
+// AT2: printAssessment does not print a `recommendation:` line.
+func TestPrintAssessmentNoRecommendationLine(t *testing.T) {
+	t.Parallel()
+	a := Assessment{
+		RepoShape:         "likely CODE",
+		ResolvedType:      RepoTypeCode,
+		ExistingArtifacts: []string{"README.md"},
+		CollisionRisk:     "medium",
+		Recommendation:    "safe to apply", // struct field still populated
+		CodeSignals:       3,
+		DocSignals:        1,
+	}
+	r, w, _ := os.Pipe()
+	origStdout := os.Stdout
+	os.Stdout = w
+	printAssessment(ModeSync, "/tmp/repo", a)
+	w.Close()
+	os.Stdout = origStdout
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if strings.Contains(output, "recommendation:") {
+		t.Fatalf("output should NOT contain `recommendation:` line, got:\n%s", output)
+	}
+	for _, field := range []string{"repo-shape:", "signals:", "existing-artifacts:", "collision-risk:"} {
+		if !strings.Contains(output, field) {
+			t.Fatalf("output should still contain %q, got:\n%s", field, output)
+		}
+	}
+}
+
+// AT3: conflict description uses numbered steps + diff command, generalized across entrypoints.
+func TestSymlinkConflictStructure(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		repoRel string
+	}{
+		{"claude", "CLAUDE.md"},
+		{"cursor", "CURSOR.md"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			op := operation{kind: "symlink", path: "/tmp/repo/" + tc.repoRel, linkTo: "AGENTS.md"}
+			c := symlinkConflict(op, tc.repoRel)
+			desc := c.description
+
+			// Must have a ### heading for the affected file
+			expectedHeading := fmt.Sprintf("### `%s`", tc.repoRel)
+			if !strings.Contains(desc, expectedHeading) {
+				t.Fatalf("description should contain heading %q, got:\n%s", expectedHeading, desc)
+			}
+			// Must contain numbered steps 1., 2., 3.
+			for _, step := range []string{"1. ", "2. ", "3. "} {
+				if !strings.Contains(desc, step) {
+					t.Fatalf("description should contain step %q, got:\n%s", step, desc)
+				}
+			}
+			// Must contain the indented diff command with the specific entrypoint
+			expectedDiff := fmt.Sprintf("        diff %s AGENTS.md", tc.repoRel)
+			if !strings.Contains(desc, expectedDiff) {
+				t.Fatalf("description should contain %q, got:\n%s", expectedDiff, desc)
+			}
+		})
+	}
+}
+
+// AT4: .gitignore Adoption Items entry gets merge hint; non-merge-target does not.
+func TestRenderSyncReviewMergeHint(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:            "/tmp/repo/.gitignore",
+			recommendation:  "adopt",
+			reason:          "file differs from template baseline (no prior sync)",
+			existingLines:   20,
+			proposedLines:   10,
+			standingDrift:   true,
+			proposedContent: "node_modules/\n",
+		},
+		{
+			path:            "/tmp/repo/docs/ac-template.md",
+			recommendation:  "adopt",
+			reason:          "template changed since last sync",
+			contentChanged:  true,
+			proposedContent: "# AC Template\n",
+		},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	// .gitignore entry must have merge hint
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.HasPrefix(line, "- `.gitignore`") {
+			if !strings.Contains(line, "merge template patterns into your existing file") {
+				t.Fatalf(".gitignore adoption entry should have merge hint, got: %s", line)
+			}
+		}
+		if strings.HasPrefix(line, "- `docs/ac-template.md`") {
+			if strings.Contains(line, "merge template patterns") {
+				t.Fatalf("non-merge-target should NOT have merge hint, got: %s", line)
+			}
+		}
+	}
+}
+
+// AT5: conflict description contains the AGENTS.md intent note, generalized across entrypoints.
+func TestSymlinkConflictAgentsIntentNote(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		repoRel string
+	}{
+		{"claude", "CLAUDE.md"},
+		{"cursor", "CURSOR.md"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			op := operation{kind: "symlink", path: "/tmp/repo/" + tc.repoRel, linkTo: "AGENTS.md"}
+			c := symlinkConflict(op, tc.repoRel)
+			desc := c.description
+			if !strings.Contains(desc, "written to the repo root during this sync so you can diff against it") {
+				t.Fatalf("description should contain AGENTS.md intent note, got:\n%s", desc)
+			}
+			expectedParenthetical := fmt.Sprintf("`%s` is a symlink", tc.repoRel)
+			if !strings.Contains(desc, expectedParenthetical) {
+				t.Fatalf("description should contain parenthetical %q, got:\n%s", expectedParenthetical, desc)
+			}
+		})
+	}
+}
+
+// AT6: renderSyncReview output contains ## Next Steps before ## Status; content varies by scenario.
+func TestRenderSyncReviewNextSteps(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		scores     []collisionScore
+		conflicts  []conflict
+		wantPhrase string
+		dontWant   string
+	}{
+		{
+			name: "with-conflicts",
+			scores: []collisionScore{
+				{path: "/tmp/repo/file.md", recommendation: "adopt", reason: "x"},
+			},
+			conflicts: []conflict{
+				{kind: "symlink-vs-regular", path: "/tmp/repo/CLAUDE.md", description: "### `CLAUDE.md`\n\nsome\n"},
+			},
+			wantPhrase: "Resolve the conflicts above",
+			dontWant:   "No adoption work needed",
+		},
+		{
+			name: "adopt-only",
+			scores: []collisionScore{
+				{path: "/tmp/repo/file.md", recommendation: "adopt", reason: "x"},
+			},
+			conflicts:  nil,
+			wantPhrase: "Evaluation Methodology",
+			dontWant:   "Resolve the conflicts",
+		},
+		{
+			name: "keep-only",
+			scores: []collisionScore{
+				{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical"},
+			},
+			conflicts:  nil,
+			wantPhrase: "No adoption work needed",
+			dontWant:   "Resolve the conflicts",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := renderSyncReview("/tmp/repo", tc.scores, tc.conflicts, "", "")
+			// Must contain Next Steps section
+			if !strings.Contains(out, "## Next Steps") {
+				t.Fatalf("output must contain ## Next Steps section, got:\n%s", out)
+			}
+			// Next Steps must come before Status
+			nsIdx := strings.Index(out, "## Next Steps")
+			stIdx := strings.Index(out, "## Status")
+			if nsIdx < 0 || stIdx < 0 || nsIdx >= stIdx {
+				t.Fatalf("## Next Steps must come before ## Status")
+			}
+			if !strings.Contains(out, tc.wantPhrase) {
+				t.Fatalf("output should contain %q for scenario %q, got:\n%s", tc.wantPhrase, tc.name, out)
+			}
+			if strings.Contains(out, tc.dontWant) {
+				t.Fatalf("output should NOT contain %q for scenario %q, got:\n%s", tc.dontWant, tc.name, out)
+			}
+		})
+	}
+}
+
+// equalStringSlices reports whether a and b contain the same strings in the same order.
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

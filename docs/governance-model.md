@@ -144,8 +144,8 @@ If the existing `CLAUDE.md` content is already covered by `AGENTS.md`, deletion 
 
 Two distinct outputs report sync state to the operator:
 
-- **pre-sync assessment** — printed before writes. Shows repo shape, collision risk, and an initial recommendation based on the artifact scan. Useful for dry-runs and understanding what sync is about to write.
-- **final sync disposition** — printed after transforms when conflicts are detected. Prefixed with `disposition:` and reports the final state (e.g., `needs manual resolution — N conflict(s) detected`). The two are distinct labeled surfaces, not overriding versions of each other.
+- **pre-sync assessment** — printed before writes. Shows repo shape, signals, existing artifacts, and collision risk. Useful for dry-runs and understanding what sync is about to evaluate. As of AC46, this output does not include a `recommendation:` line — that field was derived from repo shape + collision risk (both still printed) and created perceived contradiction with the final disposition. The `Assessment.Recommendation` struct field remains for programmatic use but is no longer printed.
+- **final sync disposition** — printed after transforms when conflicts are detected. Prefixed with `disposition:` and reports the final state (e.g., `needs manual resolution — N conflict(s) detected`). When no conflicts are detected, the drift summary is the final recommendation and no `disposition:` line is emitted.
 
 The `## Conflicts` section in `governa-sync-review.md` is the durable operator-facing surface for these invariant violations. It renders before `## Recommendations` because conflicts must be resolved before the rest of the review is actionable.
 
@@ -257,7 +257,8 @@ Recommended outputs:
 - inferred repo shape: likely `CODE`, likely `DOC`, mixed, or unclear
 - existing artifact coverage: which expected files already exist
 - collision risk: low, medium, or high
-- adoption recommendation: safe to apply, review collisions first, or needs manual mapping first
+
+The `Assessment.Recommendation` struct field (`safe to apply`, `safe with proposals only`, `needs manual mapping first`) is still computed for programmatic callers, but it is no longer printed to the operator. Repo shape + collision risk convey the same signal, and the final `disposition:` line (printed only on conflicts) is the authoritative final recommendation.
 
 Recommended signals:
 

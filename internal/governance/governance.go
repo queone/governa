@@ -71,12 +71,25 @@ type Config struct {
 
 type Assessment struct {
 	RepoShape          string
+	ResolvedType       RepoType // type used to compute expected artifacts; resolved from RepoShape when caller passed ""
 	ExistingArtifacts  []string
 	CollisionRisk      string
 	Recommendation     string
 	CodeSignals        int
 	DocSignals         int
 	CollidingArtifacts []string
+}
+
+// deriveTypeFromShape maps RepoShape → RepoType. Returns "" when shape is
+// ambiguous (mixed/unclear/empty) so callers can prompt or default.
+func deriveTypeFromShape(shape string) RepoType {
+	switch shape {
+	case "likely CODE":
+		return RepoTypeCode
+	case "likely DOC":
+		return RepoTypeDoc
+	}
+	return ""
 }
 
 type EnhancementCandidate struct {
@@ -527,17 +540,15 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 
 	// Infer type from AssessTarget before prompting (flag > manifest > infer > prompt).
+	// AssessTarget now auto-resolves an empty type from RepoShape before computing
+	// expected artifacts, so the printed assessment is consistent whether cfg.Type
+	// came from a manifest (re-sync) or was inferred from disk signals (first sync).
 	assessment, err := AssessTarget(targetAbs, cfg.Type)
 	if err != nil {
 		return err
 	}
-	if cfg.Type == "" {
-		switch assessment.RepoShape {
-		case "likely CODE":
-			cfg.Type = RepoTypeCode
-		case "likely DOC":
-			cfg.Type = RepoTypeDoc
-		}
+	if cfg.Type == "" && assessment.ResolvedType != "" {
+		cfg.Type = assessment.ResolvedType
 	}
 
 	// Prompt for any still-missing parameters.
@@ -986,6 +997,7 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 	if len(files) == 0 {
 		return Assessment{
 			RepoShape:      "empty",
+			ResolvedType:   repoType, // no files to infer from; preserve caller input (possibly "")
 			CollisionRisk:  "low",
 			Recommendation: "safe to apply",
 		}, nil
@@ -1033,7 +1045,16 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 		repoShape = "mixed"
 	}
 
-	expected := expectedArtifactPaths(repoType)
+	// Resolve an empty caller-provided type from the detected shape so the
+	// expected-artifacts check uses the same repo type regardless of whether
+	// cfg.Type was pre-populated from a manifest. Without this, first-sync
+	// and re-sync on the same on-disk state produce different assessments.
+	resolvedType := repoType
+	if resolvedType == "" {
+		resolvedType = deriveTypeFromShape(repoShape)
+	}
+
+	expected := expectedArtifactPaths(resolvedType)
 	var existing []string
 	var collisions []string
 	for _, rel := range expected {
@@ -1065,6 +1086,7 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 
 	return Assessment{
 		RepoShape:          repoShape,
+		ResolvedType:       resolvedType,
 		ExistingArtifacts:  existing,
 		CollisionRisk:      collisionRisk,
 		Recommendation:     recommendation,
@@ -1357,13 +1379,28 @@ func symlinkConflict(op operation, repoRel string) conflict {
 	if linkTarget == "" {
 		linkTarget = "AGENTS.md"
 	}
+	// Description is a multi-line block starting with a `### <file>` heading.
+	// It is rendered as-is under the review doc's ## Conflicts section, not
+	// wrapped in a bullet. The entrypoint name (repoRel) and link target are
+	// parameterized so this structure applies to any blocked symlink-to-AGENTS
+	// entrypoint — CLAUDE.md is the current concrete instance; future
+	// agent-specific entrypoints inherit the same formatting.
+	var b strings.Builder
+	fmt.Fprintf(&b, "### `%s`\n\n", repoRel)
+	fmt.Fprintf(&b, "`%s` exists as a regular file. Governa is agent-agnostic: `%s` is the canonical governance contract, and agent-specific entrypoints (`CLAUDE.md` for Claude Code, others as they emerge) must be symlinks to it so all agents load the same rules.\n\n", repoRel, linkTarget)
+	fmt.Fprintln(&b, "**Resolution:**")
+	fmt.Fprintln(&b, "")
+	fmt.Fprintf(&b, "1. Diff the existing file against the newly written `%s`:\n\n", linkTarget)
+	fmt.Fprintf(&b, "        diff %s %s\n\n", repoRel, linkTarget)
+	fmt.Fprintf(&b, "2. Migrate any unique repo-specific rules from `%s` into `%s` using the governance section structure. If existing content is already covered by `%s`, skip this step.\n\n", repoRel, linkTarget, linkTarget)
+	fmt.Fprintf(&b, "3. Delete the existing `%s` and re-run `governa sync` to create the symlink.\n\n", repoRel)
+	fmt.Fprintf(&b, "Note: `%s` was written to the repo root during this sync so you can diff against it. This is intentional — the temporary inconsistency (`%s` claims `%s` is a symlink while it is not) resolves as soon as you complete the steps above.\n",
+		linkTarget, linkTarget, repoRel)
+
 	return conflict{
-		kind: "symlink-vs-regular",
-		path: op.path,
-		description: fmt.Sprintf(
-			"`%s` exists as a regular file. Governa is agent-agnostic: `%s` is the canonical governance contract, and agent-specific entrypoints (`CLAUDE.md` for Claude Code, others as they emerge) must be symlinks to it so all agents load the same rules. **Before removing the existing `%s`: (1) diff it against the newly written `%s`, (2) migrate any unique repo-specific rules into `%s` (use the governance section structure), (3) then delete the existing `%s` and re-run `governa sync` to create the symlink.** If the existing `%s` content is already covered by `%s`, deletion alone is safe.",
-			repoRel, linkTarget, repoRel, linkTarget, linkTarget, repoRel, repoRel, linkTarget,
-		),
+		kind:        "symlink-vs-regular",
+		path:        op.path,
+		description: b.String(),
 	}
 }
 
@@ -1466,7 +1503,10 @@ func printAssessment(mode Mode, target string, a Assessment) {
 	fmt.Printf("signals: code=%d doc=%d\n", a.CodeSignals, a.DocSignals)
 	fmt.Printf("existing-artifacts: %s\n", joinOrNone(a.ExistingArtifacts))
 	fmt.Printf("collision-risk: %s\n", a.CollisionRisk)
-	fmt.Printf("recommendation: %s\n", a.Recommendation)
+	// The `recommendation:` line was dropped in AC46. It was derived from
+	// repo-shape + collision-risk (both still printed) and created perceived
+	// contradiction with the final `disposition:` line when conflicts existed.
+	// The Assessment.Recommendation struct field stays for any programmatic use.
 	if len(a.CollidingArtifacts) > 0 {
 		fmt.Printf("collisions: %s\n", strings.Join(a.CollidingArtifacts, ", "))
 	}
@@ -2624,6 +2664,16 @@ var scaffoldFiles = map[string]bool{
 	"plan.md":   true,
 }
 
+// knownMergeTargets are files where the correct operator action is to union
+// template patterns into the existing file rather than replacing wholesale.
+// When such a file scores as `adopt`, the Adoption Items entry appends a
+// merge hint so the operator doesn't blindly copy the template version over
+// their own patterns. A real `merge` recommendation category is deferred to
+// a future IE; this hint is the minimal workable improvement.
+var knownMergeTargets = map[string]bool{
+	".gitignore": true,
+}
+
 // scaffoldMarkers are placeholder strings from template scaffold files.
 // If the proposed content contains any of these and the existing content
 // does not, the repo has replaced the scaffold with real content.
@@ -2860,9 +2910,11 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprintln(&b, "**These conflicts block sync from completing correctly. Resolve them before acting on the recommendations below.**")
 		fmt.Fprintln(&b, "")
 		for _, c := range conflicts {
-			fmt.Fprintf(&b, "- %s\n", c.description)
+			// Descriptions are multi-line blocks starting with a ### heading;
+			// render as-is so the heading and numbered steps land cleanly under
+			// ## Conflicts rather than being wrapped in a single bullet.
+			fmt.Fprintln(&b, c.description)
 		}
-		fmt.Fprintln(&b, "")
 	}
 
 	fmt.Fprintln(&b, "## Recommendations")
@@ -2910,6 +2962,11 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 			for _, note := range s.structuralNotes {
 				fmt.Fprintf(&b, " — %s: %s", note.section, note.observation)
 			}
+			// Merge hint for known merge-target files (e.g., .gitignore)
+			// where wholesale replacement would lose repo-specific patterns.
+			if knownMergeTargets[filepath.Base(rel)] {
+				fmt.Fprintf(&b, " — merge template patterns into your existing file (don't replace wholesale)")
+			}
 			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
 		}
 		fmt.Fprintln(&b, "")
@@ -2950,7 +3007,27 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprintln(&b, "")
 	}
 
-	fmt.Fprintf(&b, "\n## Status\n\n`PENDING`\n")
+	// Next Steps — closing action block. Content adapts to the sync outcome.
+	fmt.Fprintln(&b, "")
+	fmt.Fprintln(&b, "## Next Steps")
+	fmt.Fprintln(&b, "")
+	switch {
+	case len(conflicts) > 0:
+		fmt.Fprintln(&b, "1. Resolve the conflicts above (each entry under `## Conflicts` has numbered steps).")
+		fmt.Fprintln(&b, "2. Re-run `governa sync` to complete the sync. Adoption items below stay until conflicts are cleared.")
+	case adopts > 0:
+		fmt.Fprintln(&b, "1. Work through `## Adoption Items` following the Evaluation Methodology above.")
+		fmt.Fprintln(&b, "2. After adoption decisions are made, commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa-manifest`) to record the new baseline.")
+		fmt.Fprintln(&b, "3. The review artifact (`governa-sync-review.md`) and `.governa-proposed/` are working artifacts — not intended to be committed.")
+	default:
+		fmt.Fprintln(&b, "No adoption work needed.")
+		fmt.Fprintln(&b, "")
+		fmt.Fprintln(&b, "1. Commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa-manifest`) to record the new baseline.")
+		fmt.Fprintln(&b, "2. The review artifact (`governa-sync-review.md`) is not intended to be committed.")
+	}
+	fmt.Fprintln(&b, "")
+
+	fmt.Fprintf(&b, "## Status\n\n`PENDING`\n")
 	return b.String()
 }
 
