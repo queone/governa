@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -17,7 +18,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.26.0"
+const programVersion = "0.27.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -100,6 +101,11 @@ func main() {
 		}
 		tfs = templates.EmbeddedFS
 		if err := governance.RunWithFS(tfs, repoRoot, cfg); err != nil {
+			// Conflicts have already been printed to stderr by runSync;
+			// exit non-zero so scripted callers can detect them.
+			if errors.Is(err, governance.ErrConflictsPresent) {
+				os.Exit(1)
+			}
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

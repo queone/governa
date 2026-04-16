@@ -126,11 +126,28 @@ This convention should be documented and kept consistent across governa subcomma
 
 Governa is agent-agnostic. `AGENTS.md` is the canonical governance contract. Agent-specific entrypoints (`CLAUDE.md` for Claude Code, future names like `CURSOR.md` or `COPILOT.md` as they emerge) **must** be symlinks to `AGENTS.md` so every agent loads exactly the same rules. One contract, many agent-specific names pointing at it.
 
-This invariant is enforced during sync. When sync plans a `CLAUDE.md → AGENTS.md` symlink and finds an existing regular file at `CLAUDE.md`, it does not overwrite the file (preserving operator content) but records a conflict in the review doc and prints a post-transform `needs manual resolution` status line. The operator must back up or remove the existing `CLAUDE.md`, then re-run sync to create the symlink.
+This invariant is enforced during sync. When sync plans a `CLAUDE.md → AGENTS.md` symlink and finds an existing regular file at `CLAUDE.md`, it does not overwrite the file (preserving operator content) but records a conflict in the review doc and prints a final `disposition: needs manual resolution` line to stderr. Sync also returns a non-zero exit code so scripted callers can detect the unresolved state.
 
 The same rule applies to any planned symlink-to-AGENTS.md op that collides with a regular file, so future agent-specific entrypoints inherit the same protection without code changes.
 
-The `## Conflicts` section in `governa-sync-review.md` is the operator-facing surface for these invariant violations. It renders before `## Recommendations` because conflicts must be resolved before the rest of the review is actionable.
+### Safe migration sequence
+
+Removing the existing `CLAUDE.md` without inspection risks discarding the only copy of repo-specific governance. The operator-facing workflow is:
+
+1. diff the existing `CLAUDE.md` against the newly written `AGENTS.md`
+2. migrate any unique repo-specific rules into `AGENTS.md` (use the governance section structure)
+3. delete the existing `CLAUDE.md` and re-run `governa sync` to create the symlink
+
+If the existing `CLAUDE.md` content is already covered by `AGENTS.md`, deletion alone is safe.
+
+### Operator-facing surfaces
+
+Two distinct outputs report sync state to the operator:
+
+- **pre-sync assessment** — printed before writes. Shows repo shape, collision risk, and an initial recommendation based on the artifact scan. Useful for dry-runs and understanding what sync is about to write.
+- **final sync disposition** — printed after transforms when conflicts are detected. Prefixed with `disposition:` and reports the final state (e.g., `needs manual resolution — N conflict(s) detected`). The two are distinct labeled surfaces, not overriding versions of each other.
+
+The `## Conflicts` section in `governa-sync-review.md` is the durable operator-facing surface for these invariant violations. It renders before `## Recommendations` because conflicts must be resolved before the rest of the review is actionable.
 
 ## Ownership Model
 

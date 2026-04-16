@@ -34,6 +34,14 @@ const (
 	RepoTypeDoc  RepoType = "DOC"
 )
 
+// ErrConflictsPresent is returned by runSync when sync completes but one or
+// more conflicts (e.g., symlink-vs-regular-file collisions) were detected.
+// Conflicts have already been printed to stderr and recorded in the review
+// doc before this error is returned; the error exists purely so scripted
+// callers can distinguish "sync completed cleanly" (exit 0) from "sync
+// completed with manual-resolution blockers" (non-zero exit).
+var ErrConflictsPresent = errors.New("sync completed with conflicts requiring manual resolution")
+
 var governedSectionNames = []string{
 	"Purpose",
 	"Governed Sections",
@@ -565,11 +573,13 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 
 	var ops []operation
+	var syncConflicts []conflict
 	if adopt {
 		oldManifest, _, _ := readManifest(targetAbs)
 		oldEntryMap := manifestEntryMap(oldManifest)
 		newEntryMap := manifestEntryMap(manifest)
 		transformed, scores, conflicts := applyAdoptTransforms(canonical, oldEntryMap, newEntryMap, targetAbs)
+		syncConflicts = conflicts
 
 		// If any symlink ops were blocked by conflicts, rebuild the manifest
 		// without those entries. Other skip ops (overlay collisions) retain
@@ -627,7 +637,7 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		}
 		printAdoptDriftFromScores(collisions)
 		if len(conflicts) > 0 {
-			printConflictsSummary(conflicts)
+			printConflictsSummary(targetAbs, conflicts)
 		}
 	} else {
 		ops = compactOperations(canonical)
@@ -640,6 +650,9 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		if err := maybeInitGit(targetAbs, cfg.DryRun); err != nil {
 			return err
 		}
+	}
+	if len(syncConflicts) > 0 {
+		return ErrConflictsPresent
 	}
 	return nil
 }
@@ -1348,8 +1361,8 @@ func symlinkConflict(op operation, repoRel string) conflict {
 		kind: "symlink-vs-regular",
 		path: op.path,
 		description: fmt.Sprintf(
-			"`%s` exists as a regular file. Governa is agent-agnostic: `%s` is the canonical governance contract, and agent-specific entrypoints (`CLAUDE.md` for Claude Code, others as they emerge) must be symlinks to it so all agents load the same rules. Back up or remove the existing `%s`, then re-run sync to create the symlink.",
-			repoRel, linkTarget, repoRel,
+			"`%s` exists as a regular file. Governa is agent-agnostic: `%s` is the canonical governance contract, and agent-specific entrypoints (`CLAUDE.md` for Claude Code, others as they emerge) must be symlinks to it so all agents load the same rules. **Before removing the existing `%s`: (1) diff it against the newly written `%s`, (2) migrate any unique repo-specific rules into `%s` (use the governance section structure), (3) then delete the existing `%s` and re-run `governa sync` to create the symlink.** If the existing `%s` content is already covered by `%s`, deletion alone is safe.",
+			repoRel, linkTarget, repoRel, linkTarget, linkTarget, repoRel, repoRel, linkTarget,
 		),
 	}
 }
@@ -3283,19 +3296,28 @@ func writeSyncReview(targetDir string, scores []collisionScore, conflicts []conf
 	return os.WriteFile(reviewPath, []byte(content), 0o644)
 }
 
-// printConflictsSummary emits the post-transform status line when conflicts
-// are detected. This does not mutate the Assessment struct — it is a
-// separate, layered report that corrects the operator's final takeaway after
-// the pre-transform assessment has already been printed.
-func printConflictsSummary(conflicts []conflict) {
+// printConflictsSummary emits the final sync disposition line when conflicts
+// are detected. The pre-sync assessment is a separate, distinctly-labeled
+// operator surface (printed earlier) that describes what sync detected before
+// writing. The disposition is the final state after transforms and conflict
+// detection. Paths are rendered repo-relative to match the review doc.
+func printConflictsSummary(targetDir string, conflicts []conflict) {
 	plural := "conflict"
 	if len(conflicts) != 1 {
 		plural = "conflicts"
 	}
 	fmt.Fprintf(os.Stderr, "%s needs manual resolution — %d %s detected — see governa-sync-review.md\n",
-		color.Yel("assessment (post-transform):"), len(conflicts), plural)
+		color.Yel("disposition:"), len(conflicts), plural)
 	for _, c := range conflicts {
-		fmt.Fprintf(os.Stderr, "  %s %s\n", color.Yel("conflict:"), c.path)
+		rel := c.path
+		if targetDir != "" {
+			if r, err := filepath.Rel(targetDir, c.path); err == nil {
+				rel = r
+			} else {
+				rel = filepath.Base(c.path)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "  %s %s\n", color.Yel("conflict:"), rel)
 	}
 }
 
@@ -3340,7 +3362,7 @@ func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) 
 	// to avoid colliding with a proposed repo README.md).
 	aboutPath := filepath.Join(proposedDir, "ABOUT.md")
 	if !dryRun {
-		about := "# Proposed Template Files\n\nThese are the template versions of files that differ from your repo.\nUse them for direct comparison: `diff <your-file> .governa-proposed/<file>`.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
+		about := "# Proposed Template Files\n\nEach file here is the template version of a file flagged as `adopt` in `governa-sync-review.md`. Use them for direct comparison:\n\n    diff <your-file> .governa-proposed/<file>\n\nFiles flagged as `keep` are not materialized here — there is no adoption work expected for them. Advisory notes in the review doc may reference template sections that are missing from `keep` files; consult the template source in the governa repo if you want to see those.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
 		os.WriteFile(aboutPath, []byte(about), 0o644)
 	}
 	return nil

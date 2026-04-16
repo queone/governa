@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.27.0 | AC45: sync conflict follow-through — non-zero exit via `ErrConflictsPresent`, safe migration guidance in conflict description, truthful ABOUT.md, repo-relative stderr paths, `disposition:` label distinct from pre-sync assessment |
 | 0.26.0 | AC44: agent-agnostic invariant — symlink-vs-regular-file conflict detection, `## Conflicts` review doc section, post-transform status line, manifest filters blocked symlinks, adopt count in drift summary, first-sync wording |
 | 0.25.0 | AC43: scoring false positive fixes — `.governa-proposed/ABOUT.md` collision fix, scaffold file demotion, extracted-package demotion |
 | 0.24.1 | Remove stale `bootstrap` entry from `scriptOnlyCommands` in template and example |

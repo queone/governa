@@ -2,6 +2,8 @@ package governance
 
 import (
 	"bufio"
+	"errors"
+	"fmt"
 	"github.com/queone/governa/internal/templates"
 	"io"
 	"io/fs"
@@ -5871,8 +5873,8 @@ func TestApplyAdoptTransformsSymlinkConflict(t *testing.T) {
 	if !strings.Contains(conflicts[0].description, "`AGENTS.md` is the canonical governance contract") {
 		t.Fatalf("conflict description should mention agent-agnostic invariant, got: %s", conflicts[0].description)
 	}
-	if !strings.Contains(conflicts[0].description, "Back up or remove") {
-		t.Fatalf("conflict description should give operator action, got: %s", conflicts[0].description)
+	if !strings.Contains(conflicts[0].description, "diff") || !strings.Contains(conflicts[0].description, "then delete") {
+		t.Fatalf("conflict description should give safe migration action (diff, then delete), got: %s", conflicts[0].description)
 	}
 	if transformed[0].kind != "skip" {
 		t.Fatalf("transformed op kind = %q, want skip (do not overwrite user file)", transformed[0].kind)
@@ -5991,5 +5993,190 @@ func TestApplyAdoptTransformsFirstSyncWording(t *testing.T) {
 	}
 	if scores[0].standingDrift && !strings.Contains(scores[0].reason, "no prior sync") {
 		t.Fatalf("first-sync drift reason should say 'no prior sync', got: %s", scores[0].reason)
+	}
+}
+
+// --- AC45 tests ---
+
+// AT1: ErrConflictsPresent sentinel exists and errors.Is works.
+func TestErrConflictsPresentSentinel(t *testing.T) {
+	t.Parallel()
+	if ErrConflictsPresent == nil {
+		t.Fatal("ErrConflictsPresent should be a non-nil sentinel error")
+	}
+	if !strings.Contains(ErrConflictsPresent.Error(), "conflict") {
+		t.Fatalf("sentinel message should mention conflict, got: %s", ErrConflictsPresent.Error())
+	}
+	wrapped := fmt.Errorf("outer: %w", ErrConflictsPresent)
+	if !errors.Is(wrapped, ErrConflictsPresent) {
+		t.Fatal("errors.Is should detect wrapped ErrConflictsPresent")
+	}
+}
+
+// AT1 end-to-end: runSync returns ErrConflictsPresent when a regular-file
+// CLAUDE.md blocks the planned symlink. The review artifact must still be
+// produced so operators can resolve the conflict.
+func TestRunSyncReturnsErrConflictsPresentOnClaudeMdCollision(t *testing.T) {
+	t.Parallel()
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	// Pre-create a regular-file CLAUDE.md with unique content so sync must
+	// preserve it and cannot create the symlink.
+	claudePath := filepath.Join(targetDir, "CLAUDE.md")
+	mustWrite(t, claudePath, "# My Project\n\nRepo-specific governance rules that must not be lost.\n")
+
+	cfg := Config{
+		Mode:     ModeSync,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "conflict-repo",
+		Purpose:  "test conflict exit",
+		Stack:    "Go CLI",
+	}
+	err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg)
+	if err == nil {
+		t.Fatal("runSync should return an error when CLAUDE.md conflict exists")
+	}
+	if !errors.Is(err, ErrConflictsPresent) {
+		t.Fatalf("err should satisfy errors.Is(err, ErrConflictsPresent), got: %v", err)
+	}
+
+	// The conflict must not have destroyed the operator's file.
+	info, lerr := os.Lstat(claudePath)
+	if lerr != nil {
+		t.Fatalf("CLAUDE.md should still exist after blocked sync: %v", lerr)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("CLAUDE.md should remain a regular file, not a symlink (sync must not overwrite)")
+	}
+
+	// Review artifact must still be produced so the operator can resolve.
+	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewBytes, rerr := os.ReadFile(reviewPath)
+	if rerr != nil {
+		t.Fatalf("governa-sync-review.md should be produced even on conflict-only sync: %v", rerr)
+	}
+	review := string(reviewBytes)
+	if !strings.Contains(review, "## Conflicts") {
+		t.Fatal("review doc should contain ## Conflicts section")
+	}
+	if !strings.Contains(review, "CLAUDE.md") {
+		t.Fatal("review doc should name CLAUDE.md in the conflict entry")
+	}
+
+	// Manifest should not claim a symlink that never landed.
+	manifestBytes, merr := os.ReadFile(filepath.Join(targetDir, manifestFileName))
+	if merr != nil {
+		t.Fatalf("manifest should still be written: %v", merr)
+	}
+	if strings.Contains(string(manifestBytes), "CLAUDE.md symlink:") {
+		t.Fatal("manifest should not record a symlink that was blocked by conflict")
+	}
+}
+
+// AT2: conflict description includes diff/migrate/delete sequence.
+func TestSymlinkConflictMigrationSequence(t *testing.T) {
+	t.Parallel()
+	op := operation{kind: "symlink", path: "/tmp/repo/CLAUDE.md", linkTo: "AGENTS.md"}
+	c := symlinkConflict(op, "CLAUDE.md")
+	desc := c.description
+	for _, phrase := range []string{"diff", "migrate any unique repo-specific rules", "then delete"} {
+		if !strings.Contains(desc, phrase) {
+			t.Fatalf("conflict description should contain %q, got:\n%s", phrase, desc)
+		}
+	}
+	// Still mentions the agent-agnostic invariant
+	if !strings.Contains(desc, "`AGENTS.md` is the canonical governance contract") {
+		t.Fatal("conflict description should still mention the agent-agnostic invariant")
+	}
+}
+
+// AT3: ABOUT.md reflects actual directory contents (adopt items only).
+func TestAboutMdTruthfulWording(t *testing.T) {
+	t.Parallel()
+	targetDir := t.TempDir()
+	scores := []collisionScore{
+		{
+			path:            filepath.Join(targetDir, "some-file.md"),
+			recommendation:  "adopt",
+			proposedContent: "# template version\n",
+		},
+	}
+	if err := writeProposedFiles(targetDir, scores, false); err != nil {
+		t.Fatalf("writeProposedFiles error: %v", err)
+	}
+	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	if err != nil {
+		t.Fatalf("read ABOUT.md: %v", err)
+	}
+	s := string(aboutContent)
+	// Must NOT claim "files that differ from your repo"
+	if strings.Contains(s, "files that differ from your repo") {
+		t.Fatal("ABOUT.md should not claim to hold all files that differ — only adopt items are materialized")
+	}
+	// Must say files flagged as adopt are here
+	if !strings.Contains(s, "flagged as `adopt`") {
+		t.Fatalf("ABOUT.md should say files flagged as adopt, got:\n%s", s)
+	}
+	// Must clarify keep items are not here
+	if !strings.Contains(s, "`keep`") || !strings.Contains(s, "not materialized here") {
+		t.Fatalf("ABOUT.md should clarify keep items are not materialized, got:\n%s", s)
+	}
+}
+
+// AT4: printConflictsSummary uses repo-relative paths.
+func TestPrintConflictsSummaryRepoRelativePaths(t *testing.T) {
+	t.Parallel()
+	targetDir := "/tmp/repo"
+	conflicts := []conflict{
+		{kind: "symlink-vs-regular", path: "/tmp/repo/CLAUDE.md", description: "desc"},
+		{kind: "symlink-vs-regular", path: "/tmp/repo/docs/CLAUDE.md", description: "desc"},
+	}
+	r, w, _ := os.Pipe()
+	origStderr := os.Stderr
+	os.Stderr = w
+	printConflictsSummary(targetDir, conflicts)
+	w.Close()
+	os.Stderr = origStderr
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	// Should contain repo-relative paths
+	if !strings.Contains(output, "CLAUDE.md") {
+		t.Fatalf("output should list CLAUDE.md, got: %s", output)
+	}
+	if !strings.Contains(output, "docs/CLAUDE.md") {
+		t.Fatalf("output should list docs/CLAUDE.md, got: %s", output)
+	}
+	// Must NOT contain absolute paths
+	if strings.Contains(output, "/tmp/repo/CLAUDE.md") || strings.Contains(output, "/tmp/repo/docs/CLAUDE.md") {
+		t.Fatalf("output should NOT contain absolute paths, got: %s", output)
+	}
+}
+
+// AT5: printConflictsSummary uses 'disposition:' label, not 'assessment (post-transform):'.
+func TestPrintConflictsSummaryDispositionLabel(t *testing.T) {
+	t.Parallel()
+	conflicts := []conflict{{kind: "symlink-vs-regular", path: "/tmp/repo/CLAUDE.md", description: "desc"}}
+	r, w, _ := os.Pipe()
+	origStderr := os.Stderr
+	os.Stderr = w
+	printConflictsSummary("/tmp/repo", conflicts)
+	w.Close()
+	os.Stderr = origStderr
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "disposition:") {
+		t.Fatalf("output should use 'disposition:' label, got: %s", output)
+	}
+	if strings.Contains(output, "assessment (post-transform)") {
+		t.Fatalf("output should not use old 'assessment (post-transform)' label, got: %s", output)
+	}
+	if !strings.Contains(output, "needs manual resolution") {
+		t.Fatalf("output should still say 'needs manual resolution', got: %s", output)
 	}
 }
