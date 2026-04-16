@@ -1797,8 +1797,12 @@ func TestBootstrapAdoptWritesManifestWithCanonicalChecksums(t *testing.T) {
 	}
 
 	em := manifestEntryMap(m)
-	// Manifest should have AGENTS.md with canonical checksum (what template would produce),
-	// even though adopt mode proposed instead of overwriting the existing file.
+	// As of AC51 Fix 1, manifest sha256 reflects actual on-disk content
+	// (not the canonical template-rendered content). For adopt mode where
+	// sync did NOT overwrite the existing AGENTS.md, the on-disk file is
+	// still the pre-existing content — so the manifest must record THAT sha,
+	// not the template's. source-sha256 continues to reflect the template
+	// source baseline for future comparison.
 	agents, ok := em["AGENTS.md"]
 	if !ok {
 		t.Fatal("manifest missing AGENTS.md entry in adopt mode")
@@ -1810,10 +1814,17 @@ func TestBootstrapAdoptWritesManifestWithCanonicalChecksums(t *testing.T) {
 		t.Fatal("AGENTS.md manifest entry missing source info in adopt mode")
 	}
 
-	// Verify the checksum is of the canonical (template-rendered) content, not the existing file
+	// Verify the checksum is of the actual on-disk content (the existing
+	// AGENTS.md that sync preserved), matching AC51 Fix 1 behavior.
 	existingChecksum := computeChecksum("# Existing AGENTS.md\n")
-	if agents.Checksum == existingChecksum {
-		t.Fatal("manifest should record canonical template checksum, not the existing file's checksum")
+	if agents.Checksum != existingChecksum {
+		t.Fatalf("manifest sha256 should match actual on-disk content (AC51 Fix 1), got %q, want %q",
+			agents.Checksum, existingChecksum)
+	}
+	// source-sha256 must still reflect the template source — this is what
+	// powers future standing drift detection.
+	if agents.SourceChecksum == existingChecksum {
+		t.Fatal("source-sha256 should be template source sha, not on-disk sha")
 	}
 }
 
@@ -7242,6 +7253,246 @@ func TestRoleFilesIntroThreePartSplit(t *testing.T) {
 				t.Fatalf("%s: intro must point to the ## Counterparts section below", rel)
 			}
 		})
+	}
+}
+
+// --- AC51 tests ---
+
+// AT1 (AC51): manifest sha256 reflects actual on-disk content for adopt/keep items.
+// Not t.Parallel() — uses runSync which writes templates from disk.
+func TestManifestShaReflectsActualOnDisk(t *testing.T) {
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# existing AGENTS\n")
+	customGitignore := "# repo-specific\n*.customextension\n"
+	mustWrite(t, filepath.Join(targetDir, ".gitignore"), customGitignore)
+
+	cfg := Config{
+		Mode: ModeSync, Type: RepoTypeCode, Target: targetDir,
+		RepoName: "sha-test", Purpose: "test", Stack: "Go CLI",
+	}
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil && !errors.Is(err, ErrConflictsPresent) {
+		t.Fatalf("runSync: %v", err)
+	}
+	manifestContent, err := os.ReadFile(filepath.Join(targetDir, manifestFileName))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	actualContent, err := os.ReadFile(filepath.Join(targetDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	actualSha := computeChecksum(string(actualContent))
+	var gitignoreLine string
+	for line := range strings.SplitSeq(string(manifestContent), "\n") {
+		if strings.HasPrefix(line, ".gitignore ") {
+			gitignoreLine = line
+			break
+		}
+	}
+	if gitignoreLine == "" {
+		t.Fatalf("manifest has no .gitignore entry:\n%s", manifestContent)
+	}
+	if !strings.Contains(gitignoreLine, "sha256:"+actualSha) {
+		t.Fatalf("manifest sha256 must match actual on-disk sha (%s), got line: %s", actualSha, gitignoreLine)
+	}
+}
+
+// AT2 (AC51): stack-aware .gitignore appends Go block when stack is Go; omits it otherwise.
+// Not t.Parallel() — uses runSync.
+func TestGitignoreStackAwareGo(t *testing.T) {
+	templateRoot, _ := filepath.Abs("../..")
+
+	goDir := t.TempDir()
+	cfgGo := Config{Mode: ModeSync, Type: RepoTypeCode, Target: goDir, RepoName: "go-repo", Purpose: "test", Stack: "Go CLI"}
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfgGo); err != nil {
+		t.Fatalf("runSync go: %v", err)
+	}
+	goContent, err := os.ReadFile(filepath.Join(goDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read go .gitignore: %v", err)
+	}
+	for _, mustHave := range []string{"*.exe~", "*.dll", "go.work", "# ---- Go ----"} {
+		if !strings.Contains(string(goContent), mustHave) {
+			t.Fatalf("go .gitignore missing %q", mustHave)
+		}
+	}
+
+	otherDir := t.TempDir()
+	cfgOther := Config{Mode: ModeSync, Type: RepoTypeCode, Target: otherDir, RepoName: "other-repo", Purpose: "test", Stack: "Rust CLI"}
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfgOther); err != nil {
+		t.Fatalf("runSync other: %v", err)
+	}
+	otherContent, err := os.ReadFile(filepath.Join(otherDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read other .gitignore: %v", err)
+	}
+	if strings.Contains(string(otherContent), "# ---- Go ----") {
+		t.Fatal("non-Go stack .gitignore must NOT contain Go block")
+	}
+}
+
+// AT3 (AC51): build-release.md step 5 in all 3 copies contains code-block + prose.
+func TestBuildReleaseStep5CodeBlock(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"internal/templates/overlays/code/files/docs/build-release.md.tmpl",
+		"docs/build-release.md",
+		"examples/code/docs/build-release.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			for _, phrase := range []string{"≤ 500 characters", "unprefixed", "Canonical shape:"} {
+				if !strings.Contains(c, phrase) {
+					t.Fatalf("%s: missing %q", rel, phrase)
+				}
+			}
+			if !strings.Contains(c, "# Changelog") || !strings.Contains(c, "| Version | Summary |") {
+				t.Fatalf("%s: must contain fenced code-block example", rel)
+			}
+		})
+	}
+}
+
+// AT4 (AC51): Adoption Items emits both "adds sections:" and "changed:" when both apply.
+func TestAdoptionItemsEmitsAddsAndChanged(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:                   "/tmp/repo/docs/roles/dev.md",
+			recommendation:         "adopt",
+			reason:                 "template sections changed",
+			missingSections:        []string{"Counterparts"},
+			changedSections:        []string{"(preamble)"},
+			changedClassifications: map[string]string{"(preamble)": "cosmetic"},
+			contentChanged:         true,
+			proposedContent:        "# DEV\n",
+		},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	var itemLine string
+	for line := range strings.SplitSeq(output, "\n") {
+		if strings.Contains(line, "`docs/roles/dev.md`") && strings.HasPrefix(line, "- ") {
+			itemLine = line
+			break
+		}
+	}
+	if itemLine == "" {
+		t.Fatalf("Adoption Items entry missing from output:\n%s", output)
+	}
+	if !strings.Contains(itemLine, "adds sections: Counterparts") {
+		t.Fatalf("must use 'adds sections:' wording, got: %s", itemLine)
+	}
+	if !strings.Contains(itemLine, "changed: (preamble)") {
+		t.Fatalf("must also emit 'changed:', got: %s", itemLine)
+	}
+	if strings.Contains(itemLine, "missing sections:") {
+		t.Fatalf("old 'missing sections:' wording must be replaced, got: %s", itemLine)
+	}
+}
+
+// AT5 (AC51): Template Upgrade section codifies per-sync feedback artifact rule.
+func TestTemplateUpgradeFeedbackCodification(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"internal/templates/overlays/code/files/docs/build-release.md.tmpl",
+		"examples/code/docs/build-release.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "per-sync feedback artifact") {
+				t.Fatalf("%s: must contain feedback artifact rule", rel)
+			}
+			if !strings.Contains(c, "docs/ac<N>-<slug>-feedback.md") {
+				t.Fatalf("%s: must reference canonical path", rel)
+			}
+		})
+	}
+}
+
+// AT6 (AC51): renderTemplateChanges produces cross-version summary; empty for first/same.
+func TestRenderTemplateChangesAcrossVersions(t *testing.T) {
+	t.Parallel()
+	if got := renderTemplateChanges("", "0.30.0"); got != "" {
+		t.Fatalf("first-sync should produce empty, got:\n%s", got)
+	}
+	if got := renderTemplateChanges("0.30.0", "0.30.0"); got != "" {
+		t.Fatalf("same-version should produce empty, got:\n%s", got)
+	}
+	out := renderTemplateChanges("0.28.0", "0.30.0")
+	if !strings.Contains(out, "## Template Changes") {
+		t.Fatalf("must contain section header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "`0.28.0`") || !strings.Contains(out, "`0.30.0`") {
+		t.Fatalf("must cite version endpoints, got:\n%s", out)
+	}
+}
+
+// AT7 (AC51): writeProposedFiles cleans stale from prior runs; dry-run does not.
+func TestWriteProposedFilesCleansStale(t *testing.T) {
+	t.Parallel()
+	targetDir := t.TempDir()
+	proposedDir := filepath.Join(targetDir, ".governa-proposed")
+	mustWrite(t, filepath.Join(proposedDir, "stale.md"), "# stale\n")
+	mustWrite(t, filepath.Join(proposedDir, "docs", "stale-doc.md"), "# stale doc\n")
+
+	scores := []collisionScore{
+		{path: filepath.Join(targetDir, "current.md"), recommendation: "adopt", proposedContent: "# current\n"},
+	}
+	if err := writeProposedFiles(targetDir, scores, false); err != nil {
+		t.Fatalf("writeProposedFiles: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(proposedDir, "stale.md")); err == nil {
+		t.Fatal("stale.md should be cleaned")
+	}
+	if _, err := os.Stat(filepath.Join(proposedDir, "docs", "stale-doc.md")); err == nil {
+		t.Fatal("stale docs/stale-doc.md should be cleaned")
+	}
+	if _, err := os.Stat(filepath.Join(proposedDir, "current.md")); err != nil {
+		t.Fatalf("current.md should exist: %v", err)
+	}
+
+	// Dry-run: do NOT modify
+	dryDir := t.TempDir()
+	dryProposed := filepath.Join(dryDir, ".governa-proposed")
+	mustWrite(t, filepath.Join(dryProposed, "preserve.md"), "# preserve\n")
+	dryScores := []collisionScore{
+		{path: filepath.Join(dryDir, "x.md"), recommendation: "adopt", proposedContent: "# x\n"},
+	}
+	if err := writeProposedFiles(dryDir, dryScores, true); err != nil {
+		t.Fatalf("writeProposedFiles dry-run: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dryProposed, "preserve.md")); err != nil {
+		t.Fatal("dry-run must not modify .governa-proposed/")
+	}
+}
+
+// AT8 (AC51): self-hosted build-release carries consumer-credit convention;
+// template/example do not.
+func TestSelfHostedConsumerCreditConvention(t *testing.T) {
+	t.Parallel()
+	selfHosted := readRepoFile(t, "docs/build-release.md")
+	if !strings.Contains(selfHosted, "consumer sync feedback") {
+		t.Fatal("self-hosted must contain consumer-feedback credit convention")
+	}
+	template := readRepoFile(t, "internal/templates/overlays/code/files/docs/build-release.md.tmpl")
+	example := readRepoFile(t, "examples/code/docs/build-release.md")
+	for _, c := range []string{template, example} {
+		if strings.Contains(c, "consumer sync feedback") {
+			t.Fatal("consumer-facing template/example must NOT contain self-hosted convention")
+		}
+	}
+}
+
+// Supplemental (AC51): embedded CHANGELOG stays in sync with repo-root.
+func TestEmbeddedChangelogInSyncWithRoot(t *testing.T) {
+	t.Parallel()
+	embedded := templates.Changelog()
+	root := readRepoFile(t, "CHANGELOG.md")
+	if embedded != root {
+		t.Fatal("internal/templates/CHANGELOG.md must match repo-root CHANGELOG.md (sync during release prep)")
 	}
 }
 

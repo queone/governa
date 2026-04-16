@@ -1,26 +1,3 @@
-# Build artifacts
-*.out
-*.test
-*.exe
-
-# Coverage
-build-cover-*.out
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Governa working artifacts
-governa-sync-review.md
-.governa-proposed/
-
-# Editor files
-*.swp
-*.swo
-*~
-.idea/
-.vscode/
-
 # ---- Go ----
 # Go-specific additions appended by governa sync when stack:Go is detected.
 # Based on the standard Go .gitignore; overlaps with the base are omitted.

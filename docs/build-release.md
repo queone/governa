@@ -88,7 +88,18 @@ Before offering a release commit or release command:
 2. run the canonical build and validation flow and fix failures until clean
 3. ask the user whether any required manual or live acceptance checks were run
 4. audit `arch.md` and any affected reference docs against the actual behavior
-5. update `CHANGELOG.md`: the file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
+5. update `CHANGELOG.md`: the file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.). When a release is motivated by consumer sync feedback (e.g., utils DEV surfaced a template default that didn't fit), credit the consumer in the summary with `(addresses <consumer> feedback from vX.Y.Z sync)` or similar. Stays within the ≤ 500 character cap. This closes the round-trip loop so consumers can tell whether their feedback was actioned without waiting for their next sync.
+
+    Canonical shape:
+
+    ```
+    # Changelog
+
+    | Version | Summary |
+    |---------|---------|
+    | Unreleased | |
+    | 0.29.0 | AC47: <one-line summary> |
+    ```
 6. confirm `TEMPLATE_VERSION` matches the intended template release version
 7. remove or reprioritize completed roadmap items in `plan.md`
 8. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)
