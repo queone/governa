@@ -37,7 +37,7 @@ Do not begin this checklist until the user explicitly asks to prep for release o
 2. **Run `./build.sh`.** Fix all failures until the build is clean.
 3. **Ask the user whether the live ATs were run.** Manual ATs cannot be verified from CLI output and require explicit confirmation.
 4. **Audit `arch.md` against the code.** Verify affected reference docs are current.
-5. **Update `CHANGELOG.md`.** Add the new version row using the existing format.
+5. **Update `CHANGELOG.md`.** The file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
 6. **Bump version constants.** Use the tag from step 1 as the baseline.
 7. **Remove completed features from `plan.md`.**
 8. **Consolidate finished AC decisions into durable docs, then delete the AC file.** Do not delete AC files that are PENDING, IN PROGRESS, or DEFERRED — they are still active contracts. Only completed (released) ACs are deleted.

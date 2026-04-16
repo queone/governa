@@ -88,7 +88,7 @@ Before offering a release commit or release command:
 2. run the canonical build and validation flow and fix failures until clean
 3. ask the user whether any required manual or live acceptance checks were run
 4. audit `arch.md` and any affected reference docs against the actual behavior
-5. move the current `Unreleased` changelog summary into the release entry and leave a fresh `Unreleased` row
+5. update `CHANGELOG.md`: the file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
 6. confirm `TEMPLATE_VERSION` matches the intended template release version
 7. remove or reprioritize completed roadmap items in `plan.md`
 8. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)

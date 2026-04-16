@@ -63,7 +63,7 @@ List the docs that must be updated as part of this AC. If a change touches code 
 
 - `arch.md` — what section
 - `README.md` — what section
-- `CHANGELOG.md` — added at release prep time, not during implementation
+- `CHANGELOG.md` — the release row is added at release prep time, not during implementation (the file itself is created by `governa sync` as a stub)
 
 ## Status
 

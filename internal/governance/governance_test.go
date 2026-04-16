@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -6745,6 +6746,546 @@ func TestAgentsMdPurposeRewording(t *testing.T) {
 			}
 			if !strings.Contains(c, "Keep content here focused on cross-repo governance") {
 				t.Fatalf("%s should contain new focused wording", rel)
+			}
+		})
+	}
+}
+
+// --- AC48 tests ---
+
+// AT1: AssessTarget skips .governa-proposed/ during walk; its markdown
+// files do not inflate docSignals.
+func TestAssessTargetSkipsGovernaProposedDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Seed CODE signals
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n")
+	// Seed .governa-proposed/ with doc files that WOULD inflate docSignals
+	// if the walk didn't skip them.
+	mustWrite(t, filepath.Join(dir, ".governa-proposed", "README.md"), "# proposed\n")
+	mustWrite(t, filepath.Join(dir, ".governa-proposed", "plan.md"), "# proposed plan\n")
+
+	withProposed, err := AssessTarget(dir, "")
+	if err != nil {
+		t.Fatalf("AssessTarget(with proposed): %v", err)
+	}
+	// Remove .governa-proposed and re-assess
+	if err := os.RemoveAll(filepath.Join(dir, ".governa-proposed")); err != nil {
+		t.Fatalf("remove proposed: %v", err)
+	}
+	withoutProposed, err := AssessTarget(dir, "")
+	if err != nil {
+		t.Fatalf("AssessTarget(without proposed): %v", err)
+	}
+	if withProposed.DocSignals != withoutProposed.DocSignals {
+		t.Fatalf("docSignals should be identical with/without .governa-proposed/; got with=%d without=%d",
+			withProposed.DocSignals, withoutProposed.DocSignals)
+	}
+	if withProposed.CodeSignals != withoutProposed.CodeSignals {
+		t.Fatalf("codeSignals should be identical; got with=%d without=%d",
+			withProposed.CodeSignals, withoutProposed.CodeSignals)
+	}
+}
+
+// AT2: Governa-owned files are excluded from signal counting but still
+// appear in ExistingArtifacts and the walked files for other purposes.
+func TestAssessTargetExcludesGovernaOwnedFromSignals(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Seed the governa-owned set + one user-authored .go file
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	if err := os.Symlink("AGENTS.md", filepath.Join(dir, "CLAUDE.md")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	mustWrite(t, filepath.Join(dir, "arch.md"), "# arch\n")
+	mustWrite(t, filepath.Join(dir, "plan.md"), "# plan\n")
+	mustWrite(t, filepath.Join(dir, "docs", "README.md"), "# docs\n")
+	mustWrite(t, filepath.Join(dir, "docs", "roles", "dev.md"), "# dev\n")
+	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.29.0\n")
+	mustWrite(t, filepath.Join(dir, ".governa-manifest"), "governa-manifest-v1\n")
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n") // user-authored
+
+	a, err := AssessTarget(dir, "")
+	if err != nil {
+		t.Fatalf("AssessTarget: %v", err)
+	}
+	if a.DocSignals != 0 {
+		t.Fatalf("docSignals = %d, want 0 (all .md files are governa-owned)", a.DocSignals)
+	}
+	if a.CodeSignals == 0 {
+		t.Fatalf("codeSignals = 0, want > 0 from user-authored main.go")
+	}
+	// ExistingArtifacts must still list the governa-owned paths that
+	// expectedArtifactPaths covers — the exclusion is signal-count only.
+	foundAgents := slices.Contains(a.ExistingArtifacts, "AGENTS.md")
+	if !foundAgents {
+		t.Fatalf("ExistingArtifacts should still include AGENTS.md (exclusion is signal-count only), got: %v", a.ExistingArtifacts)
+	}
+}
+
+// AT2 supplement: direct unit test of isGovernaOwnedPath.
+func TestIsGovernaOwnedPath(t *testing.T) {
+	t.Parallel()
+	trueCases := []string{
+		".governa-manifest",
+		".repokit-manifest",
+		"TEMPLATE_VERSION",
+		"governa-sync-review.md",
+		"AGENTS.md",
+		"CLAUDE.md",
+		"arch.md",
+		"plan.md",
+		"docs/README.md",
+		"docs/development-cycle.md",
+		"docs/development-guidelines.md",
+		"docs/build-release.md",
+		"docs/ac-template.md",
+		"docs/roles/dev.md",
+		"docs/roles/qa.md",
+		"docs/roles/maintainer.md",
+		"docs/roles/director.md",
+		"docs/roles/README.md",
+	}
+	for _, p := range trueCases {
+		if !isGovernaOwnedPath(p) {
+			t.Errorf("isGovernaOwnedPath(%q) = false, want true", p)
+		}
+	}
+	falseCases := []string{
+		"main.go",
+		"cmd/build/main.go",
+		"internal/color/color.go",
+		"docs/my-notes.md",    // user-owned docs/ file
+		"docs/other/thing.md", // not in docs/roles/
+		"README.md",           // overlay file but governa-owned in its role; user may still have content here
+	}
+	// README.md is a special case — it's in the overlay set but operators
+	// own its content. We exclude it from governa-owned signals because
+	// excluding it would under-count real repo doc signals. Confirm current
+	// behavior: README.md is NOT in governaOwnedPaths.
+	// (AT2 already covers the collective behavior; this just asserts the
+	// precise predicate contract on the specific paths.)
+	for _, p := range falseCases {
+		if isGovernaOwnedPath(p) {
+			t.Errorf("isGovernaOwnedPath(%q) = true, want false", p)
+		}
+	}
+}
+
+// AT3: renderSyncReview Status line is context-aware.
+func TestRenderSyncReviewStatusContextAware(t *testing.T) {
+	t.Parallel()
+
+	// Case: adopt items → PENDING
+	adoptScores := []collisionScore{
+		{path: "/tmp/repo/x.md", recommendation: "adopt", reason: "x"},
+	}
+	outAdopt := renderSyncReview("/tmp/repo", adoptScores, nil, "", "")
+	if !strings.Contains(outAdopt, "## Status") ||
+		!strings.Contains(outAdopt, "PENDING") ||
+		!strings.Contains(outAdopt, "operator review required") {
+		t.Fatalf("adopt case should render PENDING with review-required wording, got:\n%s", outAdopt)
+	}
+
+	// Case: conflicts only → PENDING
+	conflicts := []conflict{
+		{kind: "symlink-vs-regular", path: "/tmp/repo/CLAUDE.md", description: "### `CLAUDE.md`\n"},
+	}
+	outConflict := renderSyncReview("/tmp/repo", nil, conflicts, "", "")
+	if !strings.Contains(outConflict, "PENDING") {
+		t.Fatalf("conflict case should render PENDING, got:\n%s", outConflict)
+	}
+
+	// Case: only keep items (no advisory) → CLEAN
+	pureKeep := []collisionScore{
+		{path: "/tmp/repo/x.md", recommendation: "keep", reason: "identical"},
+	}
+	outClean := renderSyncReview("/tmp/repo", pureKeep, nil, "", "")
+	if !strings.Contains(outClean, "CLEAN") ||
+		!strings.Contains(outClean, "no required adoption/conflict action") {
+		t.Fatalf("pure-keep case should render CLEAN with narrow wording, got:\n%s", outClean)
+	}
+	if strings.Contains(outClean, "no operator action required") {
+		t.Fatalf("CLEAN wording should NOT overstate as 'no operator action required' — advisory cases are reviewable, got:\n%s", outClean)
+	}
+
+	// Case: keep with advisory notes → still CLEAN (advisory doesn't block)
+	keepWithAdvisory := []collisionScore{
+		{
+			path:            "/tmp/repo/x.md",
+			recommendation:  "keep",
+			missingSections: []string{"Foo"},
+			proposedContent: "# proposed\n",
+		},
+	}
+	outAdvisory := renderSyncReview("/tmp/repo", keepWithAdvisory, nil, "", "")
+	if !strings.Contains(outAdvisory, "CLEAN") {
+		t.Fatalf("keep-with-advisory should still render CLEAN (advisory doesn't block), got:\n%s", outAdvisory)
+	}
+	if !strings.Contains(outAdvisory, "no required adoption/conflict action") {
+		t.Fatalf("keep-with-advisory CLEAN wording must use narrow 'no required adoption/conflict action', got:\n%s", outAdvisory)
+	}
+}
+
+// --- AC49 tests ---
+
+// AT1: build-release.md step 5 contains the canonical format spec in all 3 copies.
+func TestBuildReleaseChangelogFormatSpec(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"internal/templates/overlays/code/files/docs/build-release.md.tmpl",
+		"docs/build-release.md",
+		"examples/code/docs/build-release.md",
+	}
+	// Step 5 describes the workflow, format shape, and constraints in prose;
+	// a full table example is not needed — the stub CHANGELOG.md.tmpl
+	// demonstrates it (asserted separately by TestChangelogStubTemplate).
+	requiredPhrases := []string{
+		"# Changelog",           // heading-level format mention
+		"| Version | Summary |", // 2-column table shape mention
+		"Unreleased",
+		"≤ 500 characters", // max summary length
+		"unprefixed",       // unprefixed versions convention
+		"invent alternative shapes",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			for _, p := range requiredPhrases {
+				if !strings.Contains(c, p) {
+					t.Fatalf("%s: missing required phrase %q", rel, p)
+				}
+			}
+		})
+	}
+}
+
+// AT2: AGENTS.md Release Or Publish Triggers contains the canonical-table pointer in all 4 copies.
+func TestAgentsMdChangelogPointer(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"internal/templates/base/AGENTS.md",
+		"AGENTS.md",
+		"examples/code/AGENTS.md",
+		"examples/doc/AGENTS.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "canonical table specified in `docs/build-release.md` Pre-Release Checklist step 5") {
+				t.Fatalf("%s: must contain the canonical-table pointer", rel)
+			}
+			if !strings.Contains(c, "Do not invent alternative shapes") {
+				t.Fatalf("%s: must carry the 'do not invent' guidance", rel)
+			}
+			// The "for release-bearing repos" scoping must be preserved
+			if !strings.Contains(c, "for release-bearing repos") {
+				t.Fatalf("%s: must preserve 'for release-bearing repos' scoping", rel)
+			}
+		})
+	}
+}
+
+// AT3: CHANGELOG.md.tmpl exists with the stub format.
+func TestChangelogStubTemplate(t *testing.T) {
+	t.Parallel()
+	tmpl := readRepoFile(t, "internal/templates/overlays/code/files/CHANGELOG.md.tmpl")
+	if !strings.HasPrefix(tmpl, "# Changelog") {
+		t.Fatal("CHANGELOG.md.tmpl must start with '# Changelog'")
+	}
+	if !strings.Contains(tmpl, "| Version | Summary |") {
+		t.Fatal("CHANGELOG.md.tmpl must contain the canonical table header")
+	}
+	if !strings.Contains(tmpl, "| Unreleased |") {
+		t.Fatal("CHANGELOG.md.tmpl must contain the Unreleased row")
+	}
+	// Bootstrap state: NO release rows — only header + Unreleased
+	for line := range strings.SplitSeq(tmpl, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "| 0.") || strings.HasPrefix(trimmed, "| 1.") {
+			t.Fatalf("CHANGELOG.md.tmpl must NOT contain release rows at bootstrap (only header + Unreleased); found: %s", line)
+		}
+	}
+
+	// Rendered example matches the stub format
+	example := readRepoFile(t, "examples/code/CHANGELOG.md")
+	if example != tmpl {
+		t.Fatalf("examples/code/CHANGELOG.md should match the stub template exactly.\ntemplate:\n%s\nexample:\n%s", tmpl, example)
+	}
+}
+
+// AT4: expectedArtifactPaths(RepoTypeCode) includes CHANGELOG.md.
+func TestExpectedArtifactPathsIncludesChangelogForCode(t *testing.T) {
+	t.Parallel()
+	codePaths := expectedArtifactPaths(RepoTypeCode)
+	if !slices.Contains(codePaths, "CHANGELOG.md") {
+		t.Fatalf("expectedArtifactPaths(CODE) must include CHANGELOG.md, got: %v", codePaths)
+	}
+	// DOC repos intentionally do not include CHANGELOG.md
+	docPaths := expectedArtifactPaths(RepoTypeDoc)
+	if slices.Contains(docPaths, "CHANGELOG.md") {
+		t.Fatalf("expectedArtifactPaths(DOC) should NOT include CHANGELOG.md (out of scope), got: %v", docPaths)
+	}
+}
+
+// AT5: sync into a fresh empty directory with CODE type writes CHANGELOG.md as the stub.
+func TestSyncFreshRepoWritesChangelogStub(t *testing.T) {
+	// Not t.Parallel() — uses the template filesystem
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	cfg := Config{
+		Mode:     ModeSync,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "changelog-fresh",
+		Purpose:  "test",
+		Stack:    "Go CLI",
+	}
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("runSync: %v", err)
+	}
+
+	changelogPath := filepath.Join(targetDir, "CHANGELOG.md")
+	content, err := os.ReadFile(changelogPath)
+	if err != nil {
+		t.Fatalf("CHANGELOG.md should exist after sync: %v", err)
+	}
+	s := string(content)
+	if !strings.HasPrefix(s, "# Changelog") {
+		t.Fatalf("CHANGELOG.md must be the stub format, got:\n%s", s)
+	}
+	if !strings.Contains(s, "| Unreleased |") {
+		t.Fatalf("CHANGELOG.md must contain Unreleased row, got:\n%s", s)
+	}
+	// Bootstrap = header + Unreleased only, no release rows
+	for line := range strings.SplitSeq(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "| 0.") || strings.HasPrefix(trimmed, "| 1.") {
+			t.Fatalf("fresh-sync CHANGELOG.md must not contain release rows; got: %s", line)
+		}
+	}
+}
+
+// AT6: sync into a repo with a developed CHANGELOG.md scores it as keep, not adopt.
+func TestSyncKeepsDevelopedChangelog(t *testing.T) {
+	// Not t.Parallel() — uses the template filesystem
+	templateRoot, _ := filepath.Abs("../..")
+	targetDir := t.TempDir()
+
+	// Seed a developed CHANGELOG with multiple release rows
+	developed := "# Changelog\n\n| Version | Summary |\n|---------|---------|\n| Unreleased | |\n" +
+		"| 1.2.3 | Thing |\n| 1.2.2 | Another thing |\n| 1.2.1 | Prior |\n| 1.2.0 | Earlier |\n" +
+		"| 1.1.0 | Old |\n| 1.0.0 | Original |\n"
+	mustWrite(t, filepath.Join(targetDir, "CHANGELOG.md"), developed)
+	// Seed a governance artifact so detectSyncMode returns "adopt" (not "new"),
+	// which triggers collision scoring rather than unconditional write.
+	mustWrite(t, filepath.Join(targetDir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nseed\n")
+
+	cfg := Config{
+		Mode:     ModeSync,
+		Type:     RepoTypeCode,
+		Target:   targetDir,
+		RepoName: "changelog-developed",
+		Purpose:  "test",
+		Stack:    "Go CLI",
+	}
+	if err := runSync(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil && !errors.Is(err, ErrConflictsPresent) {
+		t.Fatalf("runSync: %v", err)
+	}
+
+	// Developed CHANGELOG (10+ lines) vs stub (5 lines) — should score as keep
+	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewContent, err := os.ReadFile(reviewPath)
+	if err != nil {
+		// If there's no review doc (no collisions), developed CHANGELOG matched stub exactly — unlikely given developed has 6 release rows
+		t.Fatalf("expected governa-sync-review.md after sync against developed CHANGELOG: %v", err)
+	}
+	review := string(reviewContent)
+	// The CHANGELOG.md row should have `keep` recommendation, not `adopt`
+	for line := range strings.SplitSeq(review, "\n") {
+		if strings.Contains(line, "`CHANGELOG.md`") && strings.HasPrefix(line, "| ") {
+			if !strings.Contains(line, "| keep |") {
+				t.Fatalf("developed CHANGELOG.md should score as keep, got row: %s", line)
+			}
+		}
+	}
+}
+
+// --- AC50 tests ---
+
+// AT1: dev.md Counterparts section present in all 5 locations, names QA + Director,
+// includes the "adversarial check" framing.
+func TestDevRoleCounterparts(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"docs/roles/dev.md",
+		"internal/templates/overlays/code/files/docs/roles/dev.md.tmpl",
+		"examples/code/docs/roles/dev.md",
+		"internal/templates/overlays/doc/files/docs/roles/dev.md.tmpl",
+		"examples/doc/docs/roles/dev.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "## Counterparts") {
+				t.Fatalf("%s: missing ## Counterparts section", rel)
+			}
+			if !strings.Contains(c, "**QA** (agent)") {
+				t.Fatalf("%s: Counterparts must name QA as counterpart", rel)
+			}
+			if !strings.Contains(c, "**Director** (human)") {
+				t.Fatalf("%s: Counterparts must name Director as counterpart", rel)
+			}
+			if !strings.Contains(c, "adversarial check") {
+				t.Fatalf("%s: Counterparts must include 'adversarial check' framing", rel)
+			}
+		})
+	}
+}
+
+// AT2: qa.md Counterparts section present in all 5 locations, names DEV + Director,
+// includes the "adversarial check" framing.
+func TestQaRoleCounterparts(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"docs/roles/qa.md",
+		"internal/templates/overlays/code/files/docs/roles/qa.md.tmpl",
+		"examples/code/docs/roles/qa.md",
+		"internal/templates/overlays/doc/files/docs/roles/qa.md.tmpl",
+		"examples/doc/docs/roles/qa.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "## Counterparts") {
+				t.Fatalf("%s: missing ## Counterparts section", rel)
+			}
+			if !strings.Contains(c, "**DEV** (agent)") {
+				t.Fatalf("%s: Counterparts must name DEV as counterpart", rel)
+			}
+			if !strings.Contains(c, "**Director** (human)") {
+				t.Fatalf("%s: Counterparts must name Director as counterpart", rel)
+			}
+			if !strings.Contains(c, "adversarial check") {
+				t.Fatalf("%s: Counterparts must include 'adversarial check' framing", rel)
+			}
+		})
+	}
+}
+
+// AT3: maintainer.md Counterparts section present in all 5 locations, names Director,
+// mentions conflict of interest + self-review.
+func TestMaintainerRoleCounterparts(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"docs/roles/maintainer.md",
+		"internal/templates/overlays/code/files/docs/roles/maintainer.md.tmpl",
+		"examples/code/docs/roles/maintainer.md",
+		"internal/templates/overlays/doc/files/docs/roles/maintainer.md.tmpl",
+		"examples/doc/docs/roles/maintainer.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "## Counterparts") {
+				t.Fatalf("%s: missing ## Counterparts section", rel)
+			}
+			if !strings.Contains(c, "**Director** (human)") {
+				t.Fatalf("%s: Counterparts must name Director as counterpart", rel)
+			}
+			if !strings.Contains(c, "conflict of interest") {
+				t.Fatalf("%s: must mention conflict of interest", rel)
+			}
+			if !strings.Contains(c, "self-review") {
+				t.Fatalf("%s: must reference self-review as mitigation", rel)
+			}
+		})
+	}
+}
+
+// AT4: intro paragraphs in all 15 role file locations contain the three-part split
+// + inline counterpart mention + pointer to ## Counterparts.
+func TestRoleFilesIntroThreePartSplit(t *testing.T) {
+	t.Parallel()
+	paths := map[string]string{
+		"docs/roles/dev.md": "You work alongside QA (agent) and Director (human)",
+		"internal/templates/overlays/code/files/docs/roles/dev.md.tmpl":        "You work alongside QA (agent) and Director (human)",
+		"examples/code/docs/roles/dev.md":                                      "You work alongside QA (agent) and Director (human)",
+		"internal/templates/overlays/doc/files/docs/roles/dev.md.tmpl":         "You work alongside QA (agent) and Director (human)",
+		"examples/doc/docs/roles/dev.md":                                       "You work alongside QA (agent) and Director (human)",
+		"docs/roles/qa.md":                                                     "You work alongside DEV (agent) and Director (human)",
+		"internal/templates/overlays/code/files/docs/roles/qa.md.tmpl":         "You work alongside DEV (agent) and Director (human)",
+		"examples/code/docs/roles/qa.md":                                       "You work alongside DEV (agent) and Director (human)",
+		"internal/templates/overlays/doc/files/docs/roles/qa.md.tmpl":          "You work alongside DEV (agent) and Director (human)",
+		"examples/doc/docs/roles/qa.md":                                        "You work alongside DEV (agent) and Director (human)",
+		"docs/roles/maintainer.md":                                             "you work alongside Director (human)",
+		"internal/templates/overlays/code/files/docs/roles/maintainer.md.tmpl": "you work alongside Director (human)",
+		"examples/code/docs/roles/maintainer.md":                               "you work alongside Director (human)",
+		"internal/templates/overlays/doc/files/docs/roles/maintainer.md.tmpl":  "you work alongside Director (human)",
+		"examples/doc/docs/roles/maintainer.md":                                "you work alongside Director (human)",
+	}
+	for rel, inlineMention := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "enforceable shared contract") {
+				t.Fatalf("%s: intro must describe AGENTS.md as the enforceable shared contract", rel)
+			}
+			if !strings.Contains(c, "`docs/roles/README.md` is the multi-role delivery-model overview") {
+				t.Fatalf("%s: intro must point to docs/roles/README.md as the delivery-model overview", rel)
+			}
+			if !strings.Contains(c, inlineMention) {
+				t.Fatalf("%s: intro must contain inline counterpart mention %q", rel, inlineMention)
+			}
+			if !strings.Contains(c, "see `## Counterparts` below") {
+				t.Fatalf("%s: intro must point to the ## Counterparts section below", rel)
+			}
+		})
+	}
+}
+
+// AT5: director.md invariant — no ## Counterparts section added; remains a reference doc.
+func TestDirectorMdNoCounterparts(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"docs/roles/director.md",
+		"internal/templates/overlays/code/files/docs/roles/director.md.tmpl",
+		"examples/code/docs/roles/director.md",
+		"internal/templates/overlays/doc/files/docs/roles/director.md.tmpl",
+		"examples/doc/docs/roles/director.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if strings.Contains(c, "## Counterparts") {
+				t.Fatalf("%s: director.md must NOT have a ## Counterparts section (reference doc, not an agent role)", rel)
+			}
+		})
+	}
+}
+
+// AT7 (AC49 test below; kept here for sequence): all three ac-template copies have the tightened CHANGELOG guidance.
+func TestAcTemplateChangelogGuidance(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"docs/ac-template.md",
+		"internal/templates/overlays/code/files/docs/ac-template.md.tmpl",
+		"examples/code/docs/ac-template.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			// New wording distinguishes file-at-sync from release-row-at-release-prep
+			if !strings.Contains(c, "the release row is added at release prep time") {
+				t.Fatalf("%s: must carry tightened 'release row is added at release prep' wording", rel)
+			}
+			if !strings.Contains(c, "the file itself is created by `governa sync` as a stub") {
+				t.Fatalf("%s: must clarify the stub is created by sync", rel)
+			}
+			// Old ambiguous wording must be gone
+			if strings.Contains(c, "- `CHANGELOG.md` — added at release prep time, not during implementation") {
+				t.Fatalf("%s: old ambiguous wording must be replaced", rel)
 			}
 		})
 	}
