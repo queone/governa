@@ -52,7 +52,7 @@ Do not begin this checklist until the user explicitly asks to prep for release o
 6. **Bump version constants.** Use the tag from step 1 as the baseline.
 7. **Remove completed features from `plan.md`.**
 8. **Consolidate finished AC decisions into durable docs, then delete the AC file.** Do not delete AC files that are PENDING, IN PROGRESS, or DEFERRED — they are still active contracts. Only completed (released) ACs are deleted.
-9. **Present the release command for the user to run.** The agent never runs the release command directly. The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting.
+9. **Present the release command for the user to run.** The agent never runs the release command directly. The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting. Present only the command; do not add trailing commentary explaining what it does, how the wrapper routes, or what prompts will appear. The director already knows.
 
 The release command (`./build.sh vX.Y.Z "message"`) executes `cmd/rel`, which orchestrates `git add → commit → tag → push tag → push branch` and produces recovery guidance if any step fails.
 

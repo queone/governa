@@ -103,7 +103,7 @@ Before offering a release commit or release command:
 6. confirm `TEMPLATE_VERSION` matches the intended template release version
 7. remove or reprioritize completed roadmap items in `plan.md`
 8. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)
-9. present the canonical release command for the user to run or approve — the release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting.
+9. present the canonical release command for the user to run or approve — the release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting. Present only the command; do not add trailing commentary explaining what it does, how the wrapper routes, or what prompts will appear. The director already knows.
 
 ## Release Artifacts
 
