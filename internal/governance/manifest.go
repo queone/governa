@@ -49,6 +49,7 @@ type Manifest struct {
 	TemplateVersion string
 	Params          ManifestParams
 	Entries         []ManifestEntry
+	Acknowledged    []AcknowledgedEntry
 }
 
 type ManifestEntry struct {
@@ -58,6 +59,14 @@ type ManifestEntry struct {
 	SourceChecksum string
 	Kind           string // "file" or "symlink"
 	SymlinkTarget  string
+}
+
+type AcknowledgedEntry struct {
+	Path            string
+	ConsumerSHA     string
+	TemplateSHA     string
+	TemplateVersion string
+	Reason          string
 }
 
 func computeChecksum(content string) string {
@@ -153,6 +162,16 @@ func formatManifest(m Manifest) string {
 		}
 		b.WriteString("\n")
 	}
+	if len(m.Acknowledged) > 0 {
+		b.WriteString("\nacknowledged:\n")
+		for _, a := range m.Acknowledged {
+			fmt.Fprintf(&b, "  - path: %s\n", a.Path)
+			fmt.Fprintf(&b, "    consumer-sha: %s\n", a.ConsumerSHA)
+			fmt.Fprintf(&b, "    template-sha: %s\n", a.TemplateSHA)
+			fmt.Fprintf(&b, "    template-version: %s\n", a.TemplateVersion)
+			fmt.Fprintf(&b, "    reason: %s\n", a.Reason)
+		}
+	}
 	return b.String()
 }
 
@@ -200,6 +219,64 @@ func parseManifest(content string) (Manifest, error) {
 		line := strings.TrimSpace(lines[i])
 		i++
 		if line == "" {
+			continue
+		}
+		if line == "acknowledged:" {
+			for i < len(lines) {
+				raw := lines[i]
+				line = strings.TrimSpace(raw)
+				if line == "" {
+					i++
+					continue
+				}
+				if !strings.HasPrefix(raw, "  - ") && !strings.HasPrefix(raw, "\t- ") {
+					break
+				}
+				entry := AcknowledgedEntry{}
+				fields := []string{strings.TrimSpace(strings.TrimPrefix(line, "- "))}
+				i++
+				for i < len(lines) {
+					nextRaw := lines[i]
+					next := strings.TrimSpace(nextRaw)
+					if next == "" {
+						i++
+						continue
+					}
+					if strings.HasPrefix(nextRaw, "  - ") || strings.HasPrefix(nextRaw, "\t- ") {
+						break
+					}
+					if strings.HasPrefix(nextRaw, "    ") || strings.HasPrefix(nextRaw, "\t\t") {
+						fields = append(fields, next)
+						i++
+						continue
+					}
+					break
+				}
+				for _, field := range fields {
+					key, value, ok := strings.Cut(field, ": ")
+					if !ok {
+						return Manifest{}, fmt.Errorf("malformed acknowledged field %q", field)
+					}
+					switch key {
+					case "path":
+						entry.Path = value
+					case "consumer-sha":
+						entry.ConsumerSHA = value
+					case "template-sha":
+						entry.TemplateSHA = value
+					case "template-version":
+						entry.TemplateVersion = value
+					case "reason":
+						entry.Reason = value
+					default:
+						return Manifest{}, fmt.Errorf("unknown acknowledged field %q", key)
+					}
+				}
+				if entry.Path == "" || entry.ConsumerSHA == "" || entry.TemplateSHA == "" || entry.TemplateVersion == "" || entry.Reason == "" {
+					return Manifest{}, fmt.Errorf("acknowledged entry %q missing required fields", entry.Path)
+				}
+				m.Acknowledged = append(m.Acknowledged, entry)
+			}
 			continue
 		}
 		parts := strings.Fields(line)
@@ -262,6 +339,14 @@ func readManifest(root string) (Manifest, bool, error) {
 func manifestEntryMap(m Manifest) map[string]ManifestEntry {
 	out := make(map[string]ManifestEntry, len(m.Entries))
 	for _, e := range m.Entries {
+		out[e.Path] = e
+	}
+	return out
+}
+
+func acknowledgedEntryMap(m Manifest) map[string]AcknowledgedEntry {
+	out := make(map[string]AcknowledgedEntry, len(m.Acknowledged))
+	for _, e := range m.Acknowledged {
 		out[e.Path] = e
 	}
 	return out

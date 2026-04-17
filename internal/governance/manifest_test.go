@@ -51,6 +51,43 @@ func TestFormatParseManifestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFormatParseManifestWithAcknowledgedRoundTrip(t *testing.T) {
+	t.Parallel()
+	m := Manifest{
+		FormatVersion:   manifestFormatVersion,
+		TemplateVersion: "0.34.0",
+		Entries: []ManifestEntry{
+			{Path: "AGENTS.md", Kind: "file", Checksum: "aaa", SourcePath: "base/AGENTS.md", SourceChecksum: "bbb"},
+		},
+		Acknowledged: []AcknowledgedEntry{
+			{
+				Path:            "docs/roles/dev.md",
+				ConsumerSHA:     "consumer123",
+				TemplateSHA:     "template456",
+				TemplateVersion: "0.34.0",
+				Reason:          "repo-specific role note",
+			},
+		},
+	}
+
+	text := formatManifest(m)
+	if !strings.Contains(text, "acknowledged:") {
+		t.Fatalf("formatted manifest should contain acknowledged section, got:\n%s", text)
+	}
+
+	parsed, err := parseManifest(text)
+	if err != nil {
+		t.Fatalf("parseManifest() error = %v", err)
+	}
+	if len(parsed.Acknowledged) != 1 {
+		t.Fatalf("len(Acknowledged) = %d, want 1", len(parsed.Acknowledged))
+	}
+	got := parsed.Acknowledged[0]
+	if got.Path != "docs/roles/dev.md" || got.ConsumerSHA != "consumer123" || got.TemplateSHA != "template456" || got.TemplateVersion != "0.34.0" || got.Reason != "repo-specific role note" {
+		t.Fatalf("Acknowledged[0] = %+v", got)
+	}
+}
+
 func TestParseManifestRejectsBadVersion(t *testing.T) {
 	t.Parallel()
 	_, err := parseManifest("governa-manifest-v99\ntemplate-version: 1.0\n")

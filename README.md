@@ -55,6 +55,19 @@ governa sync
 
 Repo name, purpose, type, and stack are inferred from the target directory (directory basename, `README.md` first paragraph, manifest files). Explicit flags override inference: `-n`, `-p`, `-y`, `-s`. On re-sync, stored parameters from the `.governa/manifest` are reused automatically.
 
+### `ack`
+Consumer-repo follow-up command for stable carve-outs. Use it after reviewing `.governa/sync-review.md` and deciding a file should remain repo-specific for now, so future syncs stop re-flagging the same drift until either the repo file or the template version changes.
+
+```bash
+governa ack docs/roles/dev.md --reason "Repo keeps an extra sync policy note"
+```
+
+To return a file to normal adopt-flow treatment without changing its contents:
+
+```bash
+governa ack --remove docs/roles/dev.md
+```
+
 ### `enhance`
 Template-maintenance mode, run from inside this repo. The only mode that runs from governa itself and the only mode that can propose changes back into the template. Its purpose is to improve the entire templating set — base governance contract, overlays, and workflow patterns — that ships into all generated repos, as well as governa's own self-hosted governance.
 

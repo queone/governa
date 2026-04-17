@@ -26,6 +26,7 @@ type Mode string
 const (
 	ModeSync    Mode = "sync"
 	ModeEnhance Mode = "enhance"
+	ModeAck     Mode = "ack"
 )
 
 type RepoType string
@@ -59,6 +60,9 @@ type Config struct {
 	Mode               Mode
 	Target             string
 	Reference          string
+	AckPath            string
+	AckReason          string
+	AckRemove          bool
 	Type               RepoType
 	RepoName           string
 	Purpose            string
@@ -151,6 +155,8 @@ func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
 		return runSync(tfs, repoRoot, cfg)
 	case ModeEnhance:
 		return RunEnhance(tfs, repoRoot, cfg)
+	case ModeAck:
+		return runAck(tfs, repoRoot, cfg)
 	default:
 		return fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}
@@ -159,7 +165,59 @@ func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
 // ParseModeArgs parses flags for a given mode without the -m flag.
 // Used by cmd/governa where the mode is determined by the subcommand.
 func ParseModeArgs(mode Mode, args []string) (Config, bool, error) {
+	if mode == ModeAck {
+		return parseAckArgs(args)
+	}
 	return parseFlags(mode, args)
+}
+
+func parseAckArgs(args []string) (Config, bool, error) {
+	cfg := Config{Mode: ModeAck}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-?" || arg == "-h" || arg == "--help":
+			printModeHelp(ModeAck)
+			return Config{}, true, nil
+		case arg == "-x" || arg == "--remove":
+			cfg.AckRemove = true
+		case arg == "-m" || arg == "--reason":
+			i++
+			if i >= len(args) {
+				return Config{}, false, fmt.Errorf("missing value for %s", arg)
+			}
+			cfg.AckReason = strings.TrimSpace(args[i])
+		case strings.HasPrefix(arg, "-m="):
+			cfg.AckReason = strings.TrimSpace(strings.TrimPrefix(arg, "-m="))
+		case strings.HasPrefix(arg, "--reason="):
+			cfg.AckReason = strings.TrimSpace(strings.TrimPrefix(arg, "--reason="))
+		case arg == "-t" || arg == "--target":
+			i++
+			if i >= len(args) {
+				return Config{}, false, fmt.Errorf("missing value for %s", arg)
+			}
+			cfg.Target = strings.TrimSpace(args[i])
+		case strings.HasPrefix(arg, "-t="):
+			cfg.Target = strings.TrimSpace(strings.TrimPrefix(arg, "-t="))
+		case strings.HasPrefix(arg, "--target="):
+			cfg.Target = strings.TrimSpace(strings.TrimPrefix(arg, "--target="))
+		case strings.HasPrefix(arg, "-"):
+			return Config{}, false, fmt.Errorf("flag provided but not defined: %s", arg)
+		default:
+			if cfg.AckPath != "" {
+				return Config{}, false, fmt.Errorf("unexpected extra argument: %s", arg)
+			}
+			cfg.AckPath = strings.TrimSpace(arg)
+		}
+	}
+	if cfg.Target == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return Config{}, false, fmt.Errorf("resolve current working directory: %w", err)
+		}
+		cfg.Target = cwd
+	}
+	return cfg, false, validateConfig(cfg)
 }
 
 func parseFlags(mode Mode, args []string) (Config, bool, error) {
@@ -170,8 +228,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.StringVar(&values.target, "target", "", "target directory")
 	fset.StringVar(&values.reference, "r", "", "reference repo for enhance")
 	fset.StringVar(&values.reference, "reference", "", "reference repo for enhance")
-	fset.StringVar(&values.repoType, "y", "", "repo type: CODE|DOC")
-	fset.StringVar(&values.repoType, "type", "", "repo type: CODE|DOC")
 	fset.StringVar(&values.repoName, "n", "", "repo name")
 	fset.StringVar(&values.repoName, "repo-name", "", "repo name")
 	fset.StringVar(&values.purpose, "p", "", "project purpose")
@@ -182,6 +238,10 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.StringVar(&values.publishingPlatform, "publishing-platform", "", "publishing platform for DOC repos")
 	fset.StringVar(&values.style, "v", "", "style or voice for DOC repos")
 	fset.StringVar(&values.style, "style", "", "style or voice for DOC repos")
+	ackReason := fset.String("reason", "", "single-line justification for acknowledged drift")
+	ackRemove := fset.Bool("remove", false, "remove an existing acknowledged-drift entry")
+	fset.StringVar(&values.repoType, "y", "", "repo type: CODE|DOC")
+	fset.StringVar(&values.repoType, "type", "", "repo type: CODE|DOC")
 	fset.BoolVar(&values.initGit, "g", false, "initialize git if target is not already a repo")
 	fset.BoolVar(&values.initGit, "init-git", false, "initialize git if target is not already a repo")
 	fset.BoolVar(&values.dryRun, "d", false, "preview changes without writing")
@@ -211,6 +271,8 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		Mode:               mode,
 		Target:             target,
 		Reference:          strings.TrimSpace(values.reference),
+		AckReason:          strings.TrimSpace(*ackReason),
+		AckRemove:          *ackRemove,
 		Type:               RepoType(strings.ToUpper(strings.TrimSpace(values.repoType))),
 		RepoName:           strings.TrimSpace(values.repoName),
 		Purpose:            strings.TrimSpace(values.purpose),
@@ -219,6 +281,12 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		Style:              strings.TrimSpace(values.style),
 		InitGit:            values.initGit,
 		DryRun:             values.dryRun,
+	}
+	if mode == ModeAck {
+		if rest := fset.Args(); len(rest) > 0 {
+			cfg.AckPath = strings.TrimSpace(rest[0])
+		}
+		return cfg, false, validateConfig(cfg)
 	}
 	// Validation is deferred to runSync (after prompts) for ModeSync.
 	// For enhance, validate immediately.
@@ -248,6 +316,12 @@ func ModeHelp(mode Mode) string {
 			{Flag: "-r, --reference", Desc: "reference repo to review for improvements"},
 			{Flag: "-d, --dry-run", Desc: "preview changes without writing"},
 		}, "Without -r: self-review embedded vs on-disk templates. With -r: review reference repo.")
+	case ModeAck:
+		return color.FormatUsage("governa ack <path> [options]", []color.UsageLine{
+			{Flag: "-m, --reason", Desc: "single-line justification for acknowledged drift"},
+			{Flag: "-x, --remove", Desc: "remove an existing acknowledged-drift entry"},
+			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
+		}, "Use `governa ack <path> --reason \"...\"` to suppress stable adopt churn, or `governa ack --remove <path>` to return a file to normal adopt-flow treatment.")
 	}
 	return ""
 }
@@ -426,6 +500,19 @@ func validateConfig(cfg Config) error {
 		}
 	case ModeEnhance:
 		// -r is optional: empty means self-review mode
+	case ModeAck:
+		if cfg.AckPath == "" {
+			return errors.New("path is required: use `governa ack <path>`")
+		}
+		if cfg.AckRemove {
+			if cfg.AckReason != "" {
+				return errors.New("`--reason` cannot be combined with `--remove`")
+			}
+			return nil
+		}
+		if cfg.AckReason == "" {
+			return errors.New("reason is required: use `--reason`")
+		}
 	default:
 		return errors.New("unsupported mode")
 	}
@@ -597,27 +684,34 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		PublishingPlatform: cfg.PublishingPlatform,
 		Style:              cfg.Style,
 	}
+	var ops []operation
+	var syncConflicts []conflict
+	oldManifest, _, _ := readManifest(targetAbs)
+	if len(oldManifest.Acknowledged) > 0 {
+		manifest.Acknowledged = append([]AcknowledgedEntry(nil), oldManifest.Acknowledged...)
+	}
 	manifestOp := operation{
 		kind:    "write",
 		path:    filepath.Join(targetAbs, manifestFileName),
 		content: formatManifest(manifest),
 		note:    "bootstrap manifest",
 	}
-
-	var ops []operation
-	var syncConflicts []conflict
 	if adopt {
-		oldManifest, _, _ := readManifest(targetAbs)
 		oldEntryMap := manifestEntryMap(oldManifest)
 		newEntryMap := manifestEntryMap(manifest)
 		transformed, scores, conflicts := applyAdoptTransforms(canonical, oldEntryMap, newEntryMap, targetAbs)
 		syncConflicts = conflicts
+		prunedAcknowledged := pruneOrphanedAcknowledgedEntries(targetAbs, &manifest)
+		for _, path := range prunedAcknowledged {
+			fmt.Fprintf(os.Stderr, "governa sync: pruned acknowledged entry for %s\n", path)
+		}
+		scores = applyAcknowledgedDrift(targetAbs, scores, manifest)
 
 		// If any symlink ops were blocked by conflicts, rebuild the manifest
 		// without those entries. Other skip ops (overlay collisions) retain
 		// their baseline source checksums — those are load-bearing for
 		// future standing drift detection.
-		manifestDirty := false
+		manifestDirty := len(prunedAcknowledged) > 0
 		if len(conflicts) > 0 {
 			blockedPaths := make(map[string]bool, len(conflicts))
 			for _, c := range conflicts {
@@ -639,6 +733,8 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 				PublishingPlatform: cfg.PublishingPlatform,
 				Style:              cfg.Style,
 			}
+			manifest.Acknowledged = append([]AcknowledgedEntry(nil), oldManifest.Acknowledged...)
+			pruneOrphanedAcknowledgedEntries(targetAbs, &manifest)
 			manifestDirty = true
 		}
 
@@ -713,6 +809,243 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	if len(syncConflicts) > 0 {
 		return ErrConflictsPresent
 	}
+	return nil
+}
+
+func normalizeRepoPath(targetRoot, input string) (string, error) {
+	if strings.TrimSpace(input) == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	cleaned := filepath.Clean(input)
+	if filepath.IsAbs(cleaned) {
+		rel, err := filepath.Rel(targetRoot, cleaned)
+		if err != nil {
+			return "", fmt.Errorf("normalize path %q: %w", input, err)
+		}
+		cleaned = rel
+	}
+	if cleaned == "." || cleaned == "" {
+		return "", fmt.Errorf("path must identify a file")
+	}
+	if strings.HasPrefix(cleaned, "..") {
+		return "", fmt.Errorf("path %q is outside target repo", input)
+	}
+	return filepath.ToSlash(cleaned), nil
+}
+
+func syncConfigFromManifest(cfg Config, manifest Manifest) Config {
+	cfg.RepoName = manifest.Params.RepoName
+	cfg.Purpose = manifest.Params.Purpose
+	cfg.Type = RepoType(manifest.Params.Type)
+	cfg.Stack = manifest.Params.Stack
+	cfg.PublishingPlatform = manifest.Params.PublishingPlatform
+	cfg.Style = manifest.Params.Style
+	return cfg
+}
+
+func computeLiveSyncScores(tfs fs.FS, repoRoot, targetAbs string, cfg Config, manifest Manifest) ([]collisionScore, Manifest, string, error) {
+	cfg = syncConfigFromManifest(cfg, manifest)
+	if err := validateConfig(Config{
+		Mode:               ModeSync,
+		RepoName:           cfg.RepoName,
+		Purpose:            cfg.Purpose,
+		Type:               cfg.Type,
+		Stack:              cfg.Stack,
+		PublishingPlatform: cfg.PublishingPlatform,
+		Style:              cfg.Style,
+	}); err != nil {
+		return nil, Manifest{}, "", err
+	}
+	canonical, err := planCanonical(tfs, repoRoot, cfg, targetAbs)
+	if err != nil {
+		return nil, Manifest{}, "", err
+	}
+	templateVersion := readTemplateVersion(repoRoot)
+	nextManifest := buildManifest(canonical, templateVersion, tfs, repoRoot, targetAbs)
+	nextManifest.Params = manifest.Params
+	_, scores, _ := applyAdoptTransforms(canonical, manifestEntryMap(manifest), manifestEntryMap(nextManifest), targetAbs)
+	return scores, nextManifest, templateVersion, nil
+}
+
+func pruneOrphanedAcknowledgedEntries(targetAbs string, manifest *Manifest) []string {
+	if len(manifest.Acknowledged) == 0 {
+		return nil
+	}
+	kept := manifest.Acknowledged[:0]
+	var pruned []string
+	for _, entry := range manifest.Acknowledged {
+		info, err := os.Lstat(filepath.Join(targetAbs, filepath.FromSlash(entry.Path)))
+		if errors.Is(err, os.ErrNotExist) {
+			pruned = append(pruned, entry.Path)
+			continue
+		}
+		if err != nil || info.Mode()&os.ModeSymlink != 0 {
+			kept = append(kept, entry)
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	manifest.Acknowledged = kept
+	return pruned
+}
+
+func applyAcknowledgedDrift(targetAbs string, scores []collisionScore, manifest Manifest) []collisionScore {
+	if len(manifest.Acknowledged) == 0 {
+		return scores
+	}
+	ackMap := acknowledgedEntryMap(manifest)
+	for i := range scores {
+		score := &scores[i]
+		rel, err := filepath.Rel(targetAbs, score.path)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if ack, ok := ackMap[rel]; ok {
+			actual, err := os.ReadFile(score.path)
+			if err != nil {
+				score.staleAcknowledged = true
+				score.staleAcknowledgedWhy = "acknowledgment no longer matches current file state"
+				continue
+			}
+			consumerSHA := computeChecksum(string(actual))
+			templateSHA := computeChecksum(score.proposedContent)
+			switch {
+			case consumerSHA != ack.ConsumerSHA:
+				score.staleAcknowledged = true
+				score.staleAcknowledgedWhy = "consumer file changed since acknowledgment"
+			case templateSHA != ack.TemplateSHA:
+				score.staleAcknowledged = true
+				score.staleAcknowledgedWhy = "template content changed since acknowledgment"
+			default:
+				score.recommendation = "acknowledged"
+				score.acknowledgedReason = ack.Reason
+				score.reason = ack.Reason
+			}
+		}
+	}
+	return scores
+}
+
+func writeManifest(root string, manifest Manifest) error {
+	path := filepath.Join(root, manifestFileName)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create parent directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, []byte(formatManifest(manifest)), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+func validateAckReason(reason string) error {
+	trimmed := strings.TrimSpace(reason)
+	if trimmed == "" {
+		return errors.New("reason must be non-empty")
+	}
+	if strings.Contains(trimmed, "\n") {
+		return errors.New("reason must be single-line")
+	}
+	if len(trimmed) > 200 {
+		return errors.New("reason must be 200 characters or fewer")
+	}
+	return nil
+}
+
+func runAck(tfs fs.FS, repoRoot string, cfg Config) error {
+	targetAbs, err := filepath.Abs(cfg.Target)
+	if err != nil {
+		return fmt.Errorf("resolve target path: %w", err)
+	}
+	if !cfg.DryRun {
+		if err := migrateGovernaLegacyPaths(targetAbs); err != nil {
+			return fmt.Errorf("migrate legacy governa paths: %w", err)
+		}
+	}
+	manifest, ok, err := readManifest(targetAbs)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("no manifest; run `governa sync` first")
+	}
+	repoRel, err := normalizeRepoPath(targetAbs, cfg.AckPath)
+	if err != nil {
+		return err
+	}
+	fullPath := filepath.Join(targetAbs, filepath.FromSlash(repoRel))
+	info, err := os.Lstat(fullPath)
+	if err != nil && !cfg.AckRemove {
+		return fmt.Errorf("stat %s: %w", repoRel, err)
+	}
+	if err == nil && info.Mode()&os.ModeSymlink != 0 && !cfg.AckRemove {
+		return fmt.Errorf("only regular files are eligible for acknowledgment: %s", repoRel)
+	}
+	if cfg.AckRemove {
+		kept := manifest.Acknowledged[:0]
+		removed := false
+		for _, entry := range manifest.Acknowledged {
+			if entry.Path == repoRel {
+				removed = true
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		if !removed {
+			return fmt.Errorf("no acknowledged entry for %s", repoRel)
+		}
+		manifest.Acknowledged = kept
+		if cfg.DryRun {
+			fmt.Printf("dry-run write %s (remove acknowledged drift)\n", filepath.Join(targetAbs, manifestFileName))
+		} else if err := writeManifest(targetAbs, manifest); err != nil {
+			return err
+		}
+		fmt.Printf("removed acknowledged drift: %s\n", repoRel)
+		return nil
+	}
+	if err := validateAckReason(cfg.AckReason); err != nil {
+		return err
+	}
+	scores, _, templateVersion, err := computeLiveSyncScores(tfs, repoRoot, targetAbs, cfg, manifest)
+	if err != nil {
+		return err
+	}
+	scoreMap := scoredPaths(scores, targetAbs)
+	score, ok := scoreMap[repoRel]
+	if !ok || score.recommendation != "adopt" {
+		return fmt.Errorf("nothing to acknowledge for %s", repoRel)
+	}
+	actual, err := os.ReadFile(fullPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", repoRel, err)
+	}
+	entry := AcknowledgedEntry{
+		Path:            repoRel,
+		ConsumerSHA:     computeChecksum(string(actual)),
+		TemplateSHA:     computeChecksum(score.proposedContent),
+		TemplateVersion: templateVersion,
+		Reason:          strings.TrimSpace(cfg.AckReason),
+	}
+	updated := false
+	for i := range manifest.Acknowledged {
+		if manifest.Acknowledged[i].Path == repoRel {
+			manifest.Acknowledged[i] = entry
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		manifest.Acknowledged = append(manifest.Acknowledged, entry)
+		sort.Slice(manifest.Acknowledged, func(i, j int) bool {
+			return manifest.Acknowledged[i].Path < manifest.Acknowledged[j].Path
+		})
+	}
+	if cfg.DryRun {
+		fmt.Printf("dry-run write %s (acknowledge drift)\n", filepath.Join(targetAbs, manifestFileName))
+	} else if err := writeManifest(targetAbs, manifest); err != nil {
+		return err
+	}
+	fmt.Printf("acknowledged drift: %s — %s\n", repoRel, entry.Reason)
 	return nil
 }
 
@@ -2672,7 +3005,7 @@ type structuralNote struct {
 
 type collisionScore struct {
 	path                   string // target file path
-	recommendation         string // "keep", "adopt", "accept"
+	recommendation         string // "keep", "adopt", "accept", "acknowledged"
 	reason                 string
 	existingLines          int
 	proposedLines          int
@@ -2688,6 +3021,9 @@ type collisionScore struct {
 	sectionRenames         map[string]string // old name → new name (detected renames)
 	standingDrift          bool              // true when file differs from template but template hasn't changed since last sync
 	driftSections          []string          // sections that differ from template (standing drift only)
+	acknowledgedReason     string            // reason for valid acknowledged drift
+	staleAcknowledged      bool              // prior acknowledgment exists but no longer matches current state
+	staleAcknowledgedWhy   string            // explanation for stale acknowledged drift
 	bulletRemovals         []bulletRemoval   // per-section bullet-count decreases (existing → proposed). AC53 IE7.
 }
 
@@ -3179,18 +3515,34 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	}
 
 	// Action summary
-	keeps, adopts := 0, 0
+	keeps, adopts, acknowledged := 0, 0, 0
 	for _, s := range scores {
 		switch s.recommendation {
 		case "keep":
 			keeps++
 		case "adopt":
 			adopts++
+		case "acknowledged":
+			acknowledged++
 		}
 	}
 	fmt.Fprintf(&b, "\n## Summary\n\n")
 	fmt.Fprintf(&b, "- **keep**: %d files (no adoption work needed)\n", keeps)
 	fmt.Fprintf(&b, "- **adopt**: %d files (must compare `.governa/proposed/<file>` and adopt unless repo-specific)\n", adopts)
+	if acknowledged > 0 {
+		fmt.Fprintf(&b, "- **acknowledged**: %d files (stable carve-outs omitted from adopt work this round)\n", acknowledged)
+	}
+
+	if acknowledged > 0 {
+		fmt.Fprintf(&b, "\n## Acknowledged Drift\n\n")
+		for _, s := range scores {
+			if s.recommendation != "acknowledged" {
+				continue
+			}
+			fmt.Fprintf(&b, "- `%s`: %s\n", relPath(s.path), s.acknowledgedReason)
+		}
+		fmt.Fprintln(&b, "")
+	}
 
 	// Adoption Items — single detail section for all adopt files
 	if adopts > 0 {
@@ -3247,6 +3599,14 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 				hasAdvisory = true
 				break
 			}
+			if s.staleAcknowledged {
+				hasAdvisory = true
+				break
+			}
+			if s.recommendation == "adopt" && s.standingDrift {
+				hasAdvisory = true
+				break
+			}
 			if s.recommendation == "adopt" && len(s.bulletRemovals) > 0 {
 				hasAdvisory = true
 				break
@@ -3269,6 +3629,12 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 			}
 			if s.recommendation == "keep" && len(s.missingSections) > 0 {
 				fmt.Fprintf(&b, "- `%s`: template also has sections not in this file: %s — review if relevant to this repo%s\n", rel, strings.Join(s.missingSections, ", "), diffSuffix)
+			}
+			if s.staleAcknowledged {
+				fmt.Fprintf(&b, "- `%s`: stale acknowledged drift — %s. Review upstream changes, then either adopt template content or run `governa ack %s --reason \"...\"` again after confirming the carve-out still stands%s\n", rel, s.staleAcknowledgedWhy, rel, diffSuffix)
+			}
+			if s.recommendation == "adopt" && s.standingDrift {
+				fmt.Fprintf(&b, "- `%s`: stable standing drift promoted this file back into review. Either adopt template content or run `governa ack %s --reason \"...\"` if the carve-out should remain repo-specific%s\n", rel, rel, diffSuffix)
 			}
 			if len(s.sectionRenames) > 0 {
 				renameKeys := make([]string, 0, len(s.sectionRenames))
@@ -3306,7 +3672,11 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprintln(&b, "2. After adoption decisions are made, commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.")
 		fmt.Fprintln(&b, "3. The review artifact (`.governa/sync-review.md`) and `.governa/proposed/` are working artifacts — not intended to be committed.")
 	default:
-		fmt.Fprintln(&b, "No adoption work needed.")
+		if acknowledged > 0 {
+			fmt.Fprintf(&b, "No adoption work needed. %d file(s) carry acknowledged drift (see `## Acknowledged Drift`).\n", acknowledged)
+		} else {
+			fmt.Fprintln(&b, "No adoption work needed.")
+		}
 		fmt.Fprintln(&b, "")
 		fmt.Fprintln(&b, "1. Commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.")
 		fmt.Fprintln(&b, "2. The review artifact (`.governa/sync-review.md`) is not intended to be committed.")

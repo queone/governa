@@ -18,7 +18,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.34.0"
+const programVersion = "0.35.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -35,7 +35,7 @@ func main() {
 	case "version", "ver":
 		fmt.Printf("governa v%s (template %s)\nsource: %s\n", programVersion, templates.TemplateVersion, sourceRepo)
 		return
-	case "sync", "enhance":
+	case "sync", "enhance", "ack":
 		// handled below
 	case "new":
 		fmt.Fprintf(os.Stderr, "unknown command: new (use \"governa sync\")\n")
@@ -94,9 +94,13 @@ func main() {
 			}
 		}
 	} else {
-		// Fail-safe: refuse to sync against the governa repo itself.
+		// Fail-safe: refuse to run consumer-repo commands against the governa repo itself.
 		if _, err := detectGovernaCheckout(); err == nil {
-			fmt.Fprintln(os.Stderr, "error: cannot run sync inside the governa repo — sync is for consumer repos, use enhance for self-review")
+			if mode == governance.ModeAck {
+				fmt.Fprintln(os.Stderr, "error: cannot run ack inside the governa repo — ack is for consumer repos, use enhance for self-review")
+			} else {
+				fmt.Fprintln(os.Stderr, "error: cannot run sync inside the governa repo — sync is for consumer repos, use enhance for self-review")
+			}
 			os.Exit(1)
 		}
 		tfs = templates.EmbeddedFS
@@ -123,6 +127,7 @@ func printUsage() {
 	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
 		{Flag: "sync", Desc: "bootstrap or update governance in a repo"},
 		{Flag: "enhance", Desc: "review a reference repo for template improvements"},
+		{Flag: "ack", Desc: "record or remove acknowledged drift for a file"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help, h", Desc: "show this help"},
 	}, "Run 'governa <command> --help' for command-specific flags."))

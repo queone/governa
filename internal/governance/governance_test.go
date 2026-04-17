@@ -977,6 +977,54 @@ func TestValidateConfigEnhanceEmptyRefAllowed(t *testing.T) {
 	}
 }
 
+func TestParseModeArgsAck(t *testing.T) {
+	t.Parallel()
+	cfg, help, err := ParseModeArgs(ModeAck, []string{"docs/roles/dev.md", "--reason", "repo-specific note"})
+	if err != nil {
+		t.Fatalf("ParseModeArgs(ack) error = %v", err)
+	}
+	if help {
+		t.Fatal("ParseModeArgs(ack) help = true, want false")
+	}
+	if cfg.AckPath != "docs/roles/dev.md" {
+		t.Fatalf("AckPath = %q", cfg.AckPath)
+	}
+	if cfg.AckReason != "repo-specific note" {
+		t.Fatalf("AckReason = %q", cfg.AckReason)
+	}
+	if cfg.AckRemove {
+		t.Fatal("AckRemove = true, want false")
+	}
+}
+
+func TestParseModeArgsAckShortFlags(t *testing.T) {
+	t.Parallel()
+	cfg, help, err := ParseModeArgs(ModeAck, []string{"-x", "docs/roles/dev.md", "-t", "/tmp/repo"})
+	if err != nil {
+		t.Fatalf("ParseModeArgs(ack short flags) error = %v", err)
+	}
+	if help {
+		t.Fatal("ParseModeArgs(ack short flags) help = true, want false")
+	}
+	if !cfg.AckRemove {
+		t.Fatal("AckRemove = false, want true")
+	}
+	if cfg.AckPath != "docs/roles/dev.md" {
+		t.Fatalf("AckPath = %q", cfg.AckPath)
+	}
+	if cfg.Target != "/tmp/repo" {
+		t.Fatalf("Target = %q", cfg.Target)
+	}
+}
+
+func TestValidateConfigAckRemoveRejectsReason(t *testing.T) {
+	t.Parallel()
+	err := validateConfig(Config{Mode: ModeAck, AckPath: "AGENTS.md", AckRemove: true, AckReason: "nope"})
+	if err == nil {
+		t.Fatal("expected error when --remove is combined with --reason")
+	}
+}
+
 func TestValidateConfigNoMode(t *testing.T) {
 	t.Parallel()
 	err := validateConfig(Config{})
@@ -5624,6 +5672,12 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	if !strings.Contains(output, "diff dev.md .governa/proposed/dev.md") {
 		t.Fatalf("diff command should use repo-relative path, got:\n%s", output)
 	}
+	if !strings.Contains(output, "stable standing drift promoted this file back into review") {
+		t.Fatalf("standing-drift advisory should explain the promotion, got:\n%s", output)
+	}
+	if !strings.Contains(output, "governa ack dev.md --reason \"...\"") {
+		t.Fatalf("standing-drift advisory should name the ack path, got:\n%s", output)
+	}
 }
 
 func TestOverlayStandingDriftNonMarkdown(t *testing.T) {
@@ -6378,13 +6432,11 @@ func TestRenderSyncReviewMergeHint(t *testing.T) {
 		},
 	}
 	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
-	// .gitignore entry must have merge hint
+	if !strings.Contains(output, "- `.gitignore` — merge template patterns into your existing file (don't replace wholesale) → `diff .gitignore .governa/proposed/.gitignore`") {
+		t.Fatalf(".gitignore adoption entry should have merge hint, got:\n%s", output)
+	}
+	// Only adoption entries for known merge targets should carry the hint.
 	for line := range strings.SplitSeq(output, "\n") {
-		if strings.HasPrefix(line, "- `.gitignore`") {
-			if !strings.Contains(line, "merge template patterns into your existing file") {
-				t.Fatalf(".gitignore adoption entry should have merge hint, got: %s", line)
-			}
-		}
 		if strings.HasPrefix(line, "- `docs/ac-template.md`") {
 			if strings.Contains(line, "merge template patterns") {
 				t.Fatalf("non-merge-target should NOT have merge hint, got: %s", line)
@@ -7891,5 +7943,363 @@ func TestMigrateGovernaLegacyPaths(t *testing.T) {
 	// Second invocation (no legacy paths) must be a no-op.
 	if err := migrateGovernaLegacyPaths(dir); err != nil {
 		t.Fatalf("second migrate should be no-op: %v", err)
+	}
+}
+
+func bootstrapSyncedCodeRepo(t *testing.T) (string, string) {
+	t.Helper()
+	templateRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("abs template root: %v", err)
+	}
+	return bootstrapSyncedCodeRepoFromTemplateRoot(t, templateRoot)
+}
+
+func bootstrapSyncedCodeRepoFromTemplateRoot(t *testing.T, templateRoot string) (string, string) {
+	t.Helper()
+	targetDir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeSync,
+		Target:   targetDir,
+		Type:     RepoTypeCode,
+		RepoName: "demo-repo",
+		Purpose:  "demo purpose",
+		Stack:    "Go CLI",
+	}
+	if err := RunWithFS(templates.DiskFS(templateRoot), templateRoot, cfg); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+	return templateRoot, targetDir
+}
+
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	if err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == ".git" && d.IsDir() {
+			return filepath.SkipDir
+		}
+		if rel == "." {
+			return nil
+		}
+		outPath := filepath.Join(dst, rel)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+				return err
+			}
+			return os.Symlink(target, outPath)
+		case d.IsDir():
+			return os.MkdirAll(outPath, 0o755)
+		default:
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(outPath, content, info.Mode().Perm())
+		}
+	}); err != nil {
+		t.Fatalf("copyTree(%q -> %q) error = %v", src, dst, err)
+	}
+}
+
+func appendRepoSpecificDrift(t *testing.T, targetDir, relPath, line string) {
+	t.Helper()
+	fullPath := filepath.Join(targetDir, filepath.FromSlash(relPath))
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", relPath, err)
+	}
+	if strings.Contains(string(content), line) {
+		return
+	}
+	updated := strings.TrimRight(string(content), "\n") + "\n" + line + "\n"
+	if err := os.WriteFile(fullPath, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write %s: %v", relPath, err)
+	}
+}
+
+func TestRunAckRequiresManifestForAddAndRemove(t *testing.T) {
+	dir := t.TempDir()
+	for _, cfg := range []Config{
+		{Mode: ModeAck, Target: dir, AckPath: "AGENTS.md", AckReason: "repo-specific"},
+		{Mode: ModeAck, Target: dir, AckPath: "AGENTS.md", AckRemove: true},
+	} {
+		err := runAck(templates.EmbeddedFS, "", cfg)
+		if err == nil || !strings.Contains(err.Error(), "no manifest; run `governa sync` first") {
+			t.Fatalf("runAck(%+v) error = %v", cfg, err)
+		}
+	}
+}
+
+func TestRunAckRejectsReasonValidationAndSymlink(t *testing.T) {
+	templateRoot, targetDir := bootstrapSyncedCodeRepo(t)
+	appendRepoSpecificDrift(t, targetDir, "docs/roles/dev.md", "- repo-specific sync note")
+
+	cases := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "empty",
+			cfg:  Config{Mode: ModeAck, Target: targetDir, AckPath: "docs/roles/dev.md", AckReason: ""},
+			want: "reason must be non-empty",
+		},
+		{
+			name: "whitespace",
+			cfg:  Config{Mode: ModeAck, Target: targetDir, AckPath: "docs/roles/dev.md", AckReason: "   "},
+			want: "reason must be non-empty",
+		},
+		{
+			name: "too-long",
+			cfg:  Config{Mode: ModeAck, Target: targetDir, AckPath: "docs/roles/dev.md", AckReason: strings.Repeat("a", 201)},
+			want: "200 characters or fewer",
+		},
+		{
+			name: "symlink",
+			cfg:  Config{Mode: ModeAck, Target: targetDir, AckPath: "CLAUDE.md", AckReason: "repo-specific"},
+			want: "only regular files are eligible",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runAck(templates.DiskFS(templateRoot), templateRoot, tc.cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("runAck error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+
+	cfg, help, err := ParseModeArgs(ModeAck, []string{"docs/roles/dev.md", "-m", "repo-specific"})
+	if err != nil {
+		t.Fatalf("ParseModeArgs(-m) error = %v", err)
+	}
+	if help || cfg.AckReason != "repo-specific" {
+		t.Fatalf("ParseModeArgs(-m) = %+v, help=%v", cfg, help)
+	}
+}
+
+func TestRunAckRendersAcknowledgedDriftAndRemoveRestoresAdoptFlow(t *testing.T) {
+	templateRoot, targetDir := bootstrapSyncedCodeRepo(t)
+	appendRepoSpecificDrift(t, targetDir, "docs/roles/dev.md", "- repo-specific sync note")
+	appendRepoSpecificDrift(t, targetDir, "docs/build-release.md", "- repo-specific release note")
+
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/roles/dev.md",
+		AckReason: "repo-specific sync note",
+	}); err != nil {
+		t.Fatalf("ack dev role: %v", err)
+	}
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/build-release.md",
+		AckReason: "repo-specific release note",
+	}); err != nil {
+		t.Fatalf("ack build-release: %v", err)
+	}
+
+	if err := RunWithFS(templates.DiskFS(templateRoot), templateRoot, Config{Mode: ModeSync, Target: targetDir}); err != nil {
+		t.Fatalf("sync after ack: %v", err)
+	}
+	reviewPath := filepath.Join(targetDir, ".governa", "sync-review.md")
+	review, err := os.ReadFile(reviewPath)
+	if err != nil {
+		t.Fatalf("read sync review: %v", err)
+	}
+	content := string(review)
+	for _, phrase := range []string{
+		"## Acknowledged Drift",
+		"`docs/roles/dev.md`: repo-specific sync note",
+		"`docs/build-release.md`: repo-specific release note",
+		"**acknowledged**: 2",
+		"**adopt**: 0",
+	} {
+		if !strings.Contains(content, phrase) {
+			t.Fatalf("sync review missing %q:\n%s", phrase, content)
+		}
+	}
+
+	manifest, ok, err := readManifest(targetDir)
+	if err != nil || !ok {
+		t.Fatalf("readManifest() = (%v, %v)", ok, err)
+	}
+	if len(manifest.Acknowledged) != 2 {
+		t.Fatalf("len(Acknowledged) = %d, want 2", len(manifest.Acknowledged))
+	}
+	for _, entry := range manifest.Acknowledged {
+		if entry.Path == "" || entry.ConsumerSHA == "" || entry.TemplateSHA == "" || entry.TemplateVersion == "" || entry.Reason == "" {
+			t.Fatalf("acknowledged entry must populate all fields, got %+v", entry)
+		}
+		if len(entry.ConsumerSHA) != 64 || len(entry.TemplateSHA) != 64 {
+			t.Fatalf("acknowledged entry must contain sha256 checksums, got %+v", entry)
+		}
+	}
+
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/roles/dev.md",
+		AckRemove: true,
+	}); err != nil {
+		t.Fatalf("remove ack: %v", err)
+	}
+	if err := RunWithFS(templates.DiskFS(templateRoot), templateRoot, Config{Mode: ModeSync, Target: targetDir}); err != nil {
+		t.Fatalf("sync after remove: %v", err)
+	}
+	review, err = os.ReadFile(reviewPath)
+	if err != nil {
+		t.Fatalf("read sync review after remove: %v", err)
+	}
+	content = string(review)
+	if !strings.Contains(content, "## Adoption Items") || !strings.Contains(content, "`docs/roles/dev.md`") {
+		t.Fatalf("removed acknowledgment should return file to adopt flow:\n%s", content)
+	}
+	if !strings.Contains(content, "`docs/build-release.md`: repo-specific release note") {
+		t.Fatalf("remaining acknowledgment should still render:\n%s", content)
+	}
+}
+
+func TestRunAckSurfacesStaleAcknowledgedDriftAndPrunesOrphans(t *testing.T) {
+	templateRoot, targetDir := bootstrapSyncedCodeRepo(t)
+	appendRepoSpecificDrift(t, targetDir, "docs/roles/dev.md", "- repo-specific sync note")
+	appendRepoSpecificDrift(t, targetDir, "docs/build-release.md", "- repo-specific release note")
+
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/roles/dev.md",
+		AckReason: "repo-specific sync note",
+	}); err != nil {
+		t.Fatalf("ack dev role: %v", err)
+	}
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/build-release.md",
+		AckReason: "repo-specific release note",
+	}); err != nil {
+		t.Fatalf("ack build-release: %v", err)
+	}
+
+	appendRepoSpecificDrift(t, targetDir, "docs/roles/dev.md", "- later consumer change")
+	if err := os.Remove(filepath.Join(targetDir, "docs", "build-release.md")); err != nil {
+		t.Fatalf("remove build-release: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+	err = RunWithFS(templates.DiskFS(templateRoot), templateRoot, Config{Mode: ModeSync, Target: targetDir})
+	w.Close()
+	os.Stderr = origStderr
+	if err != nil {
+		t.Fatalf("sync after stale/prune setup: %v", err)
+	}
+	stderrBytes, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stderr: %v", err)
+	}
+	if !strings.Contains(string(stderrBytes), "pruned acknowledged entry for docs/build-release.md") {
+		t.Fatalf("expected orphan prune note, got: %s", string(stderrBytes))
+	}
+
+	review, err := os.ReadFile(filepath.Join(targetDir, ".governa", "sync-review.md"))
+	if err != nil {
+		t.Fatalf("read sync review: %v", err)
+	}
+	content := string(review)
+	if !strings.Contains(content, "stale acknowledged drift — consumer file changed since acknowledgment") {
+		t.Fatalf("expected stale acknowledged advisory:\n%s", content)
+	}
+	if !strings.Contains(content, "run `governa ack docs/roles/dev.md --reason \"...\"` again") {
+		t.Fatalf("expected re-ack guidance:\n%s", content)
+	}
+
+	manifest, ok, err := readManifest(targetDir)
+	if err != nil || !ok {
+		t.Fatalf("readManifest() = (%v, %v)", ok, err)
+	}
+	if len(manifest.Acknowledged) != 1 || manifest.Acknowledged[0].Path != "docs/roles/dev.md" {
+		t.Fatalf("expected orphaned acknowledgment pruned, got %+v", manifest.Acknowledged)
+	}
+}
+
+func TestRunAckRejectsNonAdoptFiles(t *testing.T) {
+	templateRoot, targetDir := bootstrapSyncedCodeRepo(t)
+
+	err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/roles/dev.md",
+		AckReason: "repo-specific sync note",
+	})
+	if err == nil || !strings.Contains(err.Error(), "nothing to acknowledge") {
+		t.Fatalf("runAck(non-adopt) error = %v", err)
+	}
+}
+
+func TestRunAckSurfacesTemplateChangedAcknowledgedDrift(t *testing.T) {
+	sourceRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("abs template root: %v", err)
+	}
+	templateRoot := filepath.Join(t.TempDir(), "template-copy")
+	copyTree(t, sourceRoot, templateRoot)
+	templateRoot, targetDir := bootstrapSyncedCodeRepoFromTemplateRoot(t, templateRoot)
+	appendRepoSpecificDrift(t, targetDir, "docs/roles/dev.md", "- repo-specific sync note")
+
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/roles/dev.md",
+		AckReason: "repo-specific sync note",
+	}); err != nil {
+		t.Fatalf("ack dev role: %v", err)
+	}
+
+	templatePath := filepath.Join(templateRoot, "internal", "templates", "overlays", "code", "files", "docs", "roles", "dev.md.tmpl")
+	appendRepoSpecificDrift(t, templateRoot, filepath.ToSlash(strings.TrimPrefix(templatePath, templateRoot+string(filepath.Separator))), "<!-- upstream template change -->")
+
+	if err := RunWithFS(templates.DiskFS(templateRoot), templateRoot, Config{Mode: ModeSync, Target: targetDir}); err != nil {
+		t.Fatalf("sync after template change: %v", err)
+	}
+
+	review, err := os.ReadFile(filepath.Join(targetDir, ".governa", "sync-review.md"))
+	if err != nil {
+		t.Fatalf("read sync review: %v", err)
+	}
+	content := string(review)
+	if !strings.Contains(content, "stale acknowledged drift — template content changed since acknowledgment") {
+		t.Fatalf("expected template-change stale advisory:\n%s", content)
+	}
+	if !strings.Contains(content, "either adopt template content or run `governa ack docs/roles/dev.md --reason \"...\"` again") {
+		t.Fatalf("expected dual-path stale-ack advisory for template-changed drift:\n%s", content)
+	}
+	if !strings.Contains(content, "## Adoption Items") || !strings.Contains(content, "`docs/roles/dev.md`") {
+		t.Fatalf("template-changed acknowledgment should return file to adopt flow:\n%s", content)
 	}
 }

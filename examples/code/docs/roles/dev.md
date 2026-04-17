@@ -33,6 +33,7 @@ This repo is a consumer of the governa governance template. Run `governa sync` t
 
 - Run `governa sync` periodically to check if the governance template has evolved.
 - Review `.governa/sync-review.md` for per-file recommendations (`keep` or `adopt`). Missing files are written directly.
+- When review confirms a file is an intentional, stable carve-out, record it with `governa ack <path> --reason "..."` so future syncs list it under `## Acknowledged Drift` instead of re-raising it as an adopt item.
 - The summary shows how many files need no action vs need adoption.
 - Treat adoptions as non-trivial changes — draft an AC before applying them so the work gets scoped and reviewed through the normal development cycle.
 - When no adoptions are needed: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline. The review artifact (`.governa/sync-review.md`) is not intended to be committed — repo governance decides cleanup.

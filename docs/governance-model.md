@@ -1,8 +1,9 @@
 # Governance Model
 
-This template supports two workflows:
+This template supports three workflows:
 
 - `sync` — bootstrap a new repo or update governance in an existing repo (single command, auto-detected)
+- `ack` — record or remove acknowledged drift for stable file-level carve-outs in consumer repos
 - `enhance` — improve this template from lessons captured in another governed repo
 
 Both workflows use the same deterministic command surface and the same template source tree.
@@ -81,6 +82,18 @@ Behavior:
 `enhance` is not a blind sync operation.
 It is a review-driven, AC-first proposal flow for template maintainers.
 The AC doc is the only output — no `.template-proposed` files are written.
+
+### Mode: `ack`
+
+Use after reviewing `.governa/sync-review.md` in a consumer repo.
+
+Behavior:
+
+- `governa ack <path> --reason "..."` records a stable file-level carve-out in `.governa/manifest`
+- `governa ack --remove <path>` removes that carve-out and returns the file to normal adopt-flow treatment on later syncs
+- acknowledgments bind to both the current consumer-file SHA and the current rendered-template SHA, so either side changing sends the file back through normal review
+- valid acknowledgments move files out of `## Adoption Items` and into `## Acknowledged Drift`
+- stale acknowledgments stay visible via advisory notes until the operator re-acknowledges or removes them
 
 ## Implementation Constraints
 
@@ -200,6 +213,7 @@ Subcommand interface:
 
 ```text
 governa sync [-t <target>] [-y CODE|DOC] [-n "<name>"] [-p "<purpose>"] [-s "<stack>"] [-g] [-d]
+governa ack <path> [--reason "<justification>"] [--remove] [-t <target>]
 governa enhance [-r <reference>] [-d]
 governa version
 ```
@@ -210,6 +224,7 @@ Mode-specific expectations:
 
 - `sync` (new repo): prompts for type, repo-name, purpose, and overlay-specific metadata; flags bypass individual prompts
 - `sync` (existing repo): all parameters are resolved in priority order: (1) explicit flag, (2) stored manifest params, (3) inference from the target directory, (4) interactive prompt. Repo name is inferred from the directory basename, purpose from the first `README.md` paragraph, stack from manifest files (`go.mod`, `package.json`, etc.), and type from `AssessTarget` signals. On re-sync, the manifest provides all previously stored values so no flags or prompts are needed
+- `ack`: requires an existing `.governa/manifest`; add mode requires `--reason`, remove mode requires `--remove`; acknowledgments are file-only (symlinks rejected)
 - `enhance` with `-r`: inspects a reference repo for portable improvements
 - `enhance` without `-r`: self-review comparing on-disk templates against the embedded baseline
 
@@ -237,7 +252,7 @@ Rules:
 
 - never overwrite an existing file silently
 - if a target file already exists, score the collision using content-aware comparison (line count ratio, section count, missing sections, template source changes) and classify as: `keep` (file is identical, more developed, or structurally different with no template evolution) or `adopt` (template has improvements — proposed adds sections, template changed since last sync, un-adopted differences from previous syncs, or structural alignment needed)
-- report all collisions in `.governa/sync-review.md` at the repo root. The review doc header shows the template version transition (e.g., `Template version: 0.17.0 → 0.18.0`). For `adopt` files, sync writes the template version to `.governa/proposed/<path>` for direct comparison
+- report all collisions in `.governa/sync-review.md` at the repo root. The review doc header shows the template version transition (e.g., `Template version: 0.17.0 → 0.18.0`). For `adopt` files, sync writes the template version to `.governa/proposed/<path>` for direct comparison. Valid acknowledged carve-outs render separately under `## Acknowledged Drift`
 - for markdown files: identical content → `keep`; existing ≥2x lines → `keep` (unless template changed → `adopt`); existing has more sections → `keep` (unless template changed → `adopt`); proposed adds missing sections → `adopt`; files with structural observations (subsections deeper than template) → `adopt`; otherwise → `keep`
 - for non-markdown files: if template source-sha256 changed since last sync → `adopt`; otherwise → `keep`
 - content-change detection compares old manifest `source-sha256` against new template `source-sha256` and requires that existing content still differs from the new template (no false positives if the repo already absorbed the change manually)
