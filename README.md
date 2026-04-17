@@ -22,13 +22,13 @@ governa ships with a small role split so agent sessions have a predictable start
 
 Role definitions live in [`docs/roles/`](docs/roles/). By default, sessions run as Maintainer when `docs/roles/maintainer.md` exists; explicit assignment (e.g., "act as DEV") overrides. The shared `AGENTS.md` contract applies in every case.
 
-## Install
+## Modes
+
+First, install the binary:
 
 ```bash
 go install github.com/queone/governa/cmd/governa@latest
 ```
-
-## Modes
 
 ### `sync`
 Consumer mode, run from a target repo or empty directory. Governa is read-only source — templates are embedded in the binary.
