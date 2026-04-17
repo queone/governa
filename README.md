@@ -83,6 +83,8 @@ governa is early. Releases, commits, and pushes are driven by the human director
 
 Scope is also deliberately narrow. governa aims to be a small, stable collaboration contract — not a full-stack generator, not an opinionated starter kit, not an attempt to be another [gstack](https://github.com/garrytan/gstack). The fewer primitives governa ships, the less there is to drift against.
 
+The primary validation surface so far has been CLI-type coding agents — [Claude Code](https://github.com/anthropics/claude-code) and [Codex CLI](https://github.com/openai/codex). The contract is file-based and agent-agnostic in principle — desktop clients and IDE-integrated agents can read the same files — but their session and context-loading models differ, so expect rougher edges there until the patterns are exercised.
+
 ## Self-Hosting Status
 This repo is itself governed as a `CODE` repo and carries the core artifacts at the root:
 
