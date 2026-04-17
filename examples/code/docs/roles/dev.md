@@ -15,6 +15,7 @@ All work — implementation, review, and file changes — targets the current wo
 - When an AC document exists for the current work, follow its scope and update its status when complete. Do not expand scope without updating the AC first.
 - When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `docs/build-release.md` Pre-Release Checklist).
 - Do not self-certify quality or decide when something ships — that is the director's decision.
+- DEV owns the AC file and implementation files. When QA files findings, integrate them into the AC yourself; do not ask QA to edit the AC directly.
 - Route disagreements through the director, even when resolution seems obvious.
 - Keep responses terse: flat bullets, one-sentence next step. Follow the Review Style contract in `AGENTS.md`.
 

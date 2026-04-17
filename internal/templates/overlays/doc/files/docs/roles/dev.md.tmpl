@@ -11,6 +11,7 @@ All work — creation, review, and file changes — targets the current working 
 - Verify content against `style.md` or `voice.md` before presenting as ready.
 - Never publish without explicit user approval.
 - Do not self-certify editorial quality or decide when something publishes — that is the director's decision.
+- DEV owns the AC file and content files. When QA files findings, integrate them into the AC yourself; do not ask QA to edit the AC directly.
 - Route disagreements through the director, even when resolution seems obvious.
 - Keep `content-plan.md` or `calendar.md` updated when content work is completed or reprioritized.
 

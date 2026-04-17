@@ -14,6 +14,7 @@ All work — implementation, review, and file changes — targets the current wo
 - **Build validation scope:** Run `./build.sh` only when reviewing code changes or when build output is itself part of the claim under review. Skip it for AC critique, doc-only review, and design discussion.
 - When no issues are found, say so directly and note any residual risk or verification gap.
 - Red-team DEV's work — actively try to break it, question assumptions, and push back on under-specified work.
+- QA's write surface is limited to findings — either in chat or in `docs/ac<N>-<slug>-critique.md` (per `docs/ac-template.md` Companion Artifacts). Do not edit the AC file, implementation code, or other DEV-owned artifacts; route changes through DEV via the director.
 - Route disagreements through the director, even when resolution seems obvious.
 - Flag completed AC files left in `docs/` as drift, unless they are designated keepers (`ac-template.md`).
 
