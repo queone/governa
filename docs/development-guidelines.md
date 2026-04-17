@@ -25,6 +25,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 - Fixes to `internal/buildtool`, `internal/reltool`, or `build.sh` must propagate to both overlay template copies and rendered examples
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
+- Exported functions in template-owned packages (`internal/buildtool`, `internal/reltool`, `internal/color`) carry godoc single-line comments. Consumers that wholesale-adopt these packages inherit a correctly-commented surface.
 
 ## Program Version Declaration
 
@@ -67,3 +68,4 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 - `arch.md` reflects what is built, not what is planned; `plan.md` is forward-looking only
 - When a doc references a function, file path, or CLI flag, verify it still exists before committing
 - Overlay READMEs list every template file; update them when adding or removing templates
+- Numbered checklist steps with substantive content use `N. **Imperative title.** Details.` format. Short one-liner enumerations and rule statements stay lowercase-prose.

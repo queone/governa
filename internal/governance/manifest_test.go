@@ -81,7 +81,11 @@ func TestReadManifestMissing(t *testing.T) {
 func TestReadManifestCorrupt(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, manifestFileName), []byte("garbage"), 0o644); err != nil {
+	manifestPath := filepath.Join(dir, manifestFileName)
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("garbage"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, ok, err := readManifest(dir)
@@ -103,7 +107,11 @@ func TestReadManifestValid(t *testing.T) {
 			{Path: "AGENTS.md", Kind: "file", Checksum: "abc123", SourcePath: "base/AGENTS.md", SourceChecksum: "def456"},
 		},
 	}
-	if err := os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644); err != nil {
+	manifestPath := filepath.Join(dir, manifestFileName)
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte(formatManifest(m)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := readManifest(dir)

@@ -32,7 +32,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 
 For `sync`, a user runs `governa sync` from inside a target repo. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output.
 
-For `enhance`, a maintainer runs from inside this repo, points at another governed repo, and reviews governed sections and mapped overlay artifacts. Governance sections are compared at the constraint level (not just keyword signals), and structured markdown files are diffed per-section. When a `.governa-manifest` exists in the reference repo, enhance performs three-way comparison to distinguish user customizations from stale template content. Classification uses a data-driven rule table. If actionable improvements are found, enhance creates an AC doc under `docs/` for the highest-priority candidate. No template files are overwritten automatically.
+For `enhance`, a maintainer runs from inside this repo, points at another governed repo, and reviews governed sections and mapped overlay artifacts. Governance sections are compared at the constraint level (not just keyword signals), and structured markdown files are diffed per-section. When a `.governa/manifest` exists in the reference repo, enhance performs three-way comparison to distinguish user customizations from stale template content. Classification uses a data-driven rule table. If actionable improvements are found, enhance creates an AC doc under `docs/` for the highest-priority candidate. No template files are overwritten automatically.
 
 ## Architecture Notes
 
@@ -41,6 +41,7 @@ For `enhance`, a maintainer runs from inside this repo, points at another govern
 - `enhance` is report-first and intentionally conservative
 - shell wrappers are conveniences only; the canonical implementation lives in Go
 - `docs/roles/` provides role-specific behavior docs (director reference, DEV, QA, maintainer) that supplement the shared governance contract; role selection is instruction-driven and defined in `Interaction Mode`
+- governa-managed metadata in consumer repos lives under a single `.governa/` directory: `manifest` (committed), `proposed/` (ephemeral), `sync-review.md` (working artifact), `feedback/` (persistent consumer feedback). Legacy flat paths (`.governa-manifest`, `.governa-proposed/`, `governa-sync-review.md`) are auto-migrated at sync start.
 
 ## Conventions
 

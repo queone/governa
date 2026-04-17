@@ -13,8 +13,26 @@ import (
 )
 
 const manifestFormatVersion = "governa-manifest-v1"
-const manifestFileName = ".governa-manifest"
-const legacyManifestFileName = ".repokit-manifest"
+
+// governa-managed metadata lives under a single `.governa/` directory in
+// consumer repos (AC55). Primary paths:
+const (
+	governaDir       = ".governa"
+	manifestFileName = ".governa/manifest"
+	proposedDirName  = ".governa/proposed"
+	syncReviewFile   = ".governa/sync-review.md"
+	feedbackDirName  = ".governa/feedback"
+)
+
+// Legacy path names detected and migrated on sync. Kept as constants so the
+// migration helper and backward-compatible readers reference one source.
+const (
+	legacyManifestFileName      = ".repokit-manifest"
+	legacyPreAC55ManifestFile   = ".governa-manifest"
+	legacyPreAC55ProposedDir    = ".governa-proposed"
+	legacyPreAC55SyncReviewFile = "governa-sync-review.md"
+)
+
 const legacyManifestFormatVersion = "repokit-manifest-v1"
 
 type ManifestParams struct {
@@ -218,8 +236,11 @@ func parseManifest(content string) (Manifest, error) {
 }
 
 func readManifest(root string) (Manifest, bool, error) {
-	// Try current name first, then legacy fallback for repos bootstrapped before the rename.
-	for _, name := range []string{manifestFileName, legacyManifestFileName} {
+	// Try current name first, then legacy fallbacks:
+	//   - .governa/manifest (current, AC55)
+	//   - .governa-manifest (pre-AC55 flat layout)
+	//   - .repokit-manifest (pre-governa rename)
+	for _, name := range []string{manifestFileName, legacyPreAC55ManifestFile, legacyManifestFileName} {
 		path := filepath.Join(root, name)
 		content, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
@@ -244,4 +265,60 @@ func manifestEntryMap(m Manifest) map[string]ManifestEntry {
 		out[e.Path] = e
 	}
 	return out
+}
+
+// migrateGovernaLegacyPaths consolidates pre-AC55 metadata paths under the
+// `.governa/` directory. Runs at the top of `governa sync` so consumer repos
+// transition transparently on their next sync. Emits one stderr log line per
+// rename. The ephemeral `.governa-proposed/` tree is removed; sync regenerates
+// its replacement under `.governa/proposed/`.
+func migrateGovernaLegacyPaths(root string) error {
+	governaDirPath := filepath.Join(root, governaDir)
+
+	renames := []struct {
+		legacy  string
+		current string
+	}{
+		{legacyPreAC55ManifestFile, manifestFileName},
+		{legacyPreAC55SyncReviewFile, syncReviewFile},
+	}
+	for _, r := range renames {
+		legacyAbs := filepath.Join(root, r.legacy)
+		currentAbs := filepath.Join(root, r.current)
+		legacyInfo, err := os.Stat(legacyAbs)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("stat legacy %s: %w", r.legacy, err)
+		}
+		if legacyInfo.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(currentAbs); err == nil {
+			// Current path already exists — prefer the current one and remove the legacy.
+			if err := os.Remove(legacyAbs); err != nil {
+				return fmt.Errorf("remove stale legacy %s: %w", r.legacy, err)
+			}
+			fmt.Fprintf(os.Stderr, "governa sync: removed stale %s (superseded by %s)\n", r.legacy, r.current)
+			continue
+		}
+		if err := os.MkdirAll(governaDirPath, 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", governaDir, err)
+		}
+		if err := os.Rename(legacyAbs, currentAbs); err != nil {
+			return fmt.Errorf("migrate %s → %s: %w", r.legacy, r.current, err)
+		}
+		fmt.Fprintf(os.Stderr, "governa sync: migrated %s → %s\n", r.legacy, r.current)
+	}
+
+	legacyProposedAbs := filepath.Join(root, legacyPreAC55ProposedDir)
+	if info, err := os.Stat(legacyProposedAbs); err == nil && info.IsDir() {
+		if err := os.RemoveAll(legacyProposedAbs); err != nil {
+			return fmt.Errorf("remove legacy %s: %w", legacyPreAC55ProposedDir, err)
+		}
+		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s (regenerated under %s)\n", legacyPreAC55ProposedDir, proposedDirName)
+	}
+
+	return nil
 }

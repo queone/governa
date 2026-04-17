@@ -40,6 +40,7 @@ var versionPattern = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
 var programVersionInlineRe = regexp.MustCompile(`(?m)^\s*const\s+programVersion\s*(?:string\s*)?=\s*"([^"]*)"`)
 var programVersionBlockRe = regexp.MustCompile(`(?s)const\s*\(.*?programVersion\s*(?:string\s*)?=\s*"([^"]*)".*?\)`)
 
+// ParseArgs parses command-line arguments into a Config; returns (_, true, nil) when help was requested.
 func ParseArgs(args []string) (Config, bool, error) {
 	if len(args) == 1 && isHelpArg(args[0]) {
 		return Config{}, true, nil
@@ -61,6 +62,7 @@ func ParseArgs(args []string) (Config, bool, error) {
 	return cfg, false, nil
 }
 
+// Usage returns the formatted help text for the build command.
 func Usage() string {
 	return color.FormatUsage("build [target ...] [-v|--verbose]", []color.UsageLine{
 		{Flag: "-v, --verbose", Desc: "run go test in verbose mode"},
@@ -68,6 +70,7 @@ func Usage() string {
 	}, "When targets are specified, validation (vet, fmt, test, staticcheck) runs\nonly against those cmd packages. To validate the full repo, run with no targets.")
 }
 
+// Run executes the full build-and-validation pipeline (tidy, fmt, vet, test, staticcheck, binary install).
 func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 	modulePath, err := modulePath()
 	if err != nil {

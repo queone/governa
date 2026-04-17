@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -436,8 +437,11 @@ func validateConfig(cfg Config) error {
 //   - "adopt"    — governance artifacts found but no manifest
 //   - "new"      — fresh directory
 func detectSyncMode(targetDir string) string {
-	// Check for manifest first (authoritative).
-	for _, name := range []string{manifestFileName, legacyManifestFileName} {
+	// Check for manifest first (authoritative). Current path (`.governa/manifest`)
+	// takes priority; fall back to pre-AC55 (`.governa-manifest`) and pre-governa
+	// (`.repokit-manifest`) layouts so legacy repos still detect as re-sync before
+	// migrateGovernaLegacyPaths runs.
+	for _, name := range []string{manifestFileName, legacyPreAC55ManifestFile, legacyManifestFileName} {
 		if _, err := os.Stat(filepath.Join(targetDir, name)); err == nil {
 			return "re-sync"
 		}
@@ -520,6 +524,9 @@ func promptMissing(cfg *Config, targetDir string) {
 	}
 }
 
+// runSync is the sync-mode entrypoint. Path constants used here and throughout
+// the file come from manifest.go: ".governa/manifest", ".governa/proposed",
+// ".governa/sync-review.md", ".governa/feedback" (AC55).
 func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	targetAbs, err := filepath.Abs(cfg.Target)
 	if err != nil {
@@ -527,6 +534,12 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 	if err := os.MkdirAll(targetAbs, 0o755); err != nil && !cfg.DryRun {
 		return fmt.Errorf("create target directory: %w", err)
+	}
+
+	if !cfg.DryRun {
+		if err := migrateGovernaLegacyPaths(targetAbs); err != nil {
+			return fmt.Errorf("migrate legacy governa paths: %w", err)
+		}
 	}
 
 	syncMode := detectSyncMode(targetAbs)
@@ -1020,10 +1033,19 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 			}
 			return nil
 		}
-		// .governa-proposed/ is a sync working artifact, not repo content.
-		// Skip it entirely so its markdown files don't inflate docSignals on
-		// re-sync vs first-sync (utils round-5 finding).
-		if rel == ".governa-proposed" || strings.HasPrefix(rel, ".governa-proposed"+string(os.PathSeparator)) {
+		// .governa/ is governa-managed metadata (manifest, proposed/, sync-review.md,
+		// feedback/); not repo content. Skip it entirely so its markdown files don't
+		// inflate docSignals on re-sync vs first-sync (utils round-5 finding).
+		if rel == governaDir || strings.HasPrefix(rel, governaDir+string(os.PathSeparator)) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		// Legacy pre-AC55 layout (.governa-proposed/). Kept for repos that haven't
+		// re-synced since migration lands — migrateGovernaLegacyPaths removes it,
+		// but AssessTarget may run from test harnesses that bypass runSync.
+		if rel == legacyPreAC55ProposedDir || strings.HasPrefix(rel, legacyPreAC55ProposedDir+string(os.PathSeparator)) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -1228,13 +1250,15 @@ type markdownSection struct {
 // signals. This set is used by isGovernaOwnedPath; its scope is intentionally
 // limited to signal counting and does NOT affect expectedArtifactPaths,
 // ExistingArtifacts computation, collision scoring, review rendering, or
-// .governa-proposed/ materialization.
+// .governa/proposed/ materialization.
 var governaOwnedPaths = map[string]bool{
 	// Bookkeeping
-	".governa-manifest":      true,
-	".repokit-manifest":      true, // legacy, kept for backward-compat repos
-	"TEMPLATE_VERSION":       true,
-	"governa-sync-review.md": true,
+	manifestFileName:            true, // .governa/manifest
+	syncReviewFile:              true, // .governa/sync-review.md
+	legacyPreAC55ManifestFile:   true, // pre-AC55 legacy
+	legacyPreAC55SyncReviewFile: true, // pre-AC55 legacy
+	legacyManifestFileName:      true, // pre-governa legacy
+	"TEMPLATE_VERSION":          true,
 
 	// Agent entrypoints (any future entrypoint name that symlinks to AGENTS.md
 	// would be added here via the same pattern).
@@ -1261,7 +1285,7 @@ var governaOwnedPaths = map[string]bool{
 // Scope — this helper ONLY affects codeSignals/docSignals. It does NOT:
 //   - filter files out of ExistingArtifacts or collision reporting
 //   - change which scored files appear in the review doc's Recommendations table
-//   - alter which files get materialized under .governa-proposed/
+//   - alter which files get materialized under .governa/proposed/
 //   - affect RepoShape, CollisionRisk, Recommendation, or ResolvedType beyond
 //     what the corrected signal counts naturally produce
 func isGovernaOwnedPath(rel string) bool {
@@ -2554,7 +2578,57 @@ func renderACDoc(selected EnhancementCandidate, deferred []EnhancementCandidate,
 		b.WriteString("\n")
 	}
 
+	if feedback := renderConsumerFeedbackSection(report.ReferenceRoot); feedback != "" {
+		b.WriteString(feedback)
+	}
+
 	b.WriteString("## Status\n\nPENDING\n")
+	return b.String()
+}
+
+// renderConsumerFeedbackSection reads `.governa/feedback/*.md` from the
+// reference repo and returns a `## Consumer Feedback` section containing
+// each file's content. Returns an empty string if the directory is missing
+// or contains no readable markdown files. (AC55 IE8)
+func renderConsumerFeedbackSection(referenceRoot string) string {
+	if referenceRoot == "" {
+		return ""
+	}
+	dir := filepath.Join(referenceRoot, feedbackDirName)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		files = append(files, e.Name())
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	sort.Strings(files)
+	var b strings.Builder
+	b.WriteString("## Consumer Feedback\n\n")
+	b.WriteString("Persisted feedback from `")
+	b.WriteString(feedbackDirName)
+	b.WriteString("/` in the reference repo. Informational — directs template authors at recurring consumer pain points.\n\n")
+	for _, name := range files {
+		path := filepath.Join(dir, name)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(&b, "### %s\n\n", name)
+		trimmed := strings.TrimSpace(string(content))
+		if trimmed != "" {
+			b.WriteString(trimmed)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
 	return b.String()
 }
 
@@ -3035,7 +3109,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	} else if newVersion != "" {
 		fmt.Fprintf(&b, "Template version: %s\n\n", newVersion)
 	}
-	fmt.Fprintln(&b, "Generated by `governa sync`. Sync automatically updates `TEMPLATE_VERSION` and `.governa-manifest` to record the current template baseline — these are bookkeeping, not review items. This file (`governa-sync-review.md`) and `.governa-proposed/` are working artifacts, not intended to be committed.")
+	fmt.Fprintln(&b, "Generated by `governa sync`. Sync automatically updates `TEMPLATE_VERSION` and `.governa/manifest` to record the current template baseline — these are bookkeeping, not review items. This file (`.governa/sync-review.md`) and `.governa/proposed/` are working artifacts, not intended to be committed.")
 	fmt.Fprintln(&b, "")
 
 	// Template Changes — brief summary of what changed in governa between the
@@ -3058,7 +3132,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	fmt.Fprintln(&b, "   - If collapsing would lose genuinely repo-specific detail, the agent must keep it inline under the template's section rather than adding new headings.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "2. **Content pass — adopt template wording as the base.**")
-	fmt.Fprintln(&b, "   - For each section, the agent must start from the template text in `.governa-proposed/<file>`.")
+	fmt.Fprintln(&b, "   - For each section, the agent must start from the template text in `.governa/proposed/<file>`.")
 	fmt.Fprintln(&b, "   - The agent must layer repo-specific additions (project names, file paths, domain rules) on top.")
 	fmt.Fprintln(&b, "   - If the template wording covers the same intent with better or more general phrasing, the agent must adopt it and drop the repo's version.")
 	fmt.Fprintln(&b, "   - The agent must not sacrifice detail that is definitively specific to the repo.")
@@ -3076,6 +3150,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	fmt.Fprintln(&b, "6. **Report — explain each decision to the director.**")
 	fmt.Fprintln(&b, "   - For each `adopt` item, the agent must state one of: **adopted** (with summary of changes), **kept** (with documented repo-specific reason), or **needs director judgment** (with explanation).")
 	fmt.Fprintln(&b, "   - The agent must not silently skip any `adopt` item. Every item must have a stated disposition.")
+	fmt.Fprintln(&b, "   - For partial-adopt cases (adopting some template content while preserving some existing content), produce `docs/ac<N>-<slug>-dispositions.md` listing each preserved difference with (1) content kept, (2) template content rejected, (3) repo-specific reason. See `docs/ac-template.md` Companion Artifacts.")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "7. **Feedback — surface improvements for the governance template.**")
 	fmt.Fprintln(&b, "   - The agent must note any recommendations that were confusing, lacked sufficient context to evaluate, or didn't account for a common repo pattern.")
@@ -3115,12 +3190,12 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	}
 	fmt.Fprintf(&b, "\n## Summary\n\n")
 	fmt.Fprintf(&b, "- **keep**: %d files (no adoption work needed)\n", keeps)
-	fmt.Fprintf(&b, "- **adopt**: %d files (must compare `.governa-proposed/<file>` and adopt unless repo-specific)\n", adopts)
+	fmt.Fprintf(&b, "- **adopt**: %d files (must compare `.governa/proposed/<file>` and adopt unless repo-specific)\n", adopts)
 
 	// Adoption Items — single detail section for all adopt files
 	if adopts > 0 {
 		fmt.Fprintf(&b, "\n## Adoption Items\n\n")
-		fmt.Fprintln(&b, "For each file below, read `.governa-proposed/<file>` and adopt the template content. Keep only content that is definitively repo-specific with a documented reason.")
+		fmt.Fprintln(&b, "For each file below, read `.governa/proposed/<file>` and adopt the template content. Keep only content that is definitively repo-specific with a documented reason.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
 			if s.recommendation != "adopt" {
@@ -3151,7 +3226,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 			if knownMergeTargets[filepath.Base(rel)] {
 				fmt.Fprintf(&b, " — merge template patterns into your existing file (don't replace wholesale)")
 			}
-			fmt.Fprintf(&b, " → `diff %s .governa-proposed/%s`\n", rel, rel)
+			fmt.Fprintf(&b, " → `diff %s .governa/proposed/%s`\n", rel, rel)
 		}
 		fmt.Fprintln(&b, "")
 	}
@@ -3190,7 +3265,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 			// never point at a missing file.
 			diffSuffix := ""
 			if shouldMaterializeProposal(s) {
-				diffSuffix = fmt.Sprintf(" — `diff %s .governa-proposed/%s`", rel, rel)
+				diffSuffix = fmt.Sprintf(" — `diff %s .governa/proposed/%s`", rel, rel)
 			}
 			if s.recommendation == "keep" && len(s.missingSections) > 0 {
 				fmt.Fprintf(&b, "- `%s`: template also has sections not in this file: %s — review if relevant to this repo%s\n", rel, strings.Join(s.missingSections, ", "), diffSuffix)
@@ -3228,13 +3303,13 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprintln(&b, "2. Re-run `governa sync` to complete the sync. Adoption items below stay until conflicts are cleared.")
 	case adopts > 0:
 		fmt.Fprintln(&b, "1. Work through `## Adoption Items` following the Evaluation Methodology above.")
-		fmt.Fprintln(&b, "2. After adoption decisions are made, commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa-manifest`) to record the new baseline.")
-		fmt.Fprintln(&b, "3. The review artifact (`governa-sync-review.md`) and `.governa-proposed/` are working artifacts — not intended to be committed.")
+		fmt.Fprintln(&b, "2. After adoption decisions are made, commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.")
+		fmt.Fprintln(&b, "3. The review artifact (`.governa/sync-review.md`) and `.governa/proposed/` are working artifacts — not intended to be committed.")
 	default:
 		fmt.Fprintln(&b, "No adoption work needed.")
 		fmt.Fprintln(&b, "")
-		fmt.Fprintln(&b, "1. Commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa-manifest`) to record the new baseline.")
-		fmt.Fprintln(&b, "2. The review artifact (`governa-sync-review.md`) is not intended to be committed.")
+		fmt.Fprintln(&b, "1. Commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.")
+		fmt.Fprintln(&b, "2. The review artifact (`.governa/sync-review.md`) is not intended to be committed.")
 	}
 	fmt.Fprintln(&b, "")
 
@@ -3583,7 +3658,12 @@ func readmeMissingWhySection(targetDir string) bool {
 }
 
 func writeSyncReview(targetDir string, scores []collisionScore, conflicts []conflict, oldVersion, newVersion string, dryRun bool) error {
-	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewPath := filepath.Join(targetDir, syncReviewFile)
+	if !dryRun {
+		if err := os.MkdirAll(filepath.Dir(reviewPath), 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", governaDir, err)
+		}
+	}
 	content := renderSyncReview(targetDir, scores, conflicts, oldVersion, newVersion)
 	fmt.Printf("%s %s (sync review document)\n", formatAction(dryRun, "write"), reviewPath)
 	if dryRun {
@@ -3602,7 +3682,7 @@ func printConflictsSummary(targetDir string, conflicts []conflict) {
 	if len(conflicts) != 1 {
 		plural = "conflicts"
 	}
-	fmt.Fprintf(os.Stderr, "%s needs manual resolution — %d %s detected — see governa-sync-review.md\n",
+	fmt.Fprintf(os.Stderr, "%s needs manual resolution — %d %s detected — see .governa/sync-review.md\n",
 		color.Yel("disposition:"), len(conflicts), plural)
 	for _, c := range conflicts {
 		rel := c.path
@@ -3618,9 +3698,9 @@ func printConflictsSummary(targetDir string, conflicts []conflict) {
 }
 
 // writeProposedFiles writes the template version of each reviewable file
-// to .governa-proposed/<path> so agents can diff directly against their files.
+// to .governa/proposed/<path> so agents can diff directly against their files.
 // shouldMaterializeProposal reports whether a score warrants writing its
-// template counterpart into .governa-proposed/. Used by writeProposedFiles
+// template counterpart into .governa/proposed/. Used by writeProposedFiles
 // (the producer) and by renderSyncReview's Advisory Notes section (the
 // consumer that points operators at the diff command). Having a single
 // predicate guarantees the two surfaces stay aligned — the review doc
@@ -3970,14 +4050,14 @@ func shouldMaterializeProposal(s collisionScore) bool {
 }
 
 func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) error {
-	proposedDir := filepath.Join(targetDir, ".governa-proposed")
+	proposedDir := filepath.Join(targetDir, proposedDirName)
 	// Clean any stale entries from prior sync runs before writing the
-	// current run's set. The invariant is: after sync, .governa-proposed/
+	// current run's set. The invariant is: after sync, .governa/proposed/
 	// contains exactly the current-run proposals + ABOUT.md, nothing else.
 	// Dry-run must NOT modify disk. (AC51 Fix 7)
 	if !dryRun {
 		if err := os.RemoveAll(proposedDir); err != nil {
-			return fmt.Errorf("clean stale .governa-proposed/: %w", err)
+			return fmt.Errorf("clean stale .governa/proposed/: %w", err)
 		}
 	}
 	wrote := false
@@ -4017,7 +4097,7 @@ func writeProposedFiles(targetDir string, scores []collisionScore, dryRun bool) 
 	// to avoid colliding with a proposed repo README.md).
 	aboutPath := filepath.Join(proposedDir, "ABOUT.md")
 	if !dryRun {
-		about := "# Proposed Template Files\n\nEach file here is the template version of a file flagged in `governa-sync-review.md`:\n\n- files marked `adopt` — compare and adopt the template content\n- files marked `keep` with advisory notes (missing sections or section renames) — compare to see what the advisory references\n\nUse them for direct comparison:\n\n    diff <your-file> .governa-proposed/<file>\n\nFiles marked `keep` with no advisory notes are not materialized here — there is no review work expected for them.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
+		about := "# Proposed Template Files\n\nEach file here is the template version of a file flagged in `.governa/sync-review.md`:\n\n- files marked `adopt` — compare and adopt the template content\n- files marked `keep` with advisory notes (missing sections or section renames) — compare to see what the advisory references\n\nUse them for direct comparison:\n\n    diff <your-file> .governa/proposed/<file>\n\nFiles marked `keep` with no advisory notes are not materialized here — there is no review work expected for them.\n\nThis directory is not intended to be committed. Repo governance decides cleanup.\n"
 		os.WriteFile(aboutPath, []byte(about), 0o644)
 	}
 	return nil
@@ -4046,7 +4126,7 @@ func printAdoptDriftFromScores(scores []collisionScore) {
 	}
 	suffix := ""
 	if adopts > 0 {
-		suffix = " — see governa-sync-review.md"
+		suffix = " — see .governa/sync-review.md"
 	}
 	fmt.Printf("%s %s%s\n", color.Yel("drift:"), strings.Join(parts, ", "), suffix)
 }

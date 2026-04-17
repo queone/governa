@@ -19,6 +19,7 @@ type Config struct {
 	Message string
 }
 
+// ParseArgs parses release-command arguments into a Config; returns (_, true, nil) when help was requested or no args supplied.
 func ParseArgs(args []string) (Config, bool, error) {
 	if len(args) == 0 {
 		return Config{}, true, nil
@@ -54,16 +55,19 @@ func ParseArgs(args []string) (Config, bool, error) {
 	return cfg, false, nil
 }
 
+// IsHelpArg reports whether arg is one of the recognized help flags.
 func IsHelpArg(arg string) bool {
 	return arg == "-h" || arg == "-?" || arg == "--help"
 }
 
+// Usage returns the formatted help text for the release command.
 func Usage() string {
 	return color.FormatUsage("rel vX.Y.Z \"release message\"", []color.UsageLine{
 		{Flag: "-h, -?, --help", Desc: "show this help"},
 	}, "Release message must be 80 characters or fewer.")
 }
 
+// Run orchestrates the release git sequence (add → commit → tag → push tag → push branch) after an interactive confirmation.
 func Run(cfg Config, in io.Reader, out io.Writer, errOut io.Writer) error {
 	if err := ensureGitRepo(); err != nil {
 		return err

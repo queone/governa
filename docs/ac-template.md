@@ -2,6 +2,14 @@ Copy this file to `docs/ac<N>-<slug>.md`, where `N` is the next sequential AC nu
 
 The AC is the implementation contract for one approved roadmap item. The full development cycle that wraps around this template lives in `docs/development-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
 
+## Companion Artifacts
+
+ACs produce three optional companion files that live alongside the AC doc in `docs/`. All are instructional scaffolding — delete this `## Companion Artifacts` section when copying the template into a real AC.
+
+- **`docs/ac<N>-<slug>-critique.md`** — external-review findings against the AC before implementation begins. The critique gate requires either this file or findings integrated directly into the AC itself (see `AGENTS.md` Approval Boundaries). Deleted at release prep alongside the AC.
+- **`docs/ac<N>-<slug>-feedback.md`** — per-sync feedback artifact produced by `governa sync` ACs. Captures genuine observations about the sync output (template defaults that fight the repo, scoring gaps, methodology issues, things that landed well). At release prep, moved to `.governa/feedback/ac<N>-<slug>.md` instead of deleted, so the consumer's feedback persists for governa's future `enhance -r` runs.
+- **`docs/ac<N>-<slug>-dispositions.md`** — companion artifact for partial-adopt files. When an AC performs partial adoption — adopts some template content while preserving some existing content — list every preserved difference with: (1) content kept, (2) template content rejected, (3) repo-specific reason. Deleted at release prep alongside the AC. Before deletion, consolidate any long-term WHY-reasons into inline comments or durable docs.
+
 # AC<N> Title
 
 One-paragraph summary of what this AC delivers and why. State the change in plain terms — feature, refactor, infrastructure, or doc. Note whether it is code or doc-only.
@@ -19,14 +27,14 @@ Describe the change in one short paragraph.
 
 ## In Scope
 
-List the concrete changes this AC will make. Use sub-headings for grouping (e.g. "New files", "Modified files", "Schema changes"). Be specific — file paths, function names, table columns. The In Scope list is the authoritative scope contract.
+List the concrete changes this AC will make. Use sub-headings for grouping (e.g. "Files to create", "Files to modify", "Schema changes"). Be specific — file paths, function names, table columns. The In Scope list is the authoritative scope contract.
 
-### New files
+### Files to create
 
 - `path/to/new_file` — what it contains
 - `docs/new-doc.md` — what it documents
 
-### Modified files
+### Files to modify
 
 - `existing_file` — what changes
 - `arch.md` — what gets updated

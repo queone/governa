@@ -35,7 +35,7 @@ This means the template must be organized so an agent can reason about it easily
 
 Single entry point for both new and existing repos. Detection order:
 
-1. `.governa-manifest` or `.repokit-manifest` found → **re-sync** (existing repo with stored params)
+1. `.governa/manifest` (or pre-AC55 `.governa-manifest`, or pre-governa `.repokit-manifest`) found → **re-sync** (existing repo with stored params)
 2. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/roles/) → **first sync** (existing repo, no stored params)
 3. Otherwise → **new repo** bootstrap
 
@@ -144,18 +144,18 @@ If the existing `CLAUDE.md` content is already covered by `AGENTS.md`, deletion 
 
 Two distinct outputs report sync state to the operator:
 
-- **pre-sync assessment** — printed before writes. Shows repo shape, signals, existing artifacts, and collision risk. Useful for dry-runs and understanding what sync is about to evaluate. As of AC46, this output does not include a `recommendation:` line — that field was derived from repo shape + collision risk (both still printed) and created perceived contradiction with the final disposition. The `Assessment.Recommendation` struct field remains for programmatic use but is no longer printed. As of AC47, the `collisions:` line is suppressed when it would duplicate `existing-artifacts:` (the common case); it still prints when the two differ (e.g., a zero-size expected file is present). As of AC48, `signals:` counts exclude `.governa-proposed/` (a working artifact) and governa-owned paths (bookkeeping files, agent entrypoints, overlay markdown written by governa) so first-sync and re-sync produce the same counts for the same underlying repo content. The exclusion is scoped to signal counting only — `ExistingArtifacts`, collision scoring, review rendering, and `.governa-proposed/` materialization are unaffected.
+- **pre-sync assessment** — printed before writes. Shows repo shape, signals, existing artifacts, and collision risk. Useful for dry-runs and understanding what sync is about to evaluate. As of AC46, this output does not include a `recommendation:` line — that field was derived from repo shape + collision risk (both still printed) and created perceived contradiction with the final disposition. The `Assessment.Recommendation` struct field remains for programmatic use but is no longer printed. As of AC47, the `collisions:` line is suppressed when it would duplicate `existing-artifacts:` (the common case); it still prints when the two differ (e.g., a zero-size expected file is present). As of AC48, `signals:` counts exclude `.governa/` (governa-managed metadata) and governa-owned paths (bookkeeping files, agent entrypoints, overlay markdown written by governa) so first-sync and re-sync produce the same counts for the same underlying repo content. The exclusion is scoped to signal counting only — `ExistingArtifacts`, collision scoring, review rendering, and `.governa/proposed/` materialization are unaffected.
 - **type provenance** — after the assessment, the resolved repo type is surfaced with a provenance label. On the manifest path (re-sync), `printParamSources` prints `type: CODE (manifest)`. When the type was inferred from repo shape (new-repo bootstrap, or first sync of an existing repo without a manifest), `runSync` prints `type: CODE (inferred)` after `printAssessment`. Exactly one provenance line is emitted per run.
 - **final sync disposition** — printed after transforms when conflicts are detected. Prefixed with `disposition:` and reports the final state (e.g., `needs manual resolution — N conflict(s) detected`). When no conflicts are detected, the drift summary is the final recommendation and no `disposition:` line is emitted.
-- **`.governa-proposed/` contents** — materializes template counterparts for (1) all `adopt` items, and (2) `keep` items that carry advisory notes (`missingSections` or `sectionRenames`). `keep` items without advisory notes are not materialized. A single predicate (`shouldMaterializeProposal`) governs both `writeProposedFiles` and the Advisory Notes diff-command suffix so the review doc can never point at a missing file. As of AC51, the directory is cleaned at the start of every sync run (guarded by `!dryRun`) so stale entries from prior runs never accumulate.
-- **`## Template Changes`** (AC51) — when sync moves across template versions, a brief summary at the top of `governa-sync-review.md` lists CHANGELOG rows for intermediate versions, sourced from governa's embedded `CHANGELOG.md`. Omitted on first sync or same-version re-sync.
+- **`.governa/proposed/` contents** — materializes template counterparts for (1) all `adopt` items, and (2) `keep` items that carry advisory notes (`missingSections` or `sectionRenames`). `keep` items without advisory notes are not materialized. A single predicate (`shouldMaterializeProposal`) governs both `writeProposedFiles` and the Advisory Notes diff-command suffix so the review doc can never point at a missing file. As of AC51, the directory is cleaned at the start of every sync run (guarded by `!dryRun`) so stale entries from prior runs never accumulate.
+- **`## Template Changes`** (AC51) — when sync moves across template versions, a brief summary at the top of `.governa/sync-review.md` lists CHANGELOG rows for intermediate versions, sourced from governa's embedded `CHANGELOG.md`. Omitted on first sync or same-version re-sync.
 - **Adoption Items new-section wording** (AC51) — when a template addition introduces new sections, the Adoption Items entry uses `adds sections:` (not the prior `missing sections:`) and surfaces new sections even alongside other changes (not subsumed into `(cosmetic)` classifications).
 - **Manifest `sha256:` accuracy** (AC51) — for `adopt` and `keep` items where governa did not overwrite the repo file, the manifest records the actual on-disk sha256, not the planned-write sha. `source-sha256:` continues to reflect the template source.
 - **Stack-aware `.gitignore`** (AC51) — when `cfg.Stack` matches a known stack (Go today; extensible via `internal/templates/stack-ignores/`), the rendered `.gitignore` appends a language-specific block after the cross-language base. Eliminates the recurring Standing Divergence pattern for Go repos.
 
-The `## Conflicts` section in `governa-sync-review.md` is the durable operator-facing surface for these invariant violations. It renders before `## Recommendations` because conflicts must be resolved before the rest of the review is actionable.
+The `## Conflicts` section in `.governa/sync-review.md` is the durable operator-facing surface for these invariant violations. It renders before `## Recommendations` because conflicts must be resolved before the rest of the review is actionable.
 
-As of AC48, the `## Status` section in `governa-sync-review.md` reflects the actual review state: `PENDING — operator review required` when `adopt` items or conflicts exist, `CLEAN — no required adoption/conflict action` otherwise. `CLEAN` does not imply "nothing to review" — `keep`-with-advisory items are still reviewable but do not block sync completion.
+As of AC48, the `## Status` section in `.governa/sync-review.md` reflects the actual review state: `PENDING — operator review required` when `adopt` items or conflicts exist, `CLEAN — no required adoption/conflict action` otherwise. `CLEAN` does not imply "nothing to review" — `keep`-with-advisory items are still reviewable but do not block sync completion.
 
 ## Ownership Model
 
@@ -171,7 +171,7 @@ Recommended initial ownership model:
   - `AGENTS.md`
   - `CLAUDE.md` symlink
   - `TEMPLATE_VERSION` — records the last governa template version this repo was synced against; updated automatically by `governa sync` on every run
-  - `.governa-manifest`
+  - `.governa/manifest`
 - overlay-owned by default when newly created:
   - `README.md`
   - `arch.md`
@@ -237,7 +237,7 @@ Rules:
 
 - never overwrite an existing file silently
 - if a target file already exists, score the collision using content-aware comparison (line count ratio, section count, missing sections, template source changes) and classify as: `keep` (file is identical, more developed, or structurally different with no template evolution) or `adopt` (template has improvements — proposed adds sections, template changed since last sync, un-adopted differences from previous syncs, or structural alignment needed)
-- report all collisions in `governa-sync-review.md` at the repo root. The review doc header shows the template version transition (e.g., `Template version: 0.17.0 → 0.18.0`). For `adopt` files, sync writes the template version to `.governa-proposed/<path>` for direct comparison
+- report all collisions in `.governa/sync-review.md` at the repo root. The review doc header shows the template version transition (e.g., `Template version: 0.17.0 → 0.18.0`). For `adopt` files, sync writes the template version to `.governa/proposed/<path>` for direct comparison
 - for markdown files: identical content → `keep`; existing ≥2x lines → `keep` (unless template changed → `adopt`); existing has more sections → `keep` (unless template changed → `adopt`); proposed adds missing sections → `adopt`; files with structural observations (subsections deeper than template) → `adopt`; otherwise → `keep`
 - for non-markdown files: if template source-sha256 changed since last sync → `adopt`; otherwise → `keep`
 - content-change detection compares old manifest `source-sha256` against new template `source-sha256` and requires that existing content still differs from the new template (no false positives if the repo already absorbed the change manually)
@@ -247,7 +247,7 @@ Rules:
 - for `keep` files that have template sections not present in the existing file: an advisory note appears under `## Advisory Notes` listing the missing sections. The recommendation stays `keep` — the note is informational
 - when a section exists in one version but not the other and their bodies share >=50% of lines, sync reports it as a section rename in Advisory Notes
 - when the template source hasn't changed since last sync but the actual file still differs from the template, promote from `keep` to `adopt` — this surfaces un-adopted changes from previous sync rounds
-- the review doc is a lean action list: each `adopt` item lists affected sections and a `diff` command pointing to `.governa-proposed/<file>`. Full file content lives on disk, not inline in the review doc. The directory explanation is `.governa-proposed/ABOUT.md` (not `README.md`, to avoid collision with a proposed repo README)
+- the review doc is a lean action list: each `adopt` item lists affected sections and a `diff` command pointing to `.governa/proposed/<file>`. Full file content lives on disk, not inline in the review doc. The directory explanation is `.governa/proposed/ABOUT.md` (not `README.md`, to avoid collision with a proposed repo README)
 - scaffold demotion: for known scaffold files (`README.md`, `arch.md`, `plan.md`), if the proposed content contains placeholder markers (e.g., "State why this repo exists", "## Replace Me") and the existing content does not, demote `adopt` to `keep` — the repo has replaced the starter content with real project content. Does not apply when the adopt reason is content-changed or structural
 - extracted-package demotion: for non-markdown files where the existing file is ≤ ¼ the proposed line count and imports a local package (module-path-prefixed), demote `adopt` to `keep` — the repo has intentionally extracted the template's monolithic logic into a reusable package
 - never rewrite an existing `AGENTS.md` wholesale unless the user explicitly requests replacement
@@ -319,7 +319,7 @@ Rules:
 The current enhance workflow:
 
 1. inspect reference repo
-2. read `.governa-manifest` from reference if present (enables three-way comparison)
+2. read `.governa/manifest` from reference if present (enables three-way comparison)
 3. extract candidate deltas
 4. compare `AGENTS.md` by named governed sections using constraint-level comparison (each bullet is a distinct constraint; signal matching acts as a fast pre-filter, then normalized constraint sets are compared so two sections with the same keywords but different rules still produce a candidate)
 5. compare overlay and workflow artifacts by deterministic file mapping with section-level diffing (structured markdown files with `##` headings are compared per-section; the candidate reports which specific sections changed rather than flagging the whole file; unstructured files fall back to whole-file comparison)
@@ -335,7 +335,7 @@ Before writing a new AC, enhance scans `docs/` for existing enhance-generated AC
 
 ### Bootstrap Manifest
 
-During `sync`, governa writes a `.governa-manifest` file into the generated repo. This file records:
+During `sync`, governa writes a `.governa/manifest` file into the generated repo. This file records:
 
 - the template version used at bootstrap time
 - SHA-256 checksums of each generated file (after placeholder substitution)

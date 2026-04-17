@@ -41,21 +41,17 @@ Do not begin this checklist until the user explicitly asks to prep for release o
 2. **Run `./build.sh`.** Fix all failures until the build is clean.
 3. **Ask the user whether the live ATs were run.** Manual ATs cannot be verified from CLI output and require explicit confirmation.
 4. **Audit `arch.md` against the code.** Verify affected reference docs are current.
-5. **Update `CHANGELOG.md`.** The file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.). When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` in the summary so sync can advise the consumer to retire the entry. Optional but encouraged when the linkage is real.
+5. **Update `CHANGELOG.md`.** Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row.
 
-    Canonical shape:
-
-    ```
-    # Changelog
-
-    | Version | Summary |
-    |---------|---------|
-    | Unreleased | |
-    | 0.29.0 | AC47: <one-line summary> |
-    ```
+    - File shape: `# Changelog` heading, then a 2-column markdown table (`| Version | Summary |` with a `|---|---|` separator); first data row is `| Unreleased | |`, followed by one row per release (e.g., `| <version> | <AC-ref>: <one-line summary> |`).
+    - Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
+    - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
+    - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
+    - When motivated by consumer sync feedback, credit the consumer: `(addresses <consumer> feedback from vX.Y.Z sync)`.
+    - When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` so sync can advise the consumer to retire the entry.
 6. **Bump version constants.** Use the tag from step 1 as the baseline.
 7. **Remove completed features from `plan.md`.**
-8. **Consolidate finished AC decisions into durable docs, then delete the AC file.** Do not delete AC files that are PENDING, IN PROGRESS, or DEFERRED — they are still active contracts. Only completed (released) ACs are deleted.
+8. **Consolidate finished AC decisions into durable docs, then delete the AC file.** Do not delete AC files that are PENDING, IN PROGRESS, or DEFERRED — they are still active contracts. Only completed (released) ACs are deleted. Move any `docs/ac<N>-<slug>-feedback.md` companion to `.governa/feedback/ac<N>-<slug>.md` instead of deleting — emit a one-line confirmation per file moved so the director sees the handoff.
 9. **Present the release command for the user to run.** The agent never runs the release command directly. The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting. Present only the command; do not add trailing commentary explaining what it does, how the wrapper routes, or what prompts will appear. The director already knows.
 
 The release command (`./build.sh vX.Y.Z "message"`) executes `cmd/rel`, which orchestrates `git add → commit → tag → push tag → push branch` and produces recovery guidance if any step fails.
@@ -66,7 +62,7 @@ This repo was generated from a governa governance template. To check for templat
 
 1. Run `governa sync` to generate a review document with per-file recommendations. This also updates `TEMPLATE_VERSION` to the current template version.
 2. Compare `TEMPLATE_VERSION` in this repo against the template's current version. `TEMPLATE_VERSION` reflects the last template version this repo was evaluated against, not the original bootstrap version.
-3. `.governa-manifest`, if present, records SHA-256 checksums of each file at bootstrap time. This enables comparison to distinguish your customizations from stale template content.
-4. **Produce a per-sync feedback artifact.** Every governa sync that produces an adoption AC must also produce a separate file at `docs/ac<N>-<slug>-feedback.md` capturing genuine observations about the sync output (template defaults that fight the repo, scoring gaps, methodology issues, things that landed well). The artifact is out-of-band — not folded into the sync AC's body — so the feedback exists independently of the adoption work. The director routes its content upstream to governa. The artifact is deleted at release prep alongside the AC. This codifies step 7 of the sync's Evaluation Methodology so it cannot be silently skipped.
+3. `.governa/manifest`, if present, records SHA-256 checksums of each file at bootstrap time. This enables comparison to distinguish your customizations from stale template content.
+4. **Produce a per-sync feedback artifact.** Every governa sync that produces an adoption AC must also produce a separate file at `docs/ac<N>-<slug>-feedback.md` capturing genuine observations about the sync output (template defaults that fight the repo, scoring gaps, methodology issues, things that landed well). The artifact is out-of-band — not folded into the sync AC's body — so the feedback exists independently of the adoption work. The director routes its content upstream to governa. At release prep, the artifact is moved to `.governa/feedback/ac<N>-<slug>.md` (not deleted) so the feedback persists for governa's future `enhance -r` runs. This codifies step 7 of the sync's Evaluation Methodology so it cannot be silently skipped. (See `docs/ac-template.md` Companion Artifacts for the full convention, including `-critique.md` and `-dispositions.md`.)
 
 Template refresh is operator-driven. The governa tool proposes; the repo maintainer decides what to adopt.

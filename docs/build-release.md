@@ -88,26 +88,22 @@ Do not start this checklist unless the user explicitly asks to prep for release 
 
 Before offering a release commit or release command:
 
-1. check the latest git tag (`git tag --sort=-v:refname | head -1`) and run `git status` to confirm the working tree has uncommitted changes. If the tree is clean and the latest tag matches `programVersion` in `cmd/governa/main.go`, `TemplateVersion` in `internal/templates/version.go`, and `TEMPLATE_VERSION`, there is nothing to release — do not proceed. Never assume the current version from build output or prior conversation; always verify from git.
-2. run the canonical build and validation flow and fix failures until clean
-3. ask the user whether any required manual or live acceptance checks were run
-4. audit `arch.md` and any affected reference docs against the actual behavior
-5. update `CHANGELOG.md`: the file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.). When a release is motivated by consumer sync feedback (e.g., utils DEV surfaced a template default that didn't fit), credit the consumer in the summary with `(addresses <consumer> feedback from vX.Y.Z sync)` or similar. Stays within the ≤ 500 character cap. This closes the round-trip loop so consumers can tell whether their feedback was actioned without waiting for their next sync. When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` in the summary so sync can advise the consumer to retire the entry. Optional but encouraged when the linkage is real.
+1. **Check the latest git tag and working tree.** Run `git tag --sort=-v:refname | head -1` and `git status` to confirm the working tree has uncommitted changes. If the tree is clean and the latest tag matches `programVersion` in `cmd/governa/main.go`, `TemplateVersion` in `internal/templates/version.go`, and `TEMPLATE_VERSION`, there is nothing to release — do not proceed. Never assume the current version from build output or prior conversation; always verify from git.
+2. **Run the canonical build and validation flow.** Fix failures until clean.
+3. **Ask the user whether any required manual or live acceptance checks were run.**
+4. **Audit `arch.md` and any affected reference docs against the actual behavior.**
+5. **Update `CHANGELOG.md`.** Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row.
 
-    Canonical shape:
-
-    ```
-    # Changelog
-
-    | Version | Summary |
-    |---------|---------|
-    | Unreleased | |
-    | 0.29.0 | AC47: <one-line summary> |
-    ```
-6. confirm `TEMPLATE_VERSION` matches the intended template release version
-7. remove or reprioritize completed roadmap items in `plan.md`
-8. remove completed AC files — consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`)
-9. present the canonical release command for the user to run or approve — the release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting. Present only the command; do not add trailing commentary explaining what it does, how the wrapper routes, or what prompts will appear. The director already knows.
+    - File shape: `# Changelog` heading, then a 2-column markdown table (`| Version | Summary |` with a `|---|---|` separator); first data row is `| Unreleased | |`, followed by one row per release (e.g., `| <version> | <AC-ref>: <one-line summary> |`).
+    - Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
+    - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
+    - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
+    - When motivated by consumer sync feedback, credit the consumer: `(addresses <consumer> feedback from vX.Y.Z sync)`.
+    - When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` so sync can advise the consumer to retire the entry.
+6. **Confirm `TEMPLATE_VERSION` matches the intended template release version.**
+7. **Remove or reprioritize completed roadmap items in `plan.md`.**
+8. **Remove completed AC files.** Consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`). Move any `docs/ac<N>-<slug>-feedback.md` companion to `.governa/feedback/ac<N>-<slug>.md` instead of deleting — emit a one-line confirmation per file moved so the director sees the handoff. (See `docs/ac-template.md` Companion Artifacts for the full convention, including `-critique.md` and `-dispositions.md`.)
+9. **Present the canonical release command for the user to run or approve.** The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting. Present only the command; do not add trailing commentary explaining what it does, how the wrapper routes, or what prompts will appear. The director already knows.
 
 ## Release Artifacts
 

@@ -1832,9 +1832,7 @@ func TestBootstrapAdoptWritesManifestWithCanonicalChecksums(t *testing.T) {
 
 func writeManifestFile(t *testing.T, dir string, m Manifest) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(dir, manifestFileName), formatManifest(m))
 }
 
 func TestEnhanceWithManifestUserChangeOnly(t *testing.T) {
@@ -2418,10 +2416,10 @@ func TestAdoptPatchesMissingSections(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root
-	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewPath := filepath.Join(targetDir, ".governa", "sync-review.md")
 	content, err := os.ReadFile(reviewPath)
 	if err != nil {
-		t.Fatalf("expected governa-sync-review.md at repo root, got error: %v", err)
+		t.Fatalf("expected .governa/sync-review.md at repo root, got error: %v", err)
 	}
 	if !strings.Contains(string(content), "AGENTS.md") {
 		t.Fatal("review doc should reference AGENTS.md")
@@ -2588,9 +2586,9 @@ func TestBootstrapAdoptProposesAgentRoles(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root
-	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewPath := filepath.Join(targetDir, ".governa", "sync-review.md")
 	if _, err := os.Stat(reviewPath); err != nil {
-		t.Fatalf("expected governa-sync-review.md, got error: %v", err)
+		t.Fatalf("expected .governa/sync-review.md, got error: %v", err)
 	}
 }
 
@@ -2656,7 +2654,7 @@ func TestBootstrapAdoptProposesEnrichedDocs(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root with collision entries
-	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewPath := filepath.Join(targetDir, ".governa", "sync-review.md")
 	content, _ := os.ReadFile(reviewPath)
 	if !strings.Contains(string(content), "build-release.md") {
 		t.Fatal("review doc should reference colliding files")
@@ -2759,9 +2757,9 @@ func TestBootstrapAdoptDocProposesEnrichedFiles(t *testing.T) {
 	}
 
 	// Review doc should exist at repo root
-	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewPath := filepath.Join(targetDir, ".governa", "sync-review.md")
 	if _, err := os.Stat(reviewPath); err != nil {
-		t.Fatal("expected governa-sync-review.md at repo root")
+		t.Fatal("expected .governa/sync-review.md at repo root")
 	}
 }
 
@@ -3449,9 +3447,15 @@ func TestACTemplateEnrichedStructure(t *testing.T) {
 			t.Errorf("%s: should contain numbered AT format (**AT1**)", path)
 		}
 
-		// Sub-headed In Scope.
-		if !strings.Contains(content, "### New files") {
-			t.Errorf("%s: should contain ### New files sub-heading", path)
+		// Sub-headed In Scope (AC55 IE6 renamed these to forward-tense pairs).
+		if !strings.Contains(content, "### Files to create") {
+			t.Errorf("%s: should contain ### Files to create sub-heading", path)
+		}
+		if !strings.Contains(content, "### Files to modify") {
+			t.Errorf("%s: should contain ### Files to modify sub-heading", path)
+		}
+		if strings.Contains(content, "### New files") {
+			t.Errorf("%s: legacy ### New files must be renamed (AC55 IE6)", path)
 		}
 
 		// Cross-reference to development-cycle.md.
@@ -3569,11 +3573,17 @@ func TestGitignoreTemplatesIgnoreGovernaArtifacts(t *testing.T) {
 		"examples/doc/.gitignore",
 	} {
 		content := readRepoFile(t, path)
-		if !strings.Contains(content, "governa-sync-review.md") {
-			t.Errorf("%s: should ignore governa-sync-review.md", path)
+		if !strings.Contains(content, ".governa/sync-review.md") {
+			t.Errorf("%s: should ignore .governa/sync-review.md", path)
 		}
-		if !strings.Contains(content, ".governa-proposed/") {
-			t.Errorf("%s: should ignore .governa-proposed/", path)
+		if !strings.Contains(content, ".governa/proposed/") {
+			t.Errorf("%s: should ignore .governa/proposed/", path)
+		}
+		if strings.Contains(content, "governa-sync-review.md\n") {
+			t.Errorf("%s: legacy governa-sync-review.md entry must be removed", path)
+		}
+		if strings.Contains(content, ".governa-proposed/\n") {
+			t.Errorf("%s: legacy .governa-proposed/ entry must be removed", path)
 		}
 	}
 }
@@ -3737,7 +3747,7 @@ func TestAdoptNoDrift(t *testing.T) {
 			Stack:    "Go",
 		},
 	}
-	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	mustWrite(t, filepath.Join(dir, manifestFileName), formatManifest(m))
 
 	cfg := Config{
 		Mode:     ModeSync,
@@ -3888,7 +3898,7 @@ func TestResolveAdoptParamsFlagOverridesAll(t *testing.T) {
 			Stack:    "Python",
 		},
 	}
-	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	mustWrite(t, filepath.Join(dir, manifestFileName), formatManifest(m))
 	// Also write a go.mod so inference would say "Go"
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com\n"), 0o644)
 
@@ -3928,7 +3938,7 @@ func TestResolveAdoptParamsFromManifest(t *testing.T) {
 			Stack:    "Go",
 		},
 	}
-	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	mustWrite(t, filepath.Join(dir, manifestFileName), formatManifest(m))
 
 	cfg := Config{Mode: ModeSync, Target: dir}
 	resolved, sources := resolveAdoptParams(cfg, dir)
@@ -3982,7 +3992,7 @@ func TestResolveAdoptParamsManifestTypeRestored(t *testing.T) {
 			Stack:    "Go",
 		},
 	}
-	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	mustWrite(t, filepath.Join(dir, manifestFileName), formatManifest(m))
 
 	cfg := Config{Mode: ModeSync, Target: dir}
 	resolved, _ := resolveAdoptParams(cfg, dir)
@@ -4306,6 +4316,8 @@ func TestRenderSyncReviewMethodology(t *testing.T) {
 		"Manifest pass",
 		"Report",
 		"Feedback",
+		"dispositions.md",
+		"Companion Artifacts",
 	} {
 		if !strings.Contains(output, phrase) {
 			t.Fatalf("review doc should contain %q in methodology", phrase)
@@ -4377,8 +4389,8 @@ func TestRenderSyncReviewAdoptItems(t *testing.T) {
 	if !strings.Contains(output, "changed: Cycle (cosmetic)") {
 		t.Fatal("output should list changed sections with classification tag")
 	}
-	if !strings.Contains(output, ".governa-proposed/") {
-		t.Fatal("output should reference .governa-proposed/ for comparison")
+	if !strings.Contains(output, ".governa/proposed/") {
+		t.Fatal("output should reference .governa/proposed/ for comparison")
 	}
 	// Must not contain old section names
 	for _, old := range []string{"## Cherry-Pick Candidates", "## Content Changes", "## Standing Drift", "## Structural Observations"} {
@@ -4429,7 +4441,7 @@ func TestSyncResyncWithManifest(t *testing.T) {
 			Stack:    "Go",
 		},
 	}
-	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	mustWrite(t, filepath.Join(dir, manifestFileName), formatManifest(m))
 	// Pre-create AGENTS.md so adopt scoring runs
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting.\n")
 
@@ -4463,7 +4475,7 @@ func TestSyncResyncUpdatesTemplateVersion(t *testing.T) {
 			Stack:    "Go",
 		},
 	}
-	os.WriteFile(filepath.Join(dir, manifestFileName), []byte(formatManifest(m)), 0o644)
+	mustWrite(t, filepath.Join(dir, manifestFileName), formatManifest(m))
 	// Pre-create AGENTS.md and TEMPLATE_VERSION at old version
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n\n## Purpose\n\nExisting.\n")
 	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.8.2")
@@ -4573,7 +4585,7 @@ func TestSyncFirstAdopt(t *testing.T) {
 func TestDetectSyncModeManifest(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, manifestFileName), []byte("governa-manifest-v1\ntemplate-version: 0.8.2\n"), 0o644)
+	mustWrite(t, filepath.Join(dir, manifestFileName), "governa-manifest-v1\ntemplate-version: 0.8.2\n")
 	if got := detectSyncMode(dir); got != "re-sync" {
 		t.Fatalf("detectSyncMode() = %q, want re-sync", got)
 	}
@@ -5023,7 +5035,7 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 	}
 }
 
-// AT6: renderSyncReview adopt items reference .governa-proposed/.
+// AT6: renderSyncReview adopt items reference .governa/proposed/.
 func TestRenderSyncReviewAdoptRefersToProposed(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
@@ -5043,12 +5055,12 @@ func TestRenderSyncReviewAdoptRefersToProposed(t *testing.T) {
 		},
 	}
 	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
-	if !strings.Contains(output, ".governa-proposed/") {
-		t.Fatalf("content changes should reference .governa-proposed/, got:\n%s", output)
+	if !strings.Contains(output, ".governa/proposed/") {
+		t.Fatalf("content changes should reference .governa/proposed/, got:\n%s", output)
 	}
 	// Should NOT contain inline diff blocks
 	if strings.Contains(output, "**Your version:**") {
-		t.Fatal("content changes should not have inline diff blocks — use .governa-proposed/ instead")
+		t.Fatal("content changes should not have inline diff blocks — use .governa/proposed/ instead")
 	}
 }
 
@@ -5100,7 +5112,7 @@ func TestOverlaySectionLevelScoring(t *testing.T) {
 	}
 }
 
-// AT2/AT3: renderSyncReview uses lean format — no inline diffs, points to .governa-proposed/.
+// AT2/AT3: renderSyncReview uses lean format — no inline diffs, points to .governa/proposed/.
 func TestRenderSyncReviewLeanFormat(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
@@ -5119,15 +5131,15 @@ func TestRenderSyncReviewLeanFormat(t *testing.T) {
 		},
 	}
 	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
-	if !strings.Contains(output, ".governa-proposed/") {
-		t.Fatal("review doc should reference .governa-proposed/ for comparison")
+	if !strings.Contains(output, ".governa/proposed/") {
+		t.Fatal("review doc should reference .governa/proposed/ for comparison")
 	}
 	// Should NOT contain inline diffs or full blocks
 	if strings.Contains(output, "```diff") {
-		t.Fatal("review doc should not have inline diff blocks — use .governa-proposed/ instead")
+		t.Fatal("review doc should not have inline diff blocks — use .governa/proposed/ instead")
 	}
 	if strings.Contains(output, "**Your version:**") {
-		t.Fatal("review doc should not have full blocks — use .governa-proposed/ instead")
+		t.Fatal("review doc should not have full blocks — use .governa/proposed/ instead")
 	}
 }
 
@@ -5456,11 +5468,11 @@ func TestDetectSectionRenamesMatch(t *testing.T) {
 	existingNames := []string{"Using Sync", "Rules"}
 	proposedNames := []string{"Governa Templating Maintenance", "Rules"}
 	existingMap := map[string]string{
-		"Using Sync": "- Run governa sync periodically.\n- Review governa-sync-review.md for recommendations.\n- The drift summary shows unchanged vs review.\n",
+		"Using Sync": "- Run governa sync periodically.\n- Review .governa/sync-review.md for recommendations.\n- The drift summary shows unchanged vs review.\n",
 		"Rules":      "- Start every response with DEV says.\n",
 	}
 	proposedMap := map[string]string{
-		"Governa Templating Maintenance": "- Run governa sync periodically.\n- Review governa-sync-review.md for recommendations.\n- The drift summary shows unchanged vs review.\n",
+		"Governa Templating Maintenance": "- Run governa sync periodically.\n- Review .governa/sync-review.md for recommendations.\n- The drift summary shows unchanged vs review.\n",
 		"Rules":                          "- Start every response with DEV says.\n",
 	}
 	renames := detectSectionRenames(existingNames, proposedNames, existingMap, proposedMap)
@@ -5605,11 +5617,11 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 	if !strings.Contains(output, "Governa Templating Maintenance") {
 		t.Fatal("drift should list drifting section names")
 	}
-	if !strings.Contains(output, ".governa-proposed/") {
-		t.Fatal("drift should reference .governa-proposed/ for comparison")
+	if !strings.Contains(output, ".governa/proposed/") {
+		t.Fatal("drift should reference .governa/proposed/ for comparison")
 	}
 	// Verify the diff command uses the correct relative path
-	if !strings.Contains(output, "diff dev.md .governa-proposed/dev.md") {
+	if !strings.Contains(output, "diff dev.md .governa/proposed/dev.md") {
 		t.Fatalf("diff command should use repo-relative path, got:\n%s", output)
 	}
 }
@@ -5651,8 +5663,8 @@ func TestRenderSyncReviewAdoptNonMarkdown(t *testing.T) {
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatalf("expected Adoption Items section, got:\n%s", output)
 	}
-	if !strings.Contains(output, ".governa-proposed/") {
-		t.Fatal("non-markdown adopt should reference .governa-proposed/ for comparison")
+	if !strings.Contains(output, ".governa/proposed/") {
+		t.Fatal("non-markdown adopt should reference .governa/proposed/ for comparison")
 	}
 }
 
@@ -5676,7 +5688,7 @@ func TestWriteProposedFilesNestedPath(t *testing.T) {
 	}
 
 	// Verify nested path is preserved
-	proposedPath := filepath.Join(targetDir, ".governa-proposed", "docs", "roles", "dev.md")
+	proposedPath := filepath.Join(targetDir, ".governa", "proposed", "docs", "roles", "dev.md")
 	content, err := os.ReadFile(proposedPath)
 	if err != nil {
 		t.Fatalf("proposed file should exist at nested path %s: %v", proposedPath, err)
@@ -5686,9 +5698,9 @@ func TestWriteProposedFilesNestedPath(t *testing.T) {
 	}
 
 	// Verify ABOUT.md wording (renamed from README.md to avoid collision)
-	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa", "proposed", "ABOUT.md"))
 	if err != nil {
-		t.Fatal("ABOUT.md should exist in .governa-proposed/")
+		t.Fatal("ABOUT.md should exist in .governa/proposed/")
 	}
 	if !strings.Contains(string(aboutContent), "Repo governance decides cleanup") {
 		t.Fatal("ABOUT.md should use softened cleanup wording")
@@ -5697,8 +5709,8 @@ func TestWriteProposedFilesNestedPath(t *testing.T) {
 		t.Fatal("ABOUT.md should NOT use 'Delete it' wording")
 	}
 	// Verify no README.md collision — README.md should not exist unless it's a proposed repo file
-	if _, err := os.Stat(filepath.Join(targetDir, ".governa-proposed", "README.md")); err == nil {
-		t.Fatal(".governa-proposed/README.md should not exist — directory explanation is ABOUT.md")
+	if _, err := os.Stat(filepath.Join(targetDir, ".governa", "proposed", "README.md")); err == nil {
+		t.Fatal(".governa/proposed/README.md should not exist — directory explanation is ABOUT.md")
 	}
 }
 
@@ -5723,18 +5735,18 @@ func TestWriteProposedFilesReadmeNoCollision(t *testing.T) {
 	}
 
 	// ABOUT.md should contain the directory explanation
-	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa", "proposed", "ABOUT.md"))
 	if err != nil {
-		t.Fatal("ABOUT.md should exist in .governa-proposed/")
+		t.Fatal("ABOUT.md should exist in .governa/proposed/")
 	}
 	if !strings.Contains(string(aboutContent), "Proposed Template Files") {
 		t.Fatal("ABOUT.md should contain directory explanation")
 	}
 
 	// README.md should contain the proposed template content, NOT the directory explanation
-	readmeContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "README.md"))
+	readmeContent, err := os.ReadFile(filepath.Join(targetDir, ".governa", "proposed", "README.md"))
 	if err != nil {
-		t.Fatal("proposed README.md should exist in .governa-proposed/")
+		t.Fatal("proposed README.md should exist in .governa/proposed/")
 	}
 	if !strings.Contains(string(readmeContent), "Real project README content") {
 		t.Fatal("proposed README.md should contain template content, not directory explanation")
@@ -5978,7 +5990,7 @@ func TestPrintAdoptDriftCountsAdoptItems(t *testing.T) {
 	if !strings.Contains(output, "1 files to adopt") {
 		t.Fatalf("output should include adopt count, got: %s", output)
 	}
-	if !strings.Contains(output, "governa-sync-review.md") {
+	if !strings.Contains(output, ".governa/sync-review.md") {
 		t.Fatalf("output should point to review doc when adopts > 0, got: %s", output)
 	}
 }
@@ -6064,10 +6076,10 @@ func TestRunSyncReturnsErrConflictsPresentOnClaudeMdCollision(t *testing.T) {
 	}
 
 	// Review artifact must still be produced so the operator can resolve.
-	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewPath := filepath.Join(targetDir, ".governa", "sync-review.md")
 	reviewBytes, rerr := os.ReadFile(reviewPath)
 	if rerr != nil {
-		t.Fatalf("governa-sync-review.md should be produced even on conflict-only sync: %v", rerr)
+		t.Fatalf(".governa/sync-review.md should be produced even on conflict-only sync: %v", rerr)
 	}
 	review := string(reviewBytes)
 	if !strings.Contains(review, "## Conflicts") {
@@ -6118,7 +6130,7 @@ func TestAboutMdTruthfulWording(t *testing.T) {
 	if err := writeProposedFiles(targetDir, scores, false); err != nil {
 		t.Fatalf("writeProposedFiles error: %v", err)
 	}
-	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	aboutContent, err := os.ReadFile(filepath.Join(targetDir, ".governa", "proposed", "ABOUT.md"))
 	if err != nil {
 		t.Fatalf("read ABOUT.md: %v", err)
 	}
@@ -6265,7 +6277,7 @@ func TestAssessTargetConsistentAcrossManifestPresence(t *testing.T) {
 	}
 
 	// The assessments should match on repo-shape and existing-artifacts counts.
-	// (Note: .governa-manifest itself isn't in expectedArtifactPaths, so its
+	// (Note: .governa/manifest itself isn't in expectedArtifactPaths, so its
 	// presence should not change the comparison.)
 	if a.RepoShape != b.RepoShape {
 		t.Fatalf("RepoShape mismatch: no-manifest=%q with-manifest=%q", a.RepoShape, b.RepoShape)
@@ -6563,7 +6575,7 @@ func TestRunSyncTypeInferredAdoptWithoutManifest(t *testing.T) {
 func TestRunSyncTypeManifestNoInferred(t *testing.T) {
 	templateRoot, _ := filepath.Abs("../..")
 	targetDir := t.TempDir()
-	// Seed a .governa-manifest so resolveAdoptParams populates cfg.Type from it
+	// Seed a .governa/manifest so resolveAdoptParams populates cfg.Type from it
 	mustWrite(t, filepath.Join(targetDir, manifestFileName),
 		"governa-manifest-v1\ntemplate-version: 0.28.0\nrepo-name: test-repo\npurpose: test\ntype: CODE\nstack: Go CLI\n")
 
@@ -6678,11 +6690,11 @@ func TestWriteProposedFilesKeepWithAdvisory(t *testing.T) {
 		t.Fatalf("writeProposedFiles: %v", err)
 	}
 	// Should exist
-	if _, err := os.Stat(filepath.Join(targetDir, ".governa-proposed", "keep-with-missing.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(targetDir, ".governa", "proposed", "keep-with-missing.md")); err != nil {
 		t.Fatalf("keep-with-advisory file should be materialized: %v", err)
 	}
 	// Should NOT exist
-	if _, err := os.Stat(filepath.Join(targetDir, ".governa-proposed", "pure-keep.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(targetDir, ".governa", "proposed", "pure-keep.md")); err == nil {
 		t.Fatal("pure keep file should NOT be materialized")
 	}
 }
@@ -6703,7 +6715,7 @@ func TestRenderSyncReviewAdvisoryDiffSuffix(t *testing.T) {
 	if !strings.Contains(output, "## Advisory Notes") {
 		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
 	}
-	if !strings.Contains(output, "diff keep-with-missing.md .governa-proposed/keep-with-missing.md") {
+	if !strings.Contains(output, "diff keep-with-missing.md .governa/proposed/keep-with-missing.md") {
 		t.Fatalf("advisory entry for keep-with-advisory should include diff suffix, got:\n%s", output)
 	}
 }
@@ -6722,7 +6734,7 @@ func TestAboutMdReflectsExpandedContent(t *testing.T) {
 	if err := writeProposedFiles(targetDir, scores, false); err != nil {
 		t.Fatalf("writeProposedFiles: %v", err)
 	}
-	content, err := os.ReadFile(filepath.Join(targetDir, ".governa-proposed", "ABOUT.md"))
+	content, err := os.ReadFile(filepath.Join(targetDir, ".governa", "proposed", "ABOUT.md"))
 	if err != nil {
 		t.Fatalf("read ABOUT.md: %v", err)
 	}
@@ -6764,7 +6776,7 @@ func TestAgentsMdPurposeRewording(t *testing.T) {
 
 // --- AC48 tests ---
 
-// AT1: AssessTarget skips .governa-proposed/ during walk; its markdown
+// AT1: AssessTarget skips .governa/proposed/ during walk; its markdown
 // files do not inflate docSignals.
 func TestAssessTargetSkipsGovernaProposedDir(t *testing.T) {
 	t.Parallel()
@@ -6772,17 +6784,17 @@ func TestAssessTargetSkipsGovernaProposedDir(t *testing.T) {
 	// Seed CODE signals
 	mustWrite(t, filepath.Join(dir, "go.mod"), "module example\n")
 	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n")
-	// Seed .governa-proposed/ with doc files that WOULD inflate docSignals
+	// Seed .governa/proposed/ with doc files that WOULD inflate docSignals
 	// if the walk didn't skip them.
-	mustWrite(t, filepath.Join(dir, ".governa-proposed", "README.md"), "# proposed\n")
-	mustWrite(t, filepath.Join(dir, ".governa-proposed", "plan.md"), "# proposed plan\n")
+	mustWrite(t, filepath.Join(dir, ".governa", "proposed", "README.md"), "# proposed\n")
+	mustWrite(t, filepath.Join(dir, ".governa", "proposed", "plan.md"), "# proposed plan\n")
 
 	withProposed, err := AssessTarget(dir, "")
 	if err != nil {
 		t.Fatalf("AssessTarget(with proposed): %v", err)
 	}
-	// Remove .governa-proposed and re-assess
-	if err := os.RemoveAll(filepath.Join(dir, ".governa-proposed")); err != nil {
+	// Remove .governa/ and re-assess
+	if err := os.RemoveAll(filepath.Join(dir, ".governa")); err != nil {
 		t.Fatalf("remove proposed: %v", err)
 	}
 	withoutProposed, err := AssessTarget(dir, "")
@@ -6790,7 +6802,7 @@ func TestAssessTargetSkipsGovernaProposedDir(t *testing.T) {
 		t.Fatalf("AssessTarget(without proposed): %v", err)
 	}
 	if withProposed.DocSignals != withoutProposed.DocSignals {
-		t.Fatalf("docSignals should be identical with/without .governa-proposed/; got with=%d without=%d",
+		t.Fatalf("docSignals should be identical with/without .governa/proposed/; got with=%d without=%d",
 			withProposed.DocSignals, withoutProposed.DocSignals)
 	}
 	if withProposed.CodeSignals != withoutProposed.CodeSignals {
@@ -6814,7 +6826,7 @@ func TestAssessTargetExcludesGovernaOwnedFromSignals(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "docs", "README.md"), "# docs\n")
 	mustWrite(t, filepath.Join(dir, "docs", "roles", "dev.md"), "# dev\n")
 	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.29.0\n")
-	mustWrite(t, filepath.Join(dir, ".governa-manifest"), "governa-manifest-v1\n")
+	mustWrite(t, filepath.Join(dir, ".governa", "manifest"), "governa-manifest-v1\n")
 	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n") // user-authored
 
 	a, err := AssessTarget(dir, "")
@@ -6839,10 +6851,11 @@ func TestAssessTargetExcludesGovernaOwnedFromSignals(t *testing.T) {
 func TestIsGovernaOwnedPath(t *testing.T) {
 	t.Parallel()
 	trueCases := []string{
+		".governa/manifest",
 		".governa-manifest",
 		".repokit-manifest",
 		"TEMPLATE_VERSION",
-		"governa-sync-review.md",
+		".governa/sync-review.md",
 		"AGENTS.md",
 		"CLAUDE.md",
 		"arch.md",
@@ -7107,11 +7120,11 @@ func TestSyncKeepsDevelopedChangelog(t *testing.T) {
 	}
 
 	// Developed CHANGELOG (10+ lines) vs stub (5 lines) — should score as keep
-	reviewPath := filepath.Join(targetDir, "governa-sync-review.md")
+	reviewPath := filepath.Join(targetDir, ".governa", "sync-review.md")
 	reviewContent, err := os.ReadFile(reviewPath)
 	if err != nil {
 		// If there's no review doc (no collisions), developed CHANGELOG matched stub exactly — unlikely given developed has 6 release rows
-		t.Fatalf("expected governa-sync-review.md after sync against developed CHANGELOG: %v", err)
+		t.Fatalf("expected .governa/sync-review.md after sync against developed CHANGELOG: %v", err)
 	}
 	review := string(reviewContent)
 	// The CHANGELOG.md row should have `keep` recommendation, not `adopt`
@@ -7332,7 +7345,8 @@ func TestGitignoreStackAwareGo(t *testing.T) {
 	}
 }
 
-// AT3 (AC51): build-release.md step 5 in all 3 copies contains code-block + prose.
+// AT3 (AC51 / AC55): build-release.md step 5 in all 3 copies carries the
+// compacted structural bullet after AC55 replaced the fenced canonical-shape block.
 func TestBuildReleaseStep5CodeBlock(t *testing.T) {
 	t.Parallel()
 	paths := []string{
@@ -7343,13 +7357,16 @@ func TestBuildReleaseStep5CodeBlock(t *testing.T) {
 	for _, rel := range paths {
 		t.Run(rel, func(t *testing.T) {
 			c := readRepoFile(t, rel)
-			for _, phrase := range []string{"≤ 500 characters", "unprefixed", "Canonical shape:"} {
+			for _, phrase := range []string{"≤ 500 characters", "unprefixed", "File shape:"} {
 				if !strings.Contains(c, phrase) {
 					t.Fatalf("%s: missing %q", rel, phrase)
 				}
 			}
-			if !strings.Contains(c, "# Changelog") || !strings.Contains(c, "| Version | Summary |") {
-				t.Fatalf("%s: must contain fenced code-block example", rel)
+			if !strings.Contains(c, "`# Changelog`") || !strings.Contains(c, "`| Version | Summary |`") {
+				t.Fatalf("%s: structural bullet must reference the canonical shape", rel)
+			}
+			if strings.Contains(c, "Canonical shape:") {
+				t.Fatalf("%s: AC55 compaction must replace the fenced 'Canonical shape:' block", rel)
 			}
 		})
 	}
@@ -7676,7 +7693,7 @@ func TestTruncateChangelogSummaryRespects500CharCap(t *testing.T) {
 func TestWriteProposedFilesCleansStale(t *testing.T) {
 	t.Parallel()
 	targetDir := t.TempDir()
-	proposedDir := filepath.Join(targetDir, ".governa-proposed")
+	proposedDir := filepath.Join(targetDir, ".governa", "proposed")
 	mustWrite(t, filepath.Join(proposedDir, "stale.md"), "# stale\n")
 	mustWrite(t, filepath.Join(proposedDir, "docs", "stale-doc.md"), "# stale doc\n")
 
@@ -7698,7 +7715,7 @@ func TestWriteProposedFilesCleansStale(t *testing.T) {
 
 	// Dry-run: do NOT modify
 	dryDir := t.TempDir()
-	dryProposed := filepath.Join(dryDir, ".governa-proposed")
+	dryProposed := filepath.Join(dryDir, ".governa", "proposed")
 	mustWrite(t, filepath.Join(dryProposed, "preserve.md"), "# preserve\n")
 	dryScores := []collisionScore{
 		{path: filepath.Join(dryDir, "x.md"), recommendation: "adopt", proposedContent: "# x\n"},
@@ -7707,23 +7724,24 @@ func TestWriteProposedFilesCleansStale(t *testing.T) {
 		t.Fatalf("writeProposedFiles dry-run: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dryProposed, "preserve.md")); err != nil {
-		t.Fatal("dry-run must not modify .governa-proposed/")
+		t.Fatal("dry-run must not modify .governa/proposed/")
 	}
 }
 
-// AT8 (AC51): self-hosted build-release carries consumer-credit convention;
-// template/example do not.
-func TestSelfHostedConsumerCreditConvention(t *testing.T) {
+// AT8 (AC51 / AC55): consumer-credit convention now lives in all 3 copies.
+// AC55's drift-resolution sub-scope propagated the convention into the overlay
+// and example so consumer repos can credit their upstream on sync-motivated
+// releases without having to cross-reference governa's own docs/build-release.md.
+func TestConsumerCreditConventionInAllCopies(t *testing.T) {
 	t.Parallel()
-	selfHosted := readRepoFile(t, "docs/build-release.md")
-	if !strings.Contains(selfHosted, "consumer sync feedback") {
-		t.Fatal("self-hosted must contain consumer-feedback credit convention")
-	}
-	template := readRepoFile(t, "internal/templates/overlays/code/files/docs/build-release.md.tmpl")
-	example := readRepoFile(t, "examples/code/docs/build-release.md")
-	for _, c := range []string{template, example} {
-		if strings.Contains(c, "consumer sync feedback") {
-			t.Fatal("consumer-facing template/example must NOT contain self-hosted convention")
+	for _, rel := range []string{
+		"docs/build-release.md",
+		"internal/templates/overlays/code/files/docs/build-release.md.tmpl",
+		"examples/code/docs/build-release.md",
+	} {
+		c := readRepoFile(t, rel)
+		if !strings.Contains(c, "consumer sync feedback") {
+			t.Fatalf("%s: consumer-credit convention missing (AC55 propagated it to all copies)", rel)
 		}
 	}
 }
@@ -7781,5 +7799,97 @@ func TestAcTemplateChangelogGuidance(t *testing.T) {
 				t.Fatalf("%s: old ambiguous wording must be replaced", rel)
 			}
 		})
+	}
+}
+
+// AC55 AT19: renderACDoc emits a `## Consumer Feedback` section when the
+// reference repo has markdown files under `.governa/feedback/`. Files are
+// concatenated in sorted order under per-file `### <name>` subheadings.
+func TestRenderACDocConsumerFeedback(t *testing.T) {
+	t.Parallel()
+	refRoot := t.TempDir()
+	mustWrite(t, filepath.Join(refRoot, ".governa", "feedback", "ac42-sync-round-5.md"), "Template scoring under-weights doc-heavy repos.\n")
+	mustWrite(t, filepath.Join(refRoot, ".governa", "feedback", "ac57-stack-go.md"), "The Go stack block is great; it removed our standing-divergence.\n")
+
+	selected := EnhancementCandidate{
+		Area:        "governance",
+		Disposition: "accept",
+		Portability: "broad",
+		Reason:      "test",
+	}
+	report := EnhancementReport{ReferenceRoot: refRoot}
+	doc := renderACDoc(selected, nil, report, 99)
+
+	if !strings.Contains(doc, "## Consumer Feedback") {
+		t.Fatal("AC doc should contain ## Consumer Feedback section when reference has .governa/feedback/ entries")
+	}
+	if !strings.Contains(doc, "### ac42-sync-round-5.md") {
+		t.Fatal("AC doc should include ac42 feedback filename as subheading")
+	}
+	if !strings.Contains(doc, "### ac57-stack-go.md") {
+		t.Fatal("AC doc should include ac57 feedback filename as subheading")
+	}
+	if !strings.Contains(doc, "under-weights doc-heavy repos") {
+		t.Fatal("AC doc should include ac42 feedback content")
+	}
+	// Sort order: ac42 appears before ac57.
+	if strings.Index(doc, "ac42") > strings.Index(doc, "ac57") {
+		t.Fatal("Consumer Feedback entries must be sorted (ac42 before ac57)")
+	}
+}
+
+// AC55 AT19b: renderConsumerFeedbackSection returns empty when the feedback
+// directory is absent or contains no markdown files. Absence must be silent —
+// it is the normal state for reference repos without collected feedback.
+func TestRenderConsumerFeedbackSectionAbsent(t *testing.T) {
+	t.Parallel()
+	emptyRoot := t.TempDir()
+	if got := renderConsumerFeedbackSection(emptyRoot); got != "" {
+		t.Fatalf("expected empty string for repo without feedback/, got: %q", got)
+	}
+	// Directory exists but is empty.
+	populatedRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(populatedRoot, ".governa", "feedback"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if got := renderConsumerFeedbackSection(populatedRoot); got != "" {
+		t.Fatalf("expected empty string for empty feedback/ dir, got: %q", got)
+	}
+}
+
+// AC55 AT16: migrateGovernaLegacyPaths moves pre-AC55 flat paths into .governa/
+// and removes the legacy .governa-proposed/ tree (sync regenerates under
+// .governa/proposed/). Idempotent — safe to call when no legacy paths exist.
+func TestMigrateGovernaLegacyPaths(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Seed legacy paths.
+	mustWrite(t, filepath.Join(dir, legacyPreAC55ManifestFile), "governa-manifest-v1\n")
+	mustWrite(t, filepath.Join(dir, legacyPreAC55SyncReviewFile), "# stale review\n")
+	mustWrite(t, filepath.Join(dir, legacyPreAC55ProposedDir, "file.md"), "# stale proposed\n")
+
+	if err := migrateGovernaLegacyPaths(dir); err != nil {
+		t.Fatalf("migrateGovernaLegacyPaths: %v", err)
+	}
+
+	// Legacy paths must be absent.
+	for _, p := range []string{legacyPreAC55ManifestFile, legacyPreAC55SyncReviewFile, legacyPreAC55ProposedDir} {
+		if _, err := os.Stat(filepath.Join(dir, p)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s should be absent after migration, err=%v", p, err)
+		}
+	}
+
+	// New paths must be present (except proposed/, which is only removed — regenerated by sync).
+	if _, err := os.Stat(filepath.Join(dir, manifestFileName)); err != nil {
+		t.Fatalf("%s should be present, err=%v", manifestFileName, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, syncReviewFile)); err != nil {
+		t.Fatalf("%s should be present, err=%v", syncReviewFile, err)
+	}
+
+	// Second invocation (no legacy paths) must be a no-op.
+	if err := migrateGovernaLegacyPaths(dir); err != nil {
+		t.Fatalf("second migrate should be no-op: %v", err)
 	}
 }

@@ -3,8 +3,8 @@
 Thumbs.db
 
 # Governa working artifacts
-governa-sync-review.md
-.governa-proposed/
+.governa/sync-review.md
+.governa/proposed/
 
 # Editor files
 *.swp
