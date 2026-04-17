@@ -81,6 +81,8 @@ The target repo stays self-contained. The template repo is read-only at bootstra
 
 governa is early. Releases, commits, and pushes are driven by the human director; there's no branch or PR workflow yet. These are phase choices while the governance contract stabilizes — branch workflows and release automation layer on later, without changing the primitives.
 
+Scope is also deliberately narrow. governa aims to be a small, stable collaboration contract — not a full-stack generator, not an opinionated starter kit, not an attempt to be another gstack. The fewer primitives governa ships, the less there is to drift against.
+
 ## Self-Hosting Status
 This repo is itself governed as a `CODE` repo and carries the core artifacts at the root:
 
