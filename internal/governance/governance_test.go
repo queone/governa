@@ -7430,6 +7430,248 @@ func TestRenderTemplateChangesAcrossVersions(t *testing.T) {
 	}
 }
 
+// AT3 (AC53 IE7): bullet removal in adopt populates bulletRemovals with the section + count.
+func TestComputeBulletRemovalsDetectsDecrease(t *testing.T) {
+	t.Parallel()
+	existing := "# F\n\n## Rules\n\n- a\n- b\n- c\n- d\n\n## Notes\n\n- x\n"
+	proposed := "# F\n\n## Rules\n\n- a\n- b\n\n## Notes\n\n- x\n"
+	got := computeBulletRemovals(existing, proposed)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 bulletRemoval, got %d: %+v", len(got), got)
+	}
+	if got[0].section != "Rules" || got[0].removed != 2 {
+		t.Fatalf("expected Rules:-2, got %+v", got[0])
+	}
+}
+
+// AT4 (AC53 IE7): no bulletRemovals when bullet count is unchanged or increased.
+func TestComputeBulletRemovalsNoneWhenStableOrIncreased(t *testing.T) {
+	t.Parallel()
+	existing := "## A\n\n- x\n- y\n\n## B\n\n- z\n"
+	proposed := "## A\n\n- x\n- y\n- new\n\n## B\n\n- z\n"
+	if got := computeBulletRemovals(existing, proposed); len(got) != 0 {
+		t.Fatalf("expected no removals (A increased, B same), got %+v", got)
+	}
+}
+
+// AT3 (AC53 IE7): the advisory is rendered when scoreOverlayCollision yields adopt.
+func TestBulletRemovalAdvisoryRendersOnAdopt(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "rules.md")
+	existing := "# Rules\n\n## Project Rules\n\n- a\n- b\n- c\n- d\n\n## Other\n\nstable text\n"
+	mustWrite(t, filePath, existing)
+	// Proposed changes Project Rules to drop two bullets AND adds a Other-section line so templateChanged → adopt.
+	proposed := "# Rules\n\n## Project Rules\n\n- a\n- b\n\n## Other\n\nupdated text\n"
+	score := scoreOverlayCollision(filePath, proposed, "old", "new")
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt; reason = %q", score.recommendation, score.reason)
+	}
+	if len(score.bulletRemovals) != 1 || score.bulletRemovals[0].section != "Project Rules" || score.bulletRemovals[0].removed != 2 {
+		t.Fatalf("expected bulletRemovals = [{Project Rules, 2}], got %+v", score.bulletRemovals)
+	}
+	out := renderSyncReview(dir, []collisionScore{score}, nil, "0.31.0", "0.32.0")
+	wantSubstr := "this adopt would remove 2 bullets from `Project Rules`; verify they are not repo-specific before adopting."
+	if !strings.Contains(out, wantSubstr) {
+		t.Fatalf("rendered review missing IE7 advisory wording.\nwant substring: %s\ngot:\n%s", wantSubstr, out)
+	}
+}
+
+// AT1 (AC53 IE6): plan.md with all skeleton headings present but skeleton-section
+// content differing from template produces "keep" recommendation.
+func TestPlanMdSkeletonPolicyDowngradesAdopt(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	existing := "# Plan\n\n## Product Direction\n\nrepo-specific direction\n\n## Current Platform\n\nrepo platform\n\n## Priorities\n\nrepo priorities\n\n## Ideas To Explore\n\n- IE1: something\n\n## Constraints\n\nshared constraints\n"
+	mustWrite(t, planPath, existing)
+	proposed := "# Plan\n\n## Product Direction\n\ntemplate placeholder\n\n## Current Platform\n\nTBD\n\n## Priorities\n\n(no active items)\n\n## Ideas To Explore\n\n(none yet)\n\n## Constraints\n\nshared constraints\n"
+	score := scoreOverlayCollision(planPath, proposed, "old", "new")
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep (skeleton-only changes); reason = %q", score.recommendation, score.reason)
+	}
+	if !strings.Contains(score.reason, "skeleton sections only") {
+		t.Fatalf("reason should mention skeleton sections; got %q", score.reason)
+	}
+}
+
+// AT2 (AC53 IE6): plan.md with a missing skeleton heading remains "adopt".
+func TestPlanMdSkeletonPolicyEscalatesOnMissingSection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	existing := "# Plan\n\n## Product Direction\n\nrepo direction\n\n## Current Platform\n\nrepo platform\n\n## Constraints\n\nrepo constraints\n"
+	mustWrite(t, planPath, existing)
+	// Proposed has all four skeleton sections; existing is missing Priorities and Ideas To Explore.
+	proposed := "# Plan\n\n## Product Direction\n\ntemplate direction\n\n## Current Platform\n\nTBD\n\n## Priorities\n\n(no items)\n\n## Ideas To Explore\n\n(none)\n\n## Constraints\n\nshared\n"
+	score := scoreOverlayCollision(planPath, proposed, "old", "new")
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt (missing skeleton sections is structural drift); reason = %q", score.recommendation, score.reason)
+	}
+}
+
+// IE6 negative: a non-skeleton section changing keeps adopt.
+func TestPlanMdSkeletonPolicyKeepsAdoptForNonSkeletonChange(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	existing := "# Plan\n\n## Product Direction\n\nrepo dir\n\n## Constraints\n\nrepo-old constraint\n"
+	mustWrite(t, planPath, existing)
+	// Constraints is NOT a skeleton section — template change here must remain adopt.
+	proposed := "# Plan\n\n## Product Direction\n\nrepo dir\n\n## Constraints\n\ntemplate-new constraint\n"
+	score := scoreOverlayCollision(planPath, proposed, "old", "new")
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt (Constraints is not skeleton); reason = %q", score.recommendation, score.reason)
+	}
+}
+
+// AC53 IE8: consumerNameFromTarget prefers go.mod module path basename.
+func TestConsumerNameFromTargetPrefersGoModBasename(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "renamed-clone")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/queone/utils\n\ngo 1.21\n")
+	if got := consumerNameFromTarget(dir); got != "utils" {
+		t.Fatalf("consumerNameFromTarget(%q) = %q, want %q (go.mod module basename)", dir, got, "utils")
+	}
+}
+
+// AC53 IE8: consumerNameFromTarget falls back to dir basename when no go.mod.
+func TestConsumerNameFromTargetFallsBackToDirBasename(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "MyDocRepo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if got := consumerNameFromTarget(dir); got != "mydocrepo" {
+		t.Fatalf("consumerNameFromTarget(%q) = %q, want %q (lowercased dir basename, no go.mod)", dir, got, "mydocrepo")
+	}
+}
+
+// AT5 (AC53 IE8): parseClosesMarkers extracts `closes <consumer>:IE<N>` from row summary.
+func TestParseClosesMarkersExtractsConsumerAndIE(t *testing.T) {
+	t.Parallel()
+	rows := []changelogRow{
+		{version: "0.32.0", summary: "AC52: emit packages from overlays (closes utils:IE1)"},
+	}
+	out := parseClosesMarkers(rows)
+	if got := out["utils"]["IE1"]; got != "0.32.0" {
+		t.Fatalf("expected utils.IE1 → 0.32.0, got %q", got)
+	}
+}
+
+// AT7 (AC53 IE8): marker tolerance — case + whitespace variants.
+func TestParseClosesMarkersTolerance(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		summary     string
+		consumer    string
+		ie          string
+		shouldMatch bool
+	}{
+		{"closes utils:IE1", "utils", "IE1", true},
+		{"closes utils: IE1", "utils", "IE1", true},
+		{"Closes utils:IE1", "utils", "IE1", true},
+		{"closes UTILS:IE1", "utils", "IE1", true},
+		{"closes utils:ie1", "", "", false}, // lowercase IE rejected
+	}
+	for _, tc := range cases {
+		rows := []changelogRow{{version: "0.99.0", summary: tc.summary}}
+		out := parseClosesMarkers(rows)
+		if tc.shouldMatch {
+			if got := out[tc.consumer][tc.ie]; got != "0.99.0" {
+				t.Errorf("summary %q: expected %s.%s → 0.99.0, got map %v", tc.summary, tc.consumer, tc.ie, out)
+			}
+		} else {
+			if len(out) > 0 {
+				t.Errorf("summary %q: expected no match, got %v", tc.summary, out)
+			}
+		}
+	}
+}
+
+// AT6 (AC53 IE8): advisory rendering with fixture rows + tempdir plan.md.
+func TestBuildIEResolutionAdvisoriesPositive(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	targetDir := filepath.Join(parent, "utils")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mustWrite(t, filepath.Join(targetDir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: extract buildtool packages\n")
+	rows := []changelogRow{
+		{version: "0.32.0", summary: "AC52: closes utils:IE1"},
+	}
+	got := buildIEResolutionAdvisoriesFromRows(targetDir, rows, "0.31.0", "0.32.0")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 advisory, got %d: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], "IE1") || !strings.Contains(got[0], "0.32.0") {
+		t.Fatalf("advisory should mention IE1 and 0.32.0, got %q", got[0])
+	}
+}
+
+// AT6 (AC53 IE8): no advisory when plan.md lacks the IE.
+func TestBuildIEResolutionAdvisoriesNoMatchingIE(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	targetDir := filepath.Join(parent, "utils")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mustWrite(t, filepath.Join(targetDir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE2: something else\n")
+	rows := []changelogRow{
+		{version: "0.32.0", summary: "AC52: closes utils:IE1"},
+	}
+	got := buildIEResolutionAdvisoriesFromRows(targetDir, rows, "0.31.0", "0.32.0")
+	if len(got) != 0 {
+		t.Fatalf("expected no advisory (IE2 in plan, IE1 in marker), got %v", got)
+	}
+}
+
+// AT6 (AC53 IE8): no advisory when version range doesn't include the marker's row.
+func TestBuildIEResolutionAdvisoriesOutOfRange(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	targetDir := filepath.Join(parent, "utils")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mustWrite(t, filepath.Join(targetDir, "plan.md"), "- IE1: extract buildtool packages\n")
+	rows := []changelogRow{
+		{version: "0.32.0", summary: "AC52: closes utils:IE1"},
+	}
+	// Range 0.32.0 → 0.32.1 excludes 0.32.0 (newerThan strict)
+	got := buildIEResolutionAdvisoriesFromRows(targetDir, rows, "0.32.0", "0.32.1")
+	if len(got) != 0 {
+		t.Fatalf("expected no advisory (0.32.0 row out of range), got %v", got)
+	}
+}
+
+// AT8 (AC53 IE9): truncateChangelogSummary respects the documented ≤500-char cap.
+func TestTruncateChangelogSummaryRespects500CharCap(t *testing.T) {
+	t.Parallel()
+	atCap := strings.Repeat("a", 500)
+	if got := truncateChangelogSummary(atCap); got != atCap {
+		t.Fatalf("500-char summary must render untruncated; got len=%d", len(got))
+	}
+	overCap := strings.Repeat("a", 501)
+	got := truncateChangelogSummary(overCap)
+	if len(got) != 500 {
+		t.Fatalf("501-char summary must truncate to 500 chars (497 + 3-char ellipsis); got len=%d", len(got))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("truncated summary must end in ...; got %q", got[len(got)-10:])
+	}
+	if got[:497] != strings.Repeat("a", 497) {
+		t.Fatalf("first 497 chars must be preserved verbatim")
+	}
+}
+
 // AT7 (AC51): writeProposedFiles cleans stale from prior runs; dry-run does not.
 func TestWriteProposedFilesCleansStale(t *testing.T) {
 	t.Parallel()

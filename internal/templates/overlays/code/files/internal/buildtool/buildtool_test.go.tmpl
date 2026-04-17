@@ -506,11 +506,8 @@ func TestResolveGovernaFallsBackToLookPath(t *testing.T) {
 }
 
 func TestResolveGovernaReturnsEmptyWhenUnavailable(t *testing.T) {
-	t.Parallel()
 	// Set PATH to empty so LookPath fails
-	origPath := os.Getenv("PATH")
-	os.Setenv("PATH", "")
-	defer os.Setenv("PATH", origPath)
+	t.Setenv("PATH", "")
 
 	got := resolveGoverna("")
 	if got != "" {
@@ -521,12 +518,9 @@ func TestResolveGovernaReturnsEmptyWhenUnavailable(t *testing.T) {
 // --- checkDrift tests ---
 
 func TestCheckDriftSkipsWhenBinaryUnavailable(t *testing.T) {
-	t.Parallel()
 	var buf bytes.Buffer
 	// Empty installed path and no governa on PATH should produce no output
-	origPath := os.Getenv("PATH")
-	os.Setenv("PATH", "")
-	defer os.Setenv("PATH", origPath)
+	t.Setenv("PATH", "")
 
 	checkDrift(&buf, "")
 	if buf.Len() != 0 {

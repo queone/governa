@@ -62,6 +62,7 @@ Prefer flat `##` sections with inline bullets over `###` sub-subsections in gove
 - Prefer terse completions: lead with what changed, then flat bullets and a one-sentence next step. Do not add extra sections like "What's in it", "Main conclusion", or "Next steps" unless the user asks.
 - Prefer plain text and simple bullets over heavy Markdown tables or ASCII art. Use richer structure only when content clearly benefits.
 - Do not note skipped checks when the skip is already implied by repo rules or the review scope. Mention them only if the omission is unusual or affects confidence.
+- When presenting an architectural decision to the director, surface two bounded options plus a recommendation. Avoid open menus of three or more — they read as dithering. If only one option exists, state it as a recommendation; if more than two are genuinely viable, name the two best and note the rest in one sentence.
 
 ## File-Change Discipline
 

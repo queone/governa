@@ -20,6 +20,10 @@ The build pipeline runs these steps in order, fail-hard on each:
 
 Invoking individual Go tools directly skips the tidy/fmt/lint pipeline above. A "passing" direct invocation can still produce a build that `./build.sh` would reject. The wrapper guarantees that what passes locally is what would pass in CI.
 
+## Sandboxed Execution
+
+Under sandboxed execution that blocks Go's build cache (look for `writing stat cache ... operation not permitted`), `staticcheck` may print a `matched no packages` warning even though it ran cleanly. Treat as advisory unless real findings appear; an unrestricted rerun confirms.
+
 ## Acceptance Tests
 
 This repo uses a labeled-AT convention adopted with the AC-first workflow. Every AT in an AC document must be labeled `[Automated]` or `[Manual]`.
@@ -37,7 +41,7 @@ Do not begin this checklist until the user explicitly asks to prep for release o
 2. **Run `./build.sh`.** Fix all failures until the build is clean.
 3. **Ask the user whether the live ATs were run.** Manual ATs cannot be verified from CLI output and require explicit confirmation.
 4. **Audit `arch.md` against the code.** Verify affected reference docs are current.
-5. **Update `CHANGELOG.md`.** The file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
+5. **Update `CHANGELOG.md`.** The file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.). When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` in the summary so sync can advise the consumer to retire the entry. Optional but encouraged when the linkage is real.
 
     Canonical shape:
 

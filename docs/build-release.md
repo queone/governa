@@ -52,6 +52,10 @@ After installing binaries, the build tool runs a passive governance drift check 
 
 When drift is detected the build prints a `summary:` line (e.g. `summary: 1 changed, 0 added, 0 removed`). The check is advisory and never blocks the build.
 
+## Sandboxed Execution
+
+Under sandboxed execution that blocks Go's build cache (look for `writing stat cache ... operation not permitted`), `staticcheck` may print a `matched no packages` warning even though it ran cleanly. Treat as advisory unless real findings appear; an unrestricted rerun confirms.
+
 ## Canonical Release Commands
 
 ```bash
@@ -88,7 +92,7 @@ Before offering a release commit or release command:
 2. run the canonical build and validation flow and fix failures until clean
 3. ask the user whether any required manual or live acceptance checks were run
 4. audit `arch.md` and any affected reference docs against the actual behavior
-5. update `CHANGELOG.md`: the file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.). When a release is motivated by consumer sync feedback (e.g., utils DEV surfaced a template default that didn't fit), credit the consumer in the summary with `(addresses <consumer> feedback from vX.Y.Z sync)` or similar. Stays within the ≤ 500 character cap. This closes the round-trip loop so consumers can tell whether their feedback was actioned without waiting for their next sync.
+5. update `CHANGELOG.md`: the file is a `# Changelog` heading followed by a 2-column markdown table (`| Version | Summary |`). Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row. Summaries are single-line, ≤ 500 characters, and should lead with the AC reference if any. Versions are unprefixed (`0.29.0`, not `v0.29.0`). Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.). When a release is motivated by consumer sync feedback (e.g., utils DEV surfaced a template default that didn't fit), credit the consumer in the summary with `(addresses <consumer> feedback from vX.Y.Z sync)` or similar. Stays within the ≤ 500 character cap. This closes the round-trip loop so consumers can tell whether their feedback was actioned without waiting for their next sync. When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` in the summary so sync can advise the consumer to retire the entry. Optional but encouraged when the linkage is real.
 
     Canonical shape:
 

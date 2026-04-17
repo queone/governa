@@ -2614,6 +2614,16 @@ type collisionScore struct {
 	sectionRenames         map[string]string // old name → new name (detected renames)
 	standingDrift          bool              // true when file differs from template but template hasn't changed since last sync
 	driftSections          []string          // sections that differ from template (standing drift only)
+	bulletRemovals         []bulletRemoval   // per-section bullet-count decreases (existing → proposed). AC53 IE7.
+}
+
+// bulletRemoval records a per-section bullet-count decrease detected when the
+// proposed (template) content for a section has fewer bullets than the
+// repo's current section. Used by sync to advise the operator before a
+// silent drop. (AC53 IE7)
+type bulletRemoval struct {
+	section string
+	removed int
 }
 
 func countLines(s string) int {
@@ -2633,8 +2643,13 @@ func markdownSectionNames(content string) []string {
 	return names
 }
 
-func scoreOverlayCollision(existingPath string, proposedContent string, oldSourceChecksum string, newSourceChecksum string) collisionScore {
-	score := collisionScore{
+func scoreOverlayCollision(existingPath string, proposedContent string, oldSourceChecksum string, newSourceChecksum string) (score collisionScore) {
+	// IE6 (AC53): defer skeleton-section policy so it runs on every return
+	// path. No-op for files other than plan.md or recommendations other
+	// than "adopt".
+	defer applyPlanMdSkeletonPolicy(&score)
+
+	score = collisionScore{
 		path:            existingPath,
 		proposedLines:   countLines(proposedContent),
 		proposedContent: proposedContent,
@@ -2703,6 +2718,11 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 
 	// Structural comparison for matching sections
 	score.structuralNotes = compareStructure(existingContent, proposedContent)
+
+	// Per-section bullet-removal detection (AC53 IE7). Populated unconditionally
+	// for markdown files; only rendered to the review doc when the file's
+	// recommendation ends up "adopt".
+	score.bulletRemovals = computeBulletRemovals(existingContent, proposedContent)
 
 	// Detect section-level content changes when template source changed.
 	if templateChanged {
@@ -3136,16 +3156,26 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprintln(&b, "")
 	}
 
-	// Advisory notes: keep files with missing sections, section renames
-	hasAdvisory := false
-	for _, s := range scores {
-		if s.recommendation == "keep" && len(s.missingSections) > 0 {
-			hasAdvisory = true
-			break
-		}
-		if len(s.sectionRenames) > 0 {
-			hasAdvisory = true
-			break
+	// Advisory notes: keep files with missing sections, section renames,
+	// IE-resolution matches (AC53 IE8), and per-section bullet removals on
+	// adopt (AC53 IE7). IE advisories are computed once upfront so we can
+	// include them in the section-open decision.
+	ieAdvisories := buildIEResolutionAdvisories(targetDir, oldVersion, newVersion)
+	hasAdvisory := len(ieAdvisories) > 0
+	if !hasAdvisory {
+		for _, s := range scores {
+			if s.recommendation == "keep" && len(s.missingSections) > 0 {
+				hasAdvisory = true
+				break
+			}
+			if len(s.sectionRenames) > 0 {
+				hasAdvisory = true
+				break
+			}
+			if s.recommendation == "adopt" && len(s.bulletRemovals) > 0 {
+				hasAdvisory = true
+				break
+			}
 		}
 	}
 	if hasAdvisory {
@@ -3175,6 +3205,15 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 					fmt.Fprintf(&b, "- `%s`: Section renamed: %s → %s%s\n", rel, oldName, s.sectionRenames[oldName], diffSuffix)
 				}
 			}
+			// IE7: bullet-removal advisory for adopt recommendations.
+			if s.recommendation == "adopt" && len(s.bulletRemovals) > 0 {
+				for _, br := range s.bulletRemovals {
+					fmt.Fprintf(&b, "- `%s`: this adopt would remove %d bullets from `%s`; verify they are not repo-specific before adopting.%s\n", rel, br.removed, br.section, diffSuffix)
+				}
+			}
+		}
+		for _, line := range ieAdvisories {
+			fmt.Fprintln(&b, line)
 		}
 		fmt.Fprintln(&b, "")
 	}
@@ -3628,11 +3667,7 @@ func renderTemplateChanges(oldVersion, newVersion string) string {
 	fmt.Fprintln(&b, "")
 	fmt.Fprintf(&b, "Summary of governa changes between `%s` (prior template version) and `%s` (current). Sourced from governa's CHANGELOG. Use this to frame the adoption work below before diving into per-file diffs.\n\n", oldVersion, newVersion)
 	for _, r := range relevant {
-		summary := r.summary
-		if len(summary) > 300 {
-			summary = summary[:297] + "..."
-		}
-		fmt.Fprintf(&b, "- **%s** — %s\n", r.version, summary)
+		fmt.Fprintf(&b, "- **%s** — %s\n", r.version, truncateChangelogSummary(r.summary))
 	}
 	fmt.Fprintln(&b, "")
 	return b.String()
@@ -3641,6 +3676,16 @@ func renderTemplateChanges(oldVersion, newVersion string) string {
 type changelogRow struct {
 	version string
 	summary string
+}
+
+// truncateChangelogSummary defensively shortens CHANGELOG row summaries that
+// exceed the documented ≤500-char cap (see docs/build-release.md Pre-Release
+// Checklist step 5). Conformant rows render untruncated. (AC53 IE9)
+func truncateChangelogSummary(summary string) string {
+	if len(summary) <= 500 {
+		return summary
+	}
+	return summary[:497] + "..."
 }
 
 // Minimal semver type local to the governance package, used by the Template
@@ -3706,6 +3751,196 @@ func parseChangelogRows(content string) []changelogRow {
 		rows = append(rows, changelogRow{version: version, summary: summary})
 	}
 	return rows
+}
+
+// bulletLineRe matches a markdown bullet line (`- ` at line start). Used to
+// count per-section bullets for the IE7 bullet-removal advisory.
+var bulletLineRe = regexp.MustCompile(`(?m)^- `)
+
+// bulletsBySection returns a map from level-2 section name to bullet count
+// (lines beginning with "- "). Sections with zero bullets are still keyed
+// in the map. (AC53 IE7)
+func bulletsBySection(content string) map[string]int {
+	sections := parseLevel2Sections(content)
+	counts := make(map[string]int, len(sections))
+	for _, s := range sections {
+		counts[s.Name] = len(bulletLineRe.FindAllString(s.Body, -1))
+	}
+	return counts
+}
+
+// computeBulletRemovals returns a stable-ordered slice of per-section bullet
+// removals (existing > proposed) for sections present in both. (AC53 IE7)
+func computeBulletRemovals(existingContent, proposedContent string) []bulletRemoval {
+	existing := bulletsBySection(existingContent)
+	proposed := bulletsBySection(proposedContent)
+	var out []bulletRemoval
+	for name, existCount := range existing {
+		propCount, ok := proposed[name]
+		if !ok {
+			continue
+		}
+		if existCount > propCount {
+			out = append(out, bulletRemoval{section: name, removed: existCount - propCount})
+		}
+	}
+	slices.SortFunc(out, func(a, b bulletRemoval) int {
+		return strings.Compare(a.section, b.section)
+	})
+	return out
+}
+
+// planMdSkeletonSections lists plan.md sections whose content the template
+// only seeds with placeholder prose. Repos are expected to fill these with
+// project-specific content; sync should not flag content differences as
+// "adopt" for these sections alone. (AC53 IE6)
+var planMdSkeletonSections = map[string]bool{
+	"Product Direction": true,
+	"Current Platform":  true,
+	"Priorities":        true,
+	"Ideas To Explore":  true,
+}
+
+// applyPlanMdSkeletonPolicy downgrades an "adopt" recommendation on plan.md
+// to "keep" when the only changed sections are skeleton sections (whose
+// content is expected to differ from the template). Adopt is preserved when
+// structural drift is present (missing sections, etc.). No-op for files
+// other than plan.md or non-adopt recommendations. (AC53 IE6)
+func applyPlanMdSkeletonPolicy(score *collisionScore) {
+	if filepath.Base(score.path) != "plan.md" {
+		return
+	}
+	if score.recommendation != "adopt" {
+		return
+	}
+	if len(score.missingSections) > 0 {
+		return // structural drift — preserve adopt
+	}
+	if len(score.changedSections) == 0 {
+		return // adopt was set for a non-content reason; preserve
+	}
+	for _, name := range score.changedSections {
+		if !planMdSkeletonSections[name] {
+			return // a non-skeleton section changed — preserve adopt
+		}
+	}
+	score.recommendation = "keep"
+	score.reason = fmt.Sprintf("plan.md skeleton sections only — content differs as expected (%s)", strings.Join(score.changedSections, ", "))
+}
+
+// closesMarkerRe matches the `closes <consumer>:IE<N>` convention introduced
+// by AC53 IE8. The `closes` keyword and consumer name are case-insensitive;
+// the `IE` prefix is case-sensitive (must be uppercase). Whitespace around
+// the colon is tolerated.
+var closesMarkerRe = regexp.MustCompile(`(?i:closes)\s+([A-Za-z0-9_-]+)\s*:\s*(IE\d+)`)
+
+// parseClosesMarkers scans CHANGELOG rows for `closes <consumer>:IE<N>`
+// markers in summary text. Returns nested map keyed by consumer name
+// (lowercased) and IE label (preserved case-sensitive); value is the row's
+// version. Used by sync to advise consumers that a tracked Idea to Explore
+// has been resolved by template evolution. (AC53 IE8)
+func parseClosesMarkers(rows []changelogRow) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, r := range rows {
+		for _, m := range closesMarkerRe.FindAllStringSubmatch(r.summary, -1) {
+			consumer := strings.ToLower(m[1])
+			ie := m[2]
+			if out[consumer] == nil {
+				out[consumer] = map[string]string{}
+			}
+			out[consumer][ie] = r.version
+		}
+	}
+	return out
+}
+
+// planIERe matches Ideas To Explore entries in plan.md. Conforms to the
+// repo convention `- IE<N>: <description>`.
+var planIERe = regexp.MustCompile(`(?m)^- (IE\d+):`)
+
+// parsePlanMdIEs extracts unique IE<N> labels from plan.md content. Order
+// preserved by first appearance. (AC53 IE8)
+func parsePlanMdIEs(content string) []string {
+	matches := planIERe.FindAllStringSubmatch(content, -1)
+	var ies []string
+	seen := make(map[string]bool)
+	for _, m := range matches {
+		if !seen[m[1]] {
+			ies = append(ies, m[1])
+			seen[m[1]] = true
+		}
+	}
+	return ies
+}
+
+// consumerNameFromTarget resolves the consumer label used to match
+// `closes <consumer>:IE<N>` markers. Prefers go.mod module path basename
+// (stable repo identity, robust against renamed clones); falls back to the
+// target directory's basename for non-Go consumers (no go.mod). Always
+// lowercased to match the case-folding done at parse time. (AC53 IE8)
+func consumerNameFromTarget(targetDir string) string {
+	if modPath := readModulePath(targetDir); modPath != "" {
+		return strings.ToLower(filepath.Base(modPath))
+	}
+	return strings.ToLower(filepath.Base(targetDir))
+}
+
+// buildIEResolutionAdvisoriesFromRows checks whether the consumer's plan.md
+// lists IE<N> entries that are closed by `closes <consumer>:IE<N>` markers in
+// CHANGELOG rows within the sync's version range. Returns one advisory line
+// per match in stable order. Test seam — the production entry point reads
+// the embedded CHANGELOG and delegates here. (AC53 IE8)
+func buildIEResolutionAdvisoriesFromRows(targetDir string, rows []changelogRow, oldVersion, newVersion string) []string {
+	if targetDir == "" || oldVersion == "" || newVersion == "" || oldVersion == newVersion {
+		return nil
+	}
+	old, ok := parseSemver(oldVersion)
+	if !ok {
+		return nil
+	}
+	newV, ok := parseSemver(newVersion)
+	if !ok {
+		return nil
+	}
+	planContent, err := os.ReadFile(filepath.Join(targetDir, "plan.md"))
+	if err != nil {
+		return nil
+	}
+	consumerIEs := parsePlanMdIEs(string(planContent))
+	if len(consumerIEs) == 0 {
+		return nil
+	}
+	var inRange []changelogRow
+	for _, r := range rows {
+		v, ok := parseSemver(r.version)
+		if !ok {
+			continue
+		}
+		if v.newerThan(old) && !v.newerThan(newV) {
+			inRange = append(inRange, r)
+		}
+	}
+	markers := parseClosesMarkers(inRange)
+	consumerName := consumerNameFromTarget(targetDir)
+	consumerMarkers, ok := markers[consumerName]
+	if !ok {
+		return nil
+	}
+	var advisories []string
+	for _, ie := range consumerIEs {
+		if version, found := consumerMarkers[ie]; found {
+			advisories = append(advisories, fmt.Sprintf("- `plan.md`: %s may be resolvable by adopting v%s changes", ie, version))
+		}
+	}
+	return advisories
+}
+
+// buildIEResolutionAdvisories is the production entry point used by
+// renderSyncReview. Reads the embedded CHANGELOG and delegates to the
+// row-input variant for testability. (AC53 IE8)
+func buildIEResolutionAdvisories(targetDir, oldVersion, newVersion string) []string {
+	rows := parseChangelogRows(templates.Changelog())
+	return buildIEResolutionAdvisoriesFromRows(targetDir, rows, oldVersion, newVersion)
 }
 
 // scoredPaths returns a map from repo-relative path → collisionScore for
