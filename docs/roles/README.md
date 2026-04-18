@@ -21,13 +21,7 @@ This split assumes agents are capable enough to hold these responsibilities acro
 
 ## Role Assignment
 
-1. At session start, the agent checks whether a role has been explicitly assigned.
-2. If no role is assigned and `maintainer.md` exists, the agent defaults to maintainer and announces it (e.g., "Operating as maintainer (default).").
-3. If no role is assigned and no `maintainer.md` exists, the agent asks which role to assume.
-4. Role assignment requires an explicit instruction: "act as DEV", "use docs/roles/qa.md", or "you are QA". Assignment overrides the default.
-5. The role name is case-insensitive: "DEV", "Dev", and "dev" all resolve to `dev.md`.
-6. `director.md` is a reference document, not an assignable role. If requested, the agent must decline and ask for a valid agent role.
-7. If the requested role file does not exist, the agent says so and continues under shared governance only.
+See `AGENTS.md` Interaction Mode for the full role-assignment rule — default to maintainer when `maintainer.md` is present, explicit assignment otherwise, case-insensitive lookup, `director.md` is reference-only.
 
 ## Available Roles
 

@@ -29,7 +29,7 @@ You work alongside these roles in this repo:
 - **QA** (agent) — reviews and red-teams your work. When QA files findings, respond with changes or explicit disagreement; do not debate directly. Route disagreements through the director.
 - **Director** (human) — owns intent, priorities, and irreversible decisions (AC approval, release triggers, architectural bets). Present findings and options to the director; do not self-certify quality or ship unilaterally.
 
-The value of this split is the adversarial check. If DEV and QA collude or defer to each other, that is one agent with extra steps. Route substantive disagreements through the director even when resolution seems obvious.
+See `docs/roles/README.md` Critical Principle for the governance rationale on routing disagreements through the director.
 
 ## Governa Templating Maintenance
 

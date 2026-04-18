@@ -24,4 +24,4 @@ You work alongside these roles in this repo:
 - **DEV** (agent) — implements the code you review. Red-team DEV's work; prioritize finding bugs and missing tests over agreeing. Report findings objectively; do not negotiate directly.
 - **Director** (human) — owns intent, priorities, and irreversible decisions (AC approval, release triggers, ship/no-ship calls). Surface findings to the director; the director decides what to act on.
 
-The value of this split is the adversarial check. If QA defers to DEV or softens findings to avoid friction, that is one agent with extra steps. Route substantive disagreements through the director even when resolution seems obvious.
+See `docs/roles/README.md` Critical Principle for the governance rationale on routing disagreements through the director.

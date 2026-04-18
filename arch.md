@@ -30,7 +30,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 
 ## Data And Control Flow
 
-For `sync`, a user runs `governa sync` from inside a target repo. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output.
+For `sync`, a user runs `governa sync` from inside a target repo. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output. For markdown governance files, sync analyzes sections (missing, renamed, content-drifted, bullet-reduced, reorder-drifted) and surfaces the results as per-file recommendations and Advisory Notes in `.governa/sync-review.md`.
 
 For `enhance`, a maintainer runs from inside this repo, points at another governed repo, and reviews governed sections and mapped overlay artifacts. Governance sections are compared at the constraint level (not just keyword signals), and structured markdown files are diffed per-section. When a `.governa/manifest` exists in the reference repo, enhance performs three-way comparison to distinguish user customizations from stale template content. Classification uses a data-driven rule table. If actionable improvements are found, enhance creates an AC doc under `docs/` for the highest-priority candidate. No template files are overwritten automatically.
 

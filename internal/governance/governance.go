@@ -3087,6 +3087,8 @@ type collisionScore struct {
 	staleAcknowledged      bool              // prior acknowledgment exists but no longer matches current state
 	staleAcknowledgedWhy   string            // explanation for stale acknowledged drift
 	bulletRemovals         []bulletRemoval   // per-section bullet-count decreases (existing → proposed). AC53 IE7.
+	sectionOrderDrift      []string          // consumer-order list of shared sections (consumer's actual header names); empty when no ordering drift. AC58.
+	sectionOrderTemplate   []string          // template-order list of shared sections (template's actual names); populated together with sectionOrderDrift, empty otherwise. AC58.
 }
 
 // bulletRemoval records a per-section bullet-count decrease detected when the
@@ -3187,6 +3189,13 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	existingMap := sectionMap(parseLevel2Sections(existingContent))
 	proposedMap := sectionMap(parseLevel2Sections(proposedContent))
 	score.sectionRenames = detectSectionRenames(existingNames, proposedNames, existingMap, proposedMap)
+
+	// Section-order drift detection (AC58). Runs after rename mapping so a
+	// detected rename does not produce spurious ordering drift; uses each
+	// side's actual header names in its output so the advisor displays the
+	// names the consumer will edit (pre-rename) and the canonical template
+	// names they should match.
+	score.sectionOrderDrift, score.sectionOrderTemplate = detectSectionOrderDrift(existingNames, proposedNames, score.sectionRenames)
 
 	// Structural comparison for matching sections
 	score.structuralNotes = compareStructure(existingContent, proposedContent)
@@ -3673,6 +3682,10 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 				hasAdvisory = true
 				break
 			}
+			if s.recommendation == "keep" && len(s.sectionOrderDrift) > 0 {
+				hasAdvisory = true
+				break
+			}
 		}
 	}
 	if hasAdvisory {
@@ -3713,6 +3726,16 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 				for _, br := range s.bulletRemovals {
 					fmt.Fprintf(&b, "- `%s`: this adopt would remove %d bullets from `%s`; verify they are not repo-specific before adopting.%s\n", rel, br.removed, br.section, diffSuffix)
 				}
+			}
+			// AC58: section-order drift advisory for keep recommendations.
+			// Suppressed for adopt (wholesale replacement auto-fixes order)
+			// and acknowledged (ordering is part of the documented carve-out).
+			if s.recommendation == "keep" && len(s.sectionOrderDrift) > 0 {
+				fmt.Fprintf(&b, "- `%s`: section order differs from template — current: %s, template: %s — reorder to match unless repo-specific reason%s\n",
+					rel,
+					strings.Join(s.sectionOrderDrift, " → "),
+					strings.Join(s.sectionOrderTemplate, " → "),
+					diffSuffix)
 			}
 		}
 		for _, line := range ieAdvisories {
@@ -3999,6 +4022,67 @@ func detectSectionRenames(existingNames, proposedNames []string, existingMap, pr
 		return nil
 	}
 	return renames
+}
+
+// detectSectionOrderDrift compares the relative order of shared sections
+// between an existing (consumer) and proposed (template) file. Returns
+// (consumerOrder, templateOrder) in each side's actual header names when
+// the canonical sequences differ; returns (nil, nil) otherwise.
+//
+// renameMap (old→new, produced by detectSectionRenames) is applied before
+// the comparison so a detected rename does not look like ordering drift.
+// The consumer's shared-section list uses the consumer's actual (pre-rename)
+// names so the advisor displays the header the consumer will edit. The
+// template's shared-section list uses the template's canonical names.
+//
+// Sections present on only one side do not contribute to the comparison:
+// template-only sections are handled by missingSections; consumer-only
+// sections are repo-specific extras and are permitted in any position
+// between shared sections.
+//
+// Returns (nil, nil) when the shared set has fewer than two sections —
+// ordering is trivial below that threshold. (AC58)
+func detectSectionOrderDrift(existingNames, proposedNames []string, renameMap map[string]string) (consumerOrder, templateOrder []string) {
+	if len(existingNames) == 0 || len(proposedNames) == 0 {
+		return nil, nil
+	}
+
+	proposedSet := make(map[string]bool, len(proposedNames))
+	for _, n := range proposedNames {
+		proposedSet[n] = true
+	}
+
+	var sharedExisting []string
+	var sharedExistingCanonical []string
+	for _, name := range existingNames {
+		canon := name
+		if mapped, ok := renameMap[name]; ok {
+			canon = mapped
+		}
+		if proposedSet[canon] {
+			sharedExisting = append(sharedExisting, name)
+			sharedExistingCanonical = append(sharedExistingCanonical, canon)
+		}
+	}
+	if len(sharedExisting) < 2 {
+		return nil, nil
+	}
+
+	sharedSet := make(map[string]bool, len(sharedExistingCanonical))
+	for _, n := range sharedExistingCanonical {
+		sharedSet[n] = true
+	}
+	var sharedTemplate []string
+	for _, name := range proposedNames {
+		if sharedSet[name] {
+			sharedTemplate = append(sharedTemplate, name)
+		}
+	}
+
+	if slices.Equal(sharedExistingCanonical, sharedTemplate) {
+		return nil, nil
+	}
+	return sharedExisting, sharedTemplate
 }
 
 // lineOverlap computes the fraction of shared lines between two bodies.
@@ -4308,7 +4392,6 @@ func computeBulletRemovals(existingContent, proposedContent string) []bulletRemo
 // "adopt" for these sections alone. (AC53 IE6)
 var planMdSkeletonSections = map[string]bool{
 	"Product Direction": true,
-	"Current Platform":  true,
 	"Priorities":        true,
 	"Ideas To Explore":  true,
 }

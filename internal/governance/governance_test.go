@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -2992,8 +2993,8 @@ func TestPlanMdHasIdeasToExploreSection(t *testing.T) {
 	content := readRepoFile(t, "plan.md")
 	assertSectionOrdering(t, content, "plan.md",
 		"## Priorities",
-		"## Ideas To Explore",
 		"## Deferred",
+		"## Ideas To Explore",
 	)
 	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
 		t.Fatal("plan.md: Ideas To Explore preamble missing")
@@ -3008,8 +3009,8 @@ func TestCodeOverlayPlanTemplateHasIdeasToExploreSection(t *testing.T) {
 	content := readRepoFile(t, "internal/templates/overlays/code/files/plan.md.tmpl")
 	assertSectionOrdering(t, content, "overlays/code/files/plan.md.tmpl",
 		"## Priorities",
-		"## Ideas To Explore",
 		"## Deferred",
+		"## Ideas To Explore",
 	)
 	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
 		t.Fatal("CODE plan template: Ideas To Explore preamble missing")
@@ -3021,8 +3022,8 @@ func TestCodeRenderedExamplePlanHasIdeasToExploreSection(t *testing.T) {
 	content := readRepoFile(t, "examples/code/plan.md")
 	assertSectionOrdering(t, content, "examples/code/plan.md",
 		"## Priorities",
-		"## Ideas To Explore",
 		"## Deferred",
+		"## Ideas To Explore",
 	)
 	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
 		t.Fatal("CODE rendered example plan: Ideas To Explore preamble missing")
@@ -5105,7 +5106,7 @@ func TestRoleReadmesDefaultMaintainer(t *testing.T) {
 		if strings.Contains(content, "asks which role to assume before doing substantive work") {
 			t.Fatalf("%s still has old ask-first wording", path)
 		}
-		if !strings.Contains(content, "defaults to maintainer") {
+		if !strings.Contains(content, "default to maintainer") {
 			t.Fatalf("%s should contain default-to-maintainer wording", path)
 		}
 	}
@@ -7168,7 +7169,7 @@ func TestAgentsMdChangelogPointer(t *testing.T) {
 	for _, rel := range paths {
 		t.Run(rel, func(t *testing.T) {
 			c := readRepoFile(t, rel)
-			if !strings.Contains(c, "canonical table specified in `docs/build-release.md` Pre-Release Checklist step 5") {
+			if !strings.Contains(c, "canonical table specified in `docs/build-release.md` Pre-Release Checklist CHANGELOG step") {
 				t.Fatalf("%s: must contain the canonical-table pointer", rel)
 			}
 			if !strings.Contains(c, "Do not invent alternative shapes") {
@@ -7333,15 +7334,15 @@ func TestDevRoleCounterparts(t *testing.T) {
 			if !strings.Contains(c, "**Director** (human)") {
 				t.Fatalf("%s: Counterparts must name Director as counterpart", rel)
 			}
-			if !strings.Contains(c, "adversarial check") {
-				t.Fatalf("%s: Counterparts must include 'adversarial check' framing", rel)
+			if !strings.Contains(c, "Critical Principle") {
+				t.Fatalf("%s: Counterparts must point to docs/roles/README.md Critical Principle (AC59)", rel)
 			}
 		})
 	}
 }
 
 // AT2: qa.md Counterparts section present in all 5 locations, names DEV + Director,
-// includes the "adversarial check" framing.
+// points to docs/roles/README.md Critical Principle (AC59).
 func TestQaRoleCounterparts(t *testing.T) {
 	t.Parallel()
 	paths := []string{
@@ -7363,8 +7364,8 @@ func TestQaRoleCounterparts(t *testing.T) {
 			if !strings.Contains(c, "**Director** (human)") {
 				t.Fatalf("%s: Counterparts must name Director as counterpart", rel)
 			}
-			if !strings.Contains(c, "adversarial check") {
-				t.Fatalf("%s: Counterparts must include 'adversarial check' framing", rel)
+			if !strings.Contains(c, "Critical Principle") {
+				t.Fatalf("%s: Counterparts must point to docs/roles/README.md Critical Principle (AC59)", rel)
 			}
 		})
 	}
@@ -7671,9 +7672,9 @@ func TestPlanMdSkeletonPolicyDowngradesAdopt(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	existing := "# Plan\n\n## Product Direction\n\nrepo-specific direction\n\n## Current Platform\n\nrepo platform\n\n## Priorities\n\nrepo priorities\n\n## Ideas To Explore\n\n- IE1: something\n\n## Constraints\n\nshared constraints\n"
+	existing := "# Plan\n\n## Product Direction\n\nrepo-specific direction\n\n## Priorities\n\nrepo priorities\n\n## Ideas To Explore\n\n- IE1: something\n\n## Constraints\n\nshared constraints\n"
 	mustWrite(t, planPath, existing)
-	proposed := "# Plan\n\n## Product Direction\n\ntemplate placeholder\n\n## Current Platform\n\nTBD\n\n## Priorities\n\n(no active items)\n\n## Ideas To Explore\n\n(none yet)\n\n## Constraints\n\nshared constraints\n"
+	proposed := "# Plan\n\n## Product Direction\n\ntemplate placeholder\n\n## Priorities\n\n(no active items)\n\n## Ideas To Explore\n\n(none yet)\n\n## Constraints\n\nshared constraints\n"
 	score := scoreOverlayCollision(planPath, proposed, "old", "new")
 	if score.recommendation != "keep" {
 		t.Fatalf("recommendation = %q, want keep (skeleton-only changes); reason = %q", score.recommendation, score.reason)
@@ -7688,10 +7689,10 @@ func TestPlanMdSkeletonPolicyEscalatesOnMissingSection(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	existing := "# Plan\n\n## Product Direction\n\nrepo direction\n\n## Current Platform\n\nrepo platform\n\n## Constraints\n\nrepo constraints\n"
+	existing := "# Plan\n\n## Product Direction\n\nrepo direction\n\n## Constraints\n\nrepo constraints\n"
 	mustWrite(t, planPath, existing)
-	// Proposed has all four skeleton sections; existing is missing Priorities and Ideas To Explore.
-	proposed := "# Plan\n\n## Product Direction\n\ntemplate direction\n\n## Current Platform\n\nTBD\n\n## Priorities\n\n(no items)\n\n## Ideas To Explore\n\n(none)\n\n## Constraints\n\nshared\n"
+	// Proposed has all three skeleton sections; existing is missing Priorities and Ideas To Explore.
+	proposed := "# Plan\n\n## Product Direction\n\ntemplate direction\n\n## Priorities\n\n(no items)\n\n## Ideas To Explore\n\n(none)\n\n## Constraints\n\nshared\n"
 	score := scoreOverlayCollision(planPath, proposed, "old", "new")
 	if score.recommendation != "adopt" {
 		t.Fatalf("recommendation = %q, want adopt (missing skeleton sections is structural drift); reason = %q", score.recommendation, score.reason)
@@ -8420,5 +8421,534 @@ func TestRunAckSurfacesTemplateChangedAcknowledgedDrift(t *testing.T) {
 	}
 	if !strings.Contains(content, "## Adoption Items") || !strings.Contains(content, "`docs/roles/dev.md`") {
 		t.Fatalf("template-changed acknowledgment should return file to adopt flow:\n%s", content)
+	}
+}
+
+// AC58 AT1/AT2/AT3: plan.md files have canonical section order across the
+// root repo, the overlay template, and the rendered example.
+func TestPlanMdCanonicalSectionOrder(t *testing.T) {
+	t.Parallel()
+	wantOrder := []string{
+		"Product Direction",
+		"Priorities",
+		"Deferred",
+		"Ideas To Explore",
+		"Constraints",
+	}
+	cases := []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"root plan.md", func() ([]byte, error) { return os.ReadFile("../../plan.md") }},
+		{"overlay template plan.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/plan.md.tmpl")
+		}},
+		{"example plan.md", func() ([]byte, error) { return os.ReadFile("../../examples/code/plan.md") }},
+	}
+	for _, tc := range cases {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		got := markdownSectionNames(string(content))
+		if !slices.Equal(got, wantOrder) {
+			t.Errorf("%s: sections = %v, want %v", tc.label, got, wantOrder)
+		}
+	}
+}
+
+// AC58 AT4: detectSectionOrderDrift flags basic drift and returns both
+// consumer-order and template-order slices.
+func TestSectionOrderDriftDetected(t *testing.T) {
+	t.Parallel()
+	existing := []string{"A", "C", "B"}
+	proposed := []string{"A", "B", "C"}
+	drift, template := detectSectionOrderDrift(existing, proposed, nil)
+	wantDrift := []string{"A", "C", "B"}
+	wantTemplate := []string{"A", "B", "C"}
+	if !slices.Equal(drift, wantDrift) {
+		t.Fatalf("drift = %v, want %v", drift, wantDrift)
+	}
+	if !slices.Equal(template, wantTemplate) {
+		t.Fatalf("template = %v, want %v", template, wantTemplate)
+	}
+}
+
+// AC58 AT5: consumer-specific extra sections are excluded from the comparison
+// and from both output slices.
+func TestSectionOrderDriftIgnoresExtraSections(t *testing.T) {
+	t.Parallel()
+	existing := []string{"A", "ExtraRepoSection", "C", "B"}
+	proposed := []string{"A", "B", "C"}
+	drift, template := detectSectionOrderDrift(existing, proposed, nil)
+	wantDrift := []string{"A", "C", "B"}
+	wantTemplate := []string{"A", "B", "C"}
+	if !slices.Equal(drift, wantDrift) {
+		t.Fatalf("drift = %v, want %v (ExtraRepoSection must not appear)", drift, wantDrift)
+	}
+	if !slices.Equal(template, wantTemplate) {
+		t.Fatalf("template = %v, want %v", template, wantTemplate)
+	}
+	for _, s := range drift {
+		if s == "ExtraRepoSection" {
+			t.Fatal("drift must not include ExtraRepoSection")
+		}
+	}
+	for _, s := range template {
+		if s == "ExtraRepoSection" {
+			t.Fatal("template must not include ExtraRepoSection")
+		}
+	}
+}
+
+// AC58 AT6: rename mapping is applied before ordering comparison, eliminating
+// false positives for intentional renames.
+func TestSectionOrderDriftRespectsRenames(t *testing.T) {
+	t.Parallel()
+	existing := []string{"A", "RenamedB", "C"}
+	proposed := []string{"A", "B", "C"}
+	renameMap := map[string]string{"RenamedB": "B"}
+	drift, template := detectSectionOrderDrift(existing, proposed, renameMap)
+	if drift != nil || template != nil {
+		t.Fatalf("expected no drift after rename mapping, got drift=%v template=%v", drift, template)
+	}
+}
+
+// AC58 AT7: identical section order produces no drift.
+func TestSectionOrderDriftNoFalsePositiveOnMatch(t *testing.T) {
+	t.Parallel()
+	existing := []string{"A", "B", "C"}
+	proposed := []string{"A", "B", "C"}
+	drift, template := detectSectionOrderDrift(existing, proposed, nil)
+	if drift != nil || template != nil {
+		t.Fatalf("expected no drift, got drift=%v template=%v", drift, template)
+	}
+}
+
+// AC58 AT8: renderSyncReview emits the ordering advisory line under
+// Advisory Notes with the expected current/template format.
+func TestRenderSyncReviewIncludesSectionOrderAdvisory(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:                 "/tmp/repo/plan.md",
+			recommendation:       "keep",
+			reason:               "existing covers same content",
+			existingLines:        20,
+			proposedLines:        20,
+			sectionOrderDrift:    []string{"A", "C", "B"},
+			sectionOrderTemplate: []string{"A", "B", "C"},
+		},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	if !strings.Contains(output, "section order differs from template") {
+		t.Fatalf("expected ordering advisory, got:\n%s", output)
+	}
+	if !strings.Contains(output, "current: A → C → B") {
+		t.Fatalf("expected current-order display, got:\n%s", output)
+	}
+	if !strings.Contains(output, "template: A → B → C") {
+		t.Fatalf("expected template-order display, got:\n%s", output)
+	}
+	idxAdvisory := strings.Index(output, "## Advisory Notes")
+	idxLine := strings.Index(output, "section order differs from template")
+	if idxAdvisory < 0 || idxLine < idxAdvisory {
+		t.Fatalf("advisory line must appear under ## Advisory Notes:\n%s", output)
+	}
+}
+
+// AC58 AT9: the hasAdvisory gate opens the Advisory Notes block when only
+// ordering drift is present on a keep recommendation.
+func TestHasAdvisoryGateIncludesOrderDrift(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{
+			path:                 "/tmp/repo/plan.md",
+			recommendation:       "keep",
+			reason:               "existing covers same content",
+			existingLines:        20,
+			proposedLines:        20,
+			sectionOrderDrift:    []string{"A", "C", "B"},
+			sectionOrderTemplate: []string{"A", "B", "C"},
+		},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	if !strings.Contains(output, "## Advisory Notes") {
+		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
+	}
+}
+
+// AC58 AT10: ordering drift detection runs on every sync path — first-sync,
+// same-version re-sync, and upgrade — with no special-casing for prior
+// version absence or equality.
+func TestSectionOrderDriftIndependentOfTemplateChange(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	existingPath := filepath.Join(dir, "plan.md")
+	existingContent := "## A\n\ncontent a\n\n## C\n\ncontent c\n\n## B\n\ncontent b\n"
+	proposedContent := "## A\n\ncontent a\n\n## B\n\ncontent b\n\n## C\n\ncontent c\n"
+	if err := os.WriteFile(existingPath, []byte(existingContent), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	want := []string{"A", "C", "B"}
+	wantTemplate := []string{"A", "B", "C"}
+	cases := []struct {
+		label  string
+		oldSum string
+		newSum string
+	}{
+		{"first sync (no prior checksums)", "", ""},
+		{"re-sync (same checksum)", "same", "same"},
+		{"upgrade (different checksums)", "old", "new"},
+	}
+	for _, tc := range cases {
+		s := scoreOverlayCollision(existingPath, proposedContent, tc.oldSum, tc.newSum)
+		if !slices.Equal(s.sectionOrderDrift, want) {
+			t.Errorf("%s: drift = %v, want %v", tc.label, s.sectionOrderDrift, want)
+		}
+		if !slices.Equal(s.sectionOrderTemplate, wantTemplate) {
+			t.Errorf("%s: template = %v, want %v", tc.label, s.sectionOrderTemplate, wantTemplate)
+		}
+	}
+}
+
+// AC58 AT11: ordering advisory is suppressed for adopt and acknowledged
+// recommendations, surfaced only for keep.
+func TestSectionOrderDriftSuppressedForAdoptAndAcknowledged(t *testing.T) {
+	t.Parallel()
+	for _, rec := range []string{"adopt", "acknowledged"} {
+		scores := []collisionScore{
+			{
+				path:                 "/tmp/repo/plan.md",
+				recommendation:       rec,
+				reason:               "test",
+				existingLines:        20,
+				proposedLines:        20,
+				sectionOrderDrift:    []string{"A", "C", "B"},
+				sectionOrderTemplate: []string{"A", "B", "C"},
+			},
+		}
+		output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		if strings.Contains(output, "section order differs from template") {
+			t.Errorf("recommendation=%q must suppress ordering advisory, got:\n%s", rec, output)
+		}
+	}
+	// Sanity: keep still emits the advisory on identical input shape.
+	scores := []collisionScore{
+		{
+			path:                 "/tmp/repo/plan.md",
+			recommendation:       "keep",
+			reason:               "test",
+			existingLines:        20,
+			proposedLines:        20,
+			sectionOrderDrift:    []string{"A", "C", "B"},
+			sectionOrderTemplate: []string{"A", "B", "C"},
+		},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	if !strings.Contains(output, "section order differs from template") {
+		t.Fatalf("recommendation=keep must emit ordering advisory, got:\n%s", output)
+	}
+}
+
+// AC58 AT12: when a rename and a reorder coexist, the advisory uses each
+// side's authoritative header names — consumer's pre-rename names on the
+// current side, template's canonical names on the template side.
+func TestSectionOrderDriftCombinedWithRename(t *testing.T) {
+	t.Parallel()
+	existing := []string{"A", "RenamedB", "D", "C"}
+	proposed := []string{"A", "B", "C", "D"}
+	renameMap := map[string]string{"RenamedB": "B"}
+	drift, template := detectSectionOrderDrift(existing, proposed, renameMap)
+	wantDrift := []string{"A", "RenamedB", "D", "C"}
+	wantTemplate := []string{"A", "B", "C", "D"}
+	if !slices.Equal(drift, wantDrift) {
+		t.Fatalf("drift = %v, want %v (consumer's pre-rename names)", drift, wantDrift)
+	}
+	if !slices.Equal(template, wantTemplate) {
+		t.Fatalf("template = %v, want %v (template canonical names)", template, wantTemplate)
+	}
+	scores := []collisionScore{
+		{
+			path:                 "/tmp/repo/plan.md",
+			recommendation:       "keep",
+			reason:               "test",
+			existingLines:        20,
+			proposedLines:        20,
+			sectionOrderDrift:    drift,
+			sectionOrderTemplate: template,
+		},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	if !strings.Contains(output, "current: A → RenamedB → D → C") {
+		t.Fatalf("expected consumer-name current: display, got:\n%s", output)
+	}
+	if !strings.Contains(output, "template: A → B → C → D") {
+		t.Fatalf("expected canonical template: display, got:\n%s", output)
+	}
+}
+
+// AC58 AT13: documents the known false-positive path when rename detection
+// fails to identify a rename. Serves as a trip-wire — a future recall
+// improvement will change this outcome and this test must be updated.
+func TestSectionOrderDriftWithUndetectedRename(t *testing.T) {
+	t.Parallel()
+	existing := []string{"A", "Renamed", "C", "B"}
+	proposed := []string{"A", "X", "B", "C"}
+	drift, template := detectSectionOrderDrift(existing, proposed, nil)
+	wantDrift := []string{"A", "C", "B"}
+	wantTemplate := []string{"A", "B", "C"}
+	if !slices.Equal(drift, wantDrift) {
+		t.Fatalf("drift = %v, want %v", drift, wantDrift)
+	}
+	if !slices.Equal(template, wantTemplate) {
+		t.Fatalf("template = %v, want %v", template, wantTemplate)
+	}
+}
+
+// ---- AC59 ----
+
+// ac59RolesReadmeFiles returns the 5 locations where docs/roles/README.md
+// exists (root + 2 overlay templates + 2 examples) so AC59 AT1 can iterate.
+var ac59RolesReadmeFiles = []struct {
+	label string
+	read  func() ([]byte, error)
+}{
+	{"root docs/roles/README.md", func() ([]byte, error) { return os.ReadFile("../../docs/roles/README.md") }},
+	{"overlay code/docs/roles/README.md.tmpl", func() ([]byte, error) {
+		return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/roles/README.md.tmpl")
+	}},
+	{"overlay doc/docs/roles/README.md.tmpl", func() ([]byte, error) {
+		return fs.ReadFile(templates.EmbeddedFS, "overlays/doc/files/docs/roles/README.md.tmpl")
+	}},
+	{"example code/docs/roles/README.md", func() ([]byte, error) {
+		return os.ReadFile("../../examples/code/docs/roles/README.md")
+	}},
+	{"example doc/docs/roles/README.md", func() ([]byte, error) {
+		return os.ReadFile("../../examples/doc/docs/roles/README.md")
+	}},
+}
+
+func ac59DevQaFiles() []struct {
+	label string
+	read  func() ([]byte, error)
+} {
+	return []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"root docs/roles/dev.md", func() ([]byte, error) { return os.ReadFile("../../docs/roles/dev.md") }},
+		{"root docs/roles/qa.md", func() ([]byte, error) { return os.ReadFile("../../docs/roles/qa.md") }},
+		{"overlay code/dev.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/roles/dev.md.tmpl")
+		}},
+		{"overlay code/qa.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/roles/qa.md.tmpl")
+		}},
+		{"overlay doc/dev.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/doc/files/docs/roles/dev.md.tmpl")
+		}},
+		{"overlay doc/qa.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/doc/files/docs/roles/qa.md.tmpl")
+		}},
+		{"example code/dev.md", func() ([]byte, error) { return os.ReadFile("../../examples/code/docs/roles/dev.md") }},
+		{"example code/qa.md", func() ([]byte, error) { return os.ReadFile("../../examples/code/docs/roles/qa.md") }},
+		{"example doc/dev.md", func() ([]byte, error) { return os.ReadFile("../../examples/doc/docs/roles/dev.md") }},
+		{"example doc/qa.md", func() ([]byte, error) { return os.ReadFile("../../examples/doc/docs/roles/qa.md") }},
+	}
+}
+
+func ac59MaintainerFiles() []struct {
+	label string
+	read  func() ([]byte, error)
+} {
+	return []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"root maintainer.md", func() ([]byte, error) { return os.ReadFile("../../docs/roles/maintainer.md") }},
+		{"overlay code/maintainer.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/roles/maintainer.md.tmpl")
+		}},
+		{"overlay doc/maintainer.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/doc/files/docs/roles/maintainer.md.tmpl")
+		}},
+		{"example code/maintainer.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/roles/maintainer.md")
+		}},
+		{"example doc/maintainer.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/doc/docs/roles/maintainer.md")
+		}},
+	}
+}
+
+func ac59AgentsFiles() []struct {
+	label string
+	read  func() ([]byte, error)
+} {
+	return []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"root AGENTS.md", func() ([]byte, error) { return os.ReadFile("../../AGENTS.md") }},
+		{"base AGENTS.md", func() ([]byte, error) { return fs.ReadFile(templates.EmbeddedFS, "base/AGENTS.md") }},
+		{"example code/AGENTS.md", func() ([]byte, error) { return os.ReadFile("../../examples/code/AGENTS.md") }},
+		{"example doc/AGENTS.md", func() ([]byte, error) { return os.ReadFile("../../examples/doc/AGENTS.md") }},
+	}
+}
+
+// AC59 AT1: Role Assignment section is a pointer, not a numbered list.
+func TestRolesReadmeRoleAssignmentIsPointer(t *testing.T) {
+	t.Parallel()
+	for _, tc := range ac59RolesReadmeFiles {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		s := string(content)
+		headingIdx := strings.Index(s, "## Role Assignment")
+		if headingIdx < 0 {
+			t.Errorf("%s: missing ## Role Assignment heading", tc.label)
+			continue
+		}
+		nextHeadingIdx := strings.Index(s[headingIdx+len("## Role Assignment"):], "\n## ")
+		var section string
+		if nextHeadingIdx < 0 {
+			section = s[headingIdx:]
+		} else {
+			section = s[headingIdx : headingIdx+len("## Role Assignment")+nextHeadingIdx]
+		}
+		for _, prefix := range []string{"\n1. ", "\n2. ", "\n3. ", "\n4. ", "\n5. ", "\n6. ", "\n7. "} {
+			if strings.Contains(section, prefix) {
+				t.Errorf("%s: Role Assignment still contains numbered list prefix %q", tc.label, strings.TrimSpace(prefix))
+			}
+		}
+		if !strings.Contains(section, "`AGENTS.md` Interaction Mode") {
+			t.Errorf("%s: Role Assignment missing pointer to AGENTS.md Interaction Mode", tc.label)
+		}
+	}
+}
+
+// AC59 AT2a: dev.md and qa.md Counterparts carry the Critical Principle
+// pointer and drop the adversarial-check restatement.
+func TestDevAndQaCounterpartsCiteCriticalPrinciple(t *testing.T) {
+	t.Parallel()
+	for _, tc := range ac59DevQaFiles() {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		s := string(content)
+		if strings.Contains(s, "adversarial check") {
+			t.Errorf("%s: still contains 'adversarial check' — pointer replacement missed", tc.label)
+		}
+		if !strings.Contains(s, "Critical Principle") {
+			t.Errorf("%s: missing 'Critical Principle' pointer", tc.label)
+		}
+		if !strings.Contains(s, "`docs/roles/README.md`") {
+			t.Errorf("%s: missing pointer to docs/roles/README.md", tc.label)
+		}
+	}
+}
+
+// AC59 AT2b: maintainer.md keeps its role-appropriate self-review paragraph
+// and is not swept into the multi-role pointer pattern.
+func TestMaintainerCounterpartsUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, tc := range ac59MaintainerFiles() {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		s := string(content)
+		if !strings.Contains(s, "self-review") {
+			t.Errorf("%s: missing 'self-review' — maintainer Counterparts must retain its role-appropriate paragraph", tc.label)
+		}
+		if strings.Contains(s, "adversarial check") {
+			t.Errorf("%s: unexpectedly contains 'adversarial check' — maintainer must not carry the multi-role principle", tc.label)
+		}
+	}
+}
+
+// AC59 AT3: AGENTS.md has no brittle "Pre-Release Checklist step N" citation.
+func TestAgentsMdHasNoBrittleStepNumber(t *testing.T) {
+	t.Parallel()
+	re := regexp.MustCompile(`Pre-Release Checklist step [0-9]+`)
+	for _, tc := range ac59AgentsFiles() {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		s := string(content)
+		if re.MatchString(s) {
+			t.Errorf("%s: still contains brittle 'Pre-Release Checklist step N' reference", tc.label)
+		}
+		if !strings.Contains(s, "Pre-Release Checklist") {
+			t.Errorf("%s: lost the Pre-Release Checklist reference entirely", tc.label)
+		}
+	}
+}
+
+// AC59 AT3b: build-release has no brittle "step N of the sync" citation.
+func TestBuildReleaseHasNoBrittleSyncStepNumber(t *testing.T) {
+	t.Parallel()
+	re := regexp.MustCompile(`step [0-9]+ of the sync`)
+	cases := []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"overlay code/docs/build-release.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/build-release.md.tmpl")
+		}},
+		{"example code/docs/build-release.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/build-release.md")
+		}},
+	}
+	for _, tc := range cases {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		s := string(content)
+		if re.MatchString(s) {
+			t.Errorf("%s: still contains brittle 'step N of the sync' reference", tc.label)
+		}
+		if !strings.Contains(s, "Feedback step of the sync") {
+			t.Errorf("%s: missing stable 'Feedback step of the sync' reference", tc.label)
+		}
+	}
+}
+
+// AC59 AT4: development-cycle step 3 carries the QA-iteration detail across
+// root, overlay template, and example.
+func TestDevelopmentCycleStep3HasQaIterationDetail(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"root docs/development-cycle.md", func() ([]byte, error) { return os.ReadFile("../../docs/development-cycle.md") }},
+		{"overlay code/docs/development-cycle.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/development-cycle.md.tmpl")
+		}},
+		{"example code/docs/development-cycle.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/development-cycle.md")
+		}},
+	}
+	for _, tc := range cases {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		if !strings.Contains(string(content), "When QA files findings on the AC") {
+			t.Errorf("%s: step 3 missing QA-iteration detail", tc.label)
+		}
 	}
 }
