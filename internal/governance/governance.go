@@ -2794,27 +2794,89 @@ func isACKeeperFile(name string) bool {
 	return name == "ac-template.md"
 }
 
-func nextACNumber(docsDir string) (int, error) {
-	entries, err := os.ReadDir(docsDir)
-	if err != nil {
-		return 1, nil
+// acRefRe matches AC references anywhere in captured git log output
+// (subject + body). Used by extractACNumbersFromGitOutput to find every
+// referenced AC number, including composite commits like "AC53+AC54: ...".
+var acRefRe = regexp.MustCompile(`AC[0-9]+`)
+
+// extractACNumbersFromGitOutput parses captured `git log --all --pretty=%B`
+// output and returns every AC number referenced anywhere in the text.
+// Uses FindAllString semantics so composite commit messages contribute
+// every referenced AC. Order is the order of appearance in the input.
+func extractACNumbersFromGitOutput(raw string) []int {
+	matches := acRefRe.FindAllString(raw, -1)
+	if len(matches) == 0 {
+		return nil
 	}
-	max := 0
-	for _, entry := range entries {
-		name := entry.Name()
-		match := workingACFileRe.FindStringSubmatch(name)
-		if match == nil {
-			continue
-		}
-		num, err := strconv.Atoi(match[1])
+	out := make([]int, 0, len(matches))
+	for _, m := range matches {
+		num, err := strconv.Atoi(strings.TrimPrefix(m, "AC"))
 		if err != nil {
 			continue
 		}
-		if num > max {
-			max = num
+		out = append(out, num)
+	}
+	return out
+}
+
+// defaultGitACMax returns the highest AC number referenced anywhere in the
+// repo's git history (subject + body across all branches), plus an ok flag.
+// ok=false when git is unavailable (binary missing, directory not a git repo)
+// so nextACNumber can fall back to disk-only.
+func defaultGitACMax(repoRoot string) (int, bool) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return 0, false
+	}
+	inside, err := exec.Command("git", "-C", repoRoot, "rev-parse", "--is-inside-work-tree").Output()
+	if err != nil || strings.TrimSpace(string(inside)) != "true" {
+		return 0, false
+	}
+	out, err := exec.Command("git", "-C", repoRoot, "log", "--all", "--pretty=%B").Output()
+	if err != nil {
+		return 0, false
+	}
+	nums := extractACNumbersFromGitOutput(string(out))
+	max := 0
+	for _, n := range nums {
+		if n > max {
+			max = n
 		}
 	}
-	return max + 1, nil
+	return max, true
+}
+
+// gitACMaxFn is the seam tests override to stub git-derived AC maximum.
+var gitACMaxFn = defaultGitACMax
+
+func nextACNumber(docsDir string) (int, error) {
+	diskMax := 0
+	entries, err := os.ReadDir(docsDir)
+	if err == nil {
+		for _, entry := range entries {
+			name := entry.Name()
+			match := workingACFileRe.FindStringSubmatch(name)
+			if match == nil {
+				continue
+			}
+			num, convErr := strconv.Atoi(match[1])
+			if convErr != nil {
+				continue
+			}
+			if num > diskMax {
+				diskMax = num
+			}
+		}
+	}
+	repoRoot := filepath.Dir(docsDir)
+	gitMax, ok := gitACMaxFn(repoRoot)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "governa: warning: git history unavailable; AC numbering uses docs/ only")
+		return diskMax + 1, nil
+	}
+	if gitMax > diskMax {
+		return gitMax + 1, nil
+	}
+	return diskMax + 1, nil
 }
 
 func acSlug(c EnhancementCandidate) string {

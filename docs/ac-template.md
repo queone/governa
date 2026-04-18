@@ -1,4 +1,6 @@
-Copy this file to `docs/ac<N>-<slug>.md`, where `N` is the next sequential AC number and `slug` is a kebab-case identifier. Set the file's heading to `# AC<N> Title`.
+Copy this file to `docs/ac<N>-<slug>.md`, where `slug` is a kebab-case identifier and `N` follows the monotonic-numbering rule below. Set the file's heading to `# AC<N> Title`.
+
+AC numbering is monotonic across release-prep deletions. Determine `N` by taking the maximum of (a) AC numbers currently in `docs/` and (b) AC numbers anywhere in `git log --all --pretty=%B` output (which covers commit subject + body — count every AC reference on every line, even when a single commit names multiple, e.g., `AC53+AC54`). Prior ACs removed during release prep still count. `N` is that maximum plus one.
 
 The AC is the implementation contract for one approved roadmap item. The full development cycle that wraps around this template lives in `docs/development-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
 

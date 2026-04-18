@@ -387,8 +387,18 @@ func TestSelectActionableCandidatesRanking(t *testing.T) {
 	}
 }
 
+// stubGitACMax replaces the gitACMaxFn seam for the duration of a test
+// and restores the previous value on cleanup. Not parallel-safe; tests
+// using this helper must not call t.Parallel().
+func stubGitACMax(t *testing.T, fn func(repoRoot string) (int, bool)) {
+	t.Helper()
+	prev := gitACMaxFn
+	gitACMaxFn = fn
+	t.Cleanup(func() { gitACMaxFn = prev })
+}
+
 func TestNextACNumber(t *testing.T) {
-	t.Parallel()
+	stubGitACMax(t, func(string) (int, bool) { return 0, true })
 
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "ac1-first.md"), "# AC\n")
@@ -403,6 +413,115 @@ func TestNextACNumber(t *testing.T) {
 	}
 	if num != 4 {
 		t.Fatalf("nextACNumber() = %d, want 4 (old-format ac-001-old.md must be ignored)", num)
+	}
+}
+
+// AC57 AT2: git history overrides disk when git has a higher AC number from
+// a deleted AC (e.g., the docs/ is fresh after release-prep cleanup but git
+// log still carries AC56).
+func TestNextACNumberGitMaxOverridesDisk(t *testing.T) {
+	stubGitACMax(t, func(string) (int, bool) { return 56, true })
+
+	dir := t.TempDir()
+	num, err := nextACNumber(dir)
+	if err != nil {
+		t.Fatalf("nextACNumber() error = %v", err)
+	}
+	if num != 57 {
+		t.Fatalf("nextACNumber() = %d, want 57 (git max 56 + 1)", num)
+	}
+}
+
+// AC57 AT3: disk max wins when higher than git max (e.g., an in-flight draft
+// sitting above anything ever committed).
+func TestNextACNumberDiskMaxOverridesGit(t *testing.T) {
+	stubGitACMax(t, func(string) (int, bool) { return 56, true })
+
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac99-wip.md"), "# AC99\n")
+
+	num, err := nextACNumber(dir)
+	if err != nil {
+		t.Fatalf("nextACNumber() error = %v", err)
+	}
+	if num != 100 {
+		t.Fatalf("nextACNumber() = %d, want 100 (disk max 99 + 1)", num)
+	}
+}
+
+// AC57 AT4: tie between disk and git returns max + 1 (10, 10 → 11).
+func TestNextACNumberTieBreaking(t *testing.T) {
+	stubGitACMax(t, func(string) (int, bool) { return 10, true })
+
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac10-tie.md"), "# AC10\n")
+
+	num, err := nextACNumber(dir)
+	if err != nil {
+		t.Fatalf("nextACNumber() error = %v", err)
+	}
+	if num != 11 {
+		t.Fatalf("nextACNumber() = %d, want 11 (tie at 10 → 11)", num)
+	}
+}
+
+// AC57 AT5: git-unavailable fallback via the seam returning ok=false.
+// Asserts disk-only max + 1 and the single stderr warning line.
+func TestNextACNumberGitUnavailable(t *testing.T) {
+	stubGitACMax(t, func(string) (int, bool) { return 0, false })
+
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "ac3-third.md"), "# AC\n")
+
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	num, err := nextACNumber(dir)
+	w.Close()
+	os.Stderr = origStderr
+	if err != nil {
+		t.Fatalf("nextACNumber() error = %v", err)
+	}
+	if num != 4 {
+		t.Fatalf("nextACNumber() = %d, want 4 (disk-only fallback)", num)
+	}
+
+	captured, rerr := io.ReadAll(r)
+	if rerr != nil {
+		t.Fatalf("read stderr: %v", rerr)
+	}
+	want := "governa: warning: git history unavailable"
+	if !strings.Contains(string(captured), want) {
+		t.Fatalf("stderr should contain %q, got: %q", want, string(captured))
+	}
+}
+
+// AC57 AT9: parser extracts every AC reference from multi-line git log
+// output, including composite commit messages like "AC53+AC54: ...".
+func TestExtractACNumbersFromGitOutput(t *testing.T) {
+	t.Parallel()
+	raw := "AC53+AC54: sync quality bundle\n\nBody mentions AC55 in passing.\n\nAC56: acknowledged drift\nAC57: monotonic AC numbering\n"
+	got := extractACNumbersFromGitOutput(raw)
+	want := map[int]bool{53: true, 54: true, 55: true, 56: true, 57: true}
+	if len(got) != len(want) {
+		t.Fatalf("extractACNumbersFromGitOutput returned %d numbers, want %d; got %v", len(got), len(want), got)
+	}
+	for _, n := range got {
+		if !want[n] {
+			t.Fatalf("unexpected AC number in result: %d (got %v)", n, got)
+		}
+		delete(want, n)
+	}
+	if len(want) > 0 {
+		t.Fatalf("missing AC numbers in result: %v", want)
+	}
+
+	// Empty input returns nil slice.
+	if empty := extractACNumbersFromGitOutput(""); empty != nil {
+		t.Fatalf("empty input should return nil, got %v", empty)
 	}
 }
 
@@ -448,7 +567,7 @@ func TestIsACKeeperFile(t *testing.T) {
 }
 
 func TestNextACNumberEmptyDir(t *testing.T) {
-	t.Parallel()
+	stubGitACMax(t, func(string) (int, bool) { return 0, true })
 
 	dir := t.TempDir()
 	num, err := nextACNumber(dir)
