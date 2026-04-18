@@ -8952,3 +8952,45 @@ func TestDevelopmentCycleStep3HasQaIterationDetail(t *testing.T) {
 		}
 	}
 }
+
+// AC60 AT14: code overlay emits the prep tooling file set — cmd/prep/main.go,
+// internal/preptool/preptool.go, internal/preptool/preptool_test.go, prep.sh.
+func TestTemplateEmitsPrepTooling(t *testing.T) {
+	t.Parallel()
+	expected := []struct {
+		path        string
+		wantSubstr  string
+		description string
+	}{
+		{
+			path:        "overlays/code/files/cmd/prep/main.go.tmpl",
+			wantSubstr:  "preptool.Run(cfg)",
+			description: "cmd/prep entrypoint",
+		},
+		{
+			path:        "overlays/code/files/internal/preptool/preptool.go.tmpl",
+			wantSubstr:  "package preptool",
+			description: "preptool package",
+		},
+		{
+			path:        "overlays/code/files/internal/preptool/preptool_test.go.tmpl",
+			wantSubstr:  "TestPrepValidatesVersion",
+			description: "preptool tests",
+		},
+		{
+			path:        "overlays/code/files/prep.sh.tmpl",
+			wantSubstr:  "go run ./cmd/prep",
+			description: "prep.sh wrapper",
+		},
+	}
+	for _, tc := range expected {
+		content, err := fs.ReadFile(templates.EmbeddedFS, tc.path)
+		if err != nil {
+			t.Errorf("%s (%s): read: %v", tc.description, tc.path, err)
+			continue
+		}
+		if !strings.Contains(string(content), tc.wantSubstr) {
+			t.Errorf("%s (%s): expected substring %q, got first 200 chars: %q", tc.description, tc.path, tc.wantSubstr, string(content[:min(200, len(content))]))
+		}
+	}
+}

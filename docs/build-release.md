@@ -86,24 +86,37 @@ Only perform release work when the user explicitly asks for release, publish, or
 
 Do not start this checklist unless the user explicitly asks to prep for release or equivalent.
 
-Before offering a release commit or release command:
+The operator flow is two steps:
 
-1. **Check the latest git tag and working tree.** Run `git tag --sort=-v:refname | head -1` and `git status` to confirm the working tree has uncommitted changes. If the tree is clean and the latest tag matches `programVersion` in `cmd/governa/main.go`, `TemplateVersion` in `internal/templates/version.go`, and `TEMPLATE_VERSION`, there is nothing to release — do not proceed. Never assume the current version from build output or prior conversation; always verify from git.
-2. **Run the canonical build and validation flow.** Fix failures until clean.
-3. **Ask the user whether any required manual or live acceptance checks were run.**
-4. **Audit `arch.md` and any affected reference docs against the actual behavior.**
-5. **Update `CHANGELOG.md`.** Move the current `Unreleased` summary into a new row for the release version directly below `Unreleased`, then restore an empty `Unreleased` row.
+1. **Run `./prep.sh vX.Y.Z "message"`.** Stages version bumps, inserts the CHANGELOG row, deletes completed AC files (plus `-critique.md` and `-dispositions.md` companions), moves any `-feedback.md` companion to `.governa/feedback/`, runs validation builds before and after, and prints the canonical release command. The agent determines the version (semver classification from the AC's scope) and drafts the release message (≤ 80 characters) before invoking prep.
+2. **Run the printed release command (`./build.sh vX.Y.Z "message"`).** `cmd/rel` shows `git status --short`, lists every git step it will execute, and prompts for interactive confirmation. On approval it orchestrates `git add → commit → tag → push tag → push branch`. Optional: run `git diff` between the two steps if you want to inspect the CHANGELOG row wording and version-string values before committing — `cmd/rel`'s own status preview is sufficient to catch wrong-file inclusions or deletions.
 
-    - File shape: `# Changelog` heading, then a 2-column markdown table (`| Version | Summary |` with a `|---|---|` separator); first data row is `| Unreleased | |`, followed by one row per release (e.g., `| <version> | <AC-ref>: <one-line summary> |`).
-    - Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
-    - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
-    - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
-    - When motivated by consumer sync feedback, credit the consumer: `(addresses <consumer> feedback from vX.Y.Z sync)`.
-    - When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` so sync can advise the consumer to retire the entry.
-6. **Confirm `TEMPLATE_VERSION` matches the intended template release version.**
-7. **Remove or reprioritize completed roadmap items in `plan.md`.**
-8. **Remove completed AC files.** Consolidate their decisions into durable docs and delete the AC files before release; release prep is not complete while completed AC files remain (keep `ac-template.md`). Move any `docs/ac<N>-<slug>-feedback.md` companion to `.governa/feedback/ac<N>-<slug>.md` instead of deleting — emit a one-line confirmation per file moved so the director sees the handoff. (See `docs/ac-template.md` Companion Artifacts for the full convention, including `-critique.md` and `-dispositions.md`.)
-9. **Present the canonical release command for the user to run or approve.** The release message must be **≤ 80 characters** — `cmd/rel` enforces this and will reject longer messages. Count before presenting. Present only the command; do not add trailing commentary explaining what it does, how the wrapper routes, or what prompts will appear. The director already knows.
+Present only the release command after prep; do not add trailing commentary about wrapper routing or prompts. The director already knows.
+
+### Appendix: what prep does
+
+`./prep.sh` runs nine phases internally so the operator flow above stays short. Each phase has a clear failure mode:
+
+1. **Validate inputs.** Semver pattern (`vX.Y.Z`), message non-empty and ≤ 80 characters.
+2. **Validate git state.** Inside a git work tree, target tag does not exist yet, HEAD is not at the latest tag with a clean working tree.
+3. **Pre-check build.** `./build.sh` run before any writes; skipped with `--no-build` or `--dry-run`.
+4. **Detect version targets.** Scans `cmd/*/main.go` for `programVersion`, `TEMPLATE_VERSION` and `internal/templates/version.go` (each presence-gated). Multi-binary repos are picked up automatically.
+5. **Detect CHANGELOG targets + fail-fast idempotency guard.** Root `CHANGELOG.md` and `internal/templates/CHANGELOG.md` (template-repo case). If any target already contains a row for the target version, prep exits with a fatal error before any writes.
+6. **Parse AC refs.** `AC[0-9]+` scan on the release message; composites like `AC60+AC61` yield multiple refs.
+7. **Apply writes.** Version bumps (per-file idempotent no-op when the file already has the target value); CHANGELOG row insertion under `| Unreleased | |`; AC file deletions plus `-critique.md`/`-dispositions.md` companion deletions; `-feedback.md` moved to `.governa/feedback/ac<N>-<slug>.md`. Skipped when `--dry-run`.
+8. **Post-check build.** `./build.sh` run after writes; skipped with `--no-build` or `--dry-run`.
+9. **Print release command.** Exactly `./build.sh vX.Y.Z "message"` — nothing else.
+
+CHANGELOG row shape (enforced by prep's insertion code and by convention):
+
+- File shape: `# Changelog` heading, then a 2-column markdown table (`| Version | Summary |` with a `|---|---|` separator); first data row is `| Unreleased | |`, followed by one row per release (e.g., `| <version> | <AC-ref>: <one-line summary> |`).
+- Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
+- Versions are unprefixed (`0.29.0`, not `v0.29.0`).
+- Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
+- When motivated by consumer sync feedback, credit the consumer: `(addresses <consumer> feedback from vX.Y.Z sync)`.
+- When an AC closes a consumer-tracked IE, include `closes <consumer>:IE<N>` so sync can advise the consumer to retire the entry.
+
+Flags: `--dry-run` (or `-n`) prints intended writes without touching the working tree; `--no-build` skips phases 3 and 8. Both are for power users or tests — the common path is plain `./prep.sh vX.Y.Z "message"`.
 
 ## Release Artifacts
 

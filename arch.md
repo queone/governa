@@ -24,7 +24,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 - `internal/templates/base/`: cross-repo governance artifacts such as `AGENTS.md`
 - `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`
 - `cmd/governa`: installable CLI binary for `sync`, `enhance`, and self-review
-- `cmd/build` and `cmd/rel`: Go entrypoints for local validation and release
+- `cmd/build`, `cmd/prep`, and `cmd/rel`: Go entrypoints for local validation, release staging, and release orchestration
 - `internal/`: shared logic for governance, build, release, colorized CLI output, and template access
 - `examples/`: rendered sample repos used to verify that output is concrete and usable
 

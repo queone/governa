@@ -20,7 +20,9 @@ Current stack or platform:
 - `arch.md`: current architecture and major design decisions
 - `plan.md`: prioritized roadmap and approved direction
 - `build.sh`: convenience wrapper for Unix, Linux, and Git-Bash environments
+- `prep.sh`: release-staging wrapper that invokes `cmd/prep` to bump versions, insert the CHANGELOG row, delete completed AC files, and print the release command
 - `cmd/build/main.go`: Go build helper, included only for Go-based repos
+- `cmd/prep/main.go`: Go release-prep helper, included only for Go-based repos
 - `docs/development-cycle.md`: workflow from roadmap through release
 - `docs/ac-template.md`: acceptance-criteria template for new work
 - `docs/build-release.md`: build, test, and release rules

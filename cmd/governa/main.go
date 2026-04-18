@@ -18,7 +18,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.37.0"
+const programVersion = "0.38.0"
 
 const sourceRepo = "github.com/queone/governa"
 

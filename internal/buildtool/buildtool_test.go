@@ -89,10 +89,10 @@ func TestShouldSkipBinaryInstall(t *testing.T) {
 func TestJoinScriptOnlyTargets(t *testing.T) {
 	t.Parallel()
 
-	if got := joinScriptOnlyTargets(nil); got != "cmd/build, cmd/rel" {
+	if got := joinScriptOnlyTargets(nil); got != "cmd/build, cmd/prep, cmd/rel" {
 		t.Fatalf("joinScriptOnlyTargets(nil) = %q", got)
 	}
-	if got := joinScriptOnlyTargets([]string{"worker", "build", "rel"}); got != "cmd/build, cmd/rel" {
+	if got := joinScriptOnlyTargets([]string{"worker", "build", "prep", "rel"}); got != "cmd/build, cmd/prep, cmd/rel" {
 		t.Fatalf("joinScriptOnlyTargets(requested) = %q", got)
 	}
 }
@@ -481,7 +481,7 @@ func TestScriptOnlyCommandsExemptFromVersionCheck(t *testing.T) {
 	t.Parallel()
 	// Script-only commands are filtered out by filterInstallTargets,
 	// so they never reach validateProgramVersions.
-	targets := filterInstallTargets([]string{"build", "rel"})
+	targets := filterInstallTargets([]string{"build", "rel", "prep"})
 	if len(targets) != 0 {
 		t.Fatalf("expected no installable targets from script-only commands, got %v", targets)
 	}
