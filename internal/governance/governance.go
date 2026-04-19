@@ -71,6 +71,7 @@ type Config struct {
 	Style              string
 	InitGit            bool
 	DryRun             bool
+	PruneFeedback      bool      // AC63: when true in sync mode, delete closed feedback files flagged by advisory.
 	Input              io.Reader // interactive prompt source; nil defaults to os.Stdin
 }
 
@@ -147,6 +148,7 @@ type flagValues struct {
 	style              string
 	initGit            bool
 	dryRun             bool
+	pruneFeedback      bool // AC63
 }
 
 func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
@@ -246,6 +248,8 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.BoolVar(&values.initGit, "init-git", false, "initialize git if target is not already a repo")
 	fset.BoolVar(&values.dryRun, "d", false, "preview changes without writing")
 	fset.BoolVar(&values.dryRun, "dry-run", false, "preview changes without writing")
+	fset.BoolVar(&values.pruneFeedback, "f", false, "delete .governa/feedback/ files addressed by this sync (sync mode only)")
+	fset.BoolVar(&values.pruneFeedback, "prune-feedback", false, "delete .governa/feedback/ files addressed by this sync (sync mode only)")
 	if slices.Contains(args, "-?") || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
 		printModeHelp(mode)
 		return Config{}, true, nil
@@ -281,6 +285,13 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		Style:              strings.TrimSpace(values.style),
 		InitGit:            values.initGit,
 		DryRun:             values.dryRun,
+		PruneFeedback:      values.pruneFeedback,
+	}
+	// AC63: -f / --prune-feedback is only valid for sync mode. Reject at
+	// runtime in enhance mode with a clear message; silent accept would leak
+	// the flag into enhance help.
+	if cfg.PruneFeedback && mode != ModeSync {
+		return Config{}, false, fmt.Errorf("flag -f / --prune-feedback is only valid for sync mode")
 	}
 	if mode == ModeAck {
 		if rest := fset.Args(); len(rest) > 0 {
@@ -806,6 +817,16 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 			return err
 		}
 	}
+	// AC63: opt-in prune of addressed feedback files. Runs after the sync
+	// flow's normal body so advisory computation and prune share the same
+	// closure-detection logic. DryRun emits would-remove lines; otherwise
+	// actually deletes. No-op when no flagged files.
+	if cfg.PruneFeedback {
+		closures := buildFeedbackClosures(targetAbs, oldManifest.TemplateVersion, templateVersion)
+		if err := pruneClosedFeedback(closures, cfg.DryRun, os.Stdout); err != nil {
+			return err
+		}
+	}
 	if len(syncConflicts) > 0 {
 		return ErrConflictsPresent
 	}
@@ -1012,8 +1033,16 @@ func runAck(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 	scoreMap := scoredPaths(scores, targetAbs)
 	score, ok := scoreMap[repoRel]
-	if !ok || score.recommendation != "adopt" {
+	if !ok {
 		return fmt.Errorf("nothing to acknowledge for %s", repoRel)
+	}
+	// AC62: ack records a reason for adopt, keep, and acknowledged files. Only
+	// "accept" (file does not yet exist in the consumer) is refused — ack-ing
+	// a non-existent file makes no sense. Keep-classified files (e.g., scaffold
+	// replaced with project content) are a legitimate surface for a carve-out
+	// reason; harmless bookkeeping if they stay keep.
+	if score.recommendation == "accept" {
+		return fmt.Errorf("cannot acknowledge %s: file does not exist in consumer (recommendation=accept)", repoRel)
 	}
 	actual, err := os.ReadFile(fullPath)
 	if err != nil {
@@ -3634,10 +3663,10 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 				fmt.Fprintf(&b, " — adds sections: %s", strings.Join(s.missingSections, ", "))
 			}
 			if len(s.changedSections) > 0 {
-				fmt.Fprintf(&b, " — changed: %s", taggedSectionList(s.changedSections, s.changedClassifications))
+				fmt.Fprintf(&b, " — template-driven: %s", taggedSectionList(s.changedSections, s.changedClassifications))
 			}
 			if len(s.driftSections) > 0 {
-				fmt.Fprintf(&b, " — drifting sections: %s", strings.Join(s.driftSections, ", "))
+				fmt.Fprintf(&b, " — consumer-drift: %s", strings.Join(s.driftSections, ", "))
 			}
 			// Structural observation text (no inline code blocks)
 			for _, note := range s.structuralNotes {
@@ -3656,9 +3685,11 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	// Advisory notes: keep files with missing sections, section renames,
 	// IE-resolution matches (AC53 IE8), and per-section bullet removals on
 	// adopt (AC53 IE7). IE advisories are computed once upfront so we can
-	// include them in the section-open decision.
+	// include them in the section-open decision. AC63 also computes
+	// feedback-file closures from CHANGELOG credits.
 	ieAdvisories := buildIEResolutionAdvisories(targetDir, oldVersion, newVersion)
-	hasAdvisory := len(ieAdvisories) > 0
+	feedbackClosures := buildFeedbackClosures(targetDir, oldVersion, newVersion)
+	hasAdvisory := len(ieAdvisories) > 0 || len(feedbackClosures) > 0
 	if !hasAdvisory {
 		for _, s := range scores {
 			if s.recommendation == "keep" && len(s.missingSections) > 0 {
@@ -3739,6 +3770,17 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		}
 		for _, line := range ieAdvisories {
 			fmt.Fprintln(&b, line)
+		}
+		// AC63: feedback-file closure advisories. Each line names the
+		// feedback file closed by a specific governa release and points the
+		// operator at `governa sync -f` for automated cleanup.
+		for _, c := range feedbackClosures {
+			feedbackRel, err := filepath.Rel(targetDir, c.path)
+			if err != nil {
+				feedbackRel = c.path
+			}
+			feedbackRel = filepath.ToSlash(feedbackRel)
+			fmt.Fprintf(&b, "- `%s` — addressed by governa v%s; review and delete if resolved. Run `governa sync -f` (or `--prune-feedback`) to delete automatically.\n", feedbackRel, c.governaVersion)
 		}
 		fmt.Fprintln(&b, "")
 	}
@@ -4535,6 +4577,176 @@ func buildIEResolutionAdvisoriesFromRows(targetDir string, rows []changelogRow, 
 func buildIEResolutionAdvisories(targetDir, oldVersion, newVersion string) []string {
 	rows := parseChangelogRows(templates.Changelog())
 	return buildIEResolutionAdvisoriesFromRows(targetDir, rows, oldVersion, newVersion)
+}
+
+// ---- AC63: feedback-file closure detection and prune ----
+
+// feedbackCloser records a feedback file that has been addressed by a
+// governa release within the sync's version range, along with the governa
+// version that closed it.
+type feedbackCloser struct {
+	path           string // absolute path to the feedback file
+	governaVersion string // governa version that addressed it (unprefixed)
+}
+
+var feedbackVersionRe = regexp.MustCompile(`(\d+\.\d+\.\d+)`)
+var addressCreditRe = regexp.MustCompile(`\(addresses ([a-zA-Z][a-zA-Z0-9-]+) feedback from v(\d+\.\d+\.\d+)(?:(?:[–-]|\s+to\s+)v(\d+\.\d+\.\d+))? syncs?\)`)
+
+// parseFeedbackFileVersion extracts the first X.Y.Z substring from a
+// feedback filename. Returns ("", false) when no version-shaped substring
+// is present — those files are pre-convention and left for manual cleanup.
+// Multi-version filenames resolve to the first match by filename order.
+// (AC63)
+func parseFeedbackFileVersion(name string) (string, bool) {
+	base := strings.TrimSuffix(filepath.Base(name), ".md")
+	m := feedbackVersionRe.FindStringSubmatch(base)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// parseAddressCredit scans a CHANGELOG row for the
+// `(addresses <consumer> feedback from vX.Y.Z[–vX.Y.Z] syncs)` pattern.
+// Returns consumer name + start/end versions (endVer == startVer for
+// single-version credits). Tolerates en-dash, ASCII hyphen, and " to "
+// range separators; accepts both `sync` and `syncs`. Returns ("", "", "")
+// when the pattern does not match. (AC63)
+func parseAddressCredit(row string) (consumerName, startVer, endVer string) {
+	m := addressCreditRe.FindStringSubmatch(row)
+	if m == nil {
+		return "", "", ""
+	}
+	consumerName = m[1]
+	startVer = m[2]
+	endVer = m[3]
+	if endVer == "" {
+		endVer = startVer
+	}
+	return consumerName, startVer, endVer
+}
+
+// semverInRange reports whether ver is within [start, end] inclusive by
+// semver-tuple comparison. False when any input fails to parse. (AC63)
+func semverInRange(ver, start, end string) bool {
+	v, ok := parseSemver(ver)
+	if !ok {
+		return false
+	}
+	s, ok := parseSemver(start)
+	if !ok {
+		return false
+	}
+	e, ok := parseSemver(end)
+	if !ok {
+		return false
+	}
+	// v >= s AND v <= e → v in range. !(v < s) is !(s.newerThan(v)); !(v > e) is !(v.newerThan(e)).
+	return !s.newerThan(v) && !v.newerThan(e)
+}
+
+// buildFeedbackClosuresFromRows matches .governa/feedback/ files against
+// consumer-credit references in CHANGELOG rows. Returns one feedbackCloser
+// per matched file, sorted by filename. Test seam — the production entry
+// point reads embedded CHANGELOG and delegates here. (AC63)
+func buildFeedbackClosuresFromRows(targetDir string, rows []changelogRow, oldVersion, newVersion string) []feedbackCloser {
+	if targetDir == "" || newVersion == "" {
+		return nil
+	}
+	feedbackDir := filepath.Join(targetDir, ".governa", "feedback")
+	entries, err := os.ReadDir(feedbackDir)
+	if err != nil {
+		return nil
+	}
+	consumerName := consumerNameFromTarget(targetDir)
+	if consumerName == "" {
+		return nil
+	}
+
+	// Bound: only consider CHANGELOG rows for governa versions newer than
+	// the consumer's prior TEMPLATE_VERSION and ≤ current embedded version.
+	oldV, hasOld := parseSemver(oldVersion)
+	newV, hasNew := parseSemver(newVersion)
+	if !hasNew {
+		return nil
+	}
+
+	var closures []feedbackCloser
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		fileVer, ok := parseFeedbackFileVersion(entry.Name())
+		if !ok {
+			continue
+		}
+		for _, row := range rows {
+			// Scope rows to the sync's version window.
+			rowV, hasRow := parseSemver(row.version)
+			if !hasRow {
+				continue
+			}
+			if hasOld && !rowV.newerThan(oldV) {
+				continue
+			}
+			if rowV.newerThan(newV) {
+				continue
+			}
+			creditName, start, end := parseAddressCredit(row.summary)
+			if creditName == "" {
+				continue
+			}
+			if !strings.EqualFold(creditName, consumerName) {
+				continue
+			}
+			if !semverInRange(fileVer, start, end) {
+				continue
+			}
+			closures = append(closures, feedbackCloser{
+				path:           filepath.Join(feedbackDir, entry.Name()),
+				governaVersion: row.version,
+			})
+			break // one close per file
+		}
+	}
+	sort.SliceStable(closures, func(i, j int) bool { return closures[i].path < closures[j].path })
+	return closures
+}
+
+// buildFeedbackClosures is the production entry point that reads governa's
+// embedded CHANGELOG and delegates to the seam above. (AC63)
+func buildFeedbackClosures(targetDir, oldVersion, newVersion string) []feedbackCloser {
+	rows := parseChangelogRows(templates.Changelog())
+	return buildFeedbackClosuresFromRows(targetDir, rows, oldVersion, newVersion)
+}
+
+// pruneClosedFeedback deletes the feedback files in closures. Respects
+// dryRun — in dry-run mode, prints `prune: would remove <path>` per file
+// and skips os.Remove. Emits a confirmation line per actual deletion.
+// Continues on individual os.Remove failures and returns a combined error
+// at the end. (AC63)
+func pruneClosedFeedback(closures []feedbackCloser, dryRun bool, out io.Writer) error {
+	if len(closures) == 0 {
+		fmt.Fprintln(out, "prune: no addressed feedback files to remove")
+		return nil
+	}
+	var failures []string
+	for _, c := range closures {
+		if dryRun {
+			fmt.Fprintf(out, "prune: would remove %s\n", c.path)
+			continue
+		}
+		if err := os.Remove(c.path); err != nil {
+			fmt.Fprintf(out, "prune: failed to remove %s: %v\n", c.path, err)
+			failures = append(failures, c.path)
+			continue
+		}
+		fmt.Fprintf(out, "prune: removed %s\n", c.path)
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("prune-feedback: %d file(s) could not be removed: %s", len(failures), strings.Join(failures, ", "))
+	}
+	return nil
 }
 
 // scoredPaths returns a map from repo-relative path → collisionScore for

@@ -27,6 +27,16 @@ var enabled = func() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }()
 
+// SetEnabled is a test helper that mutates package-level color-enablement
+// state. It is NOT safe for concurrent use — tests calling this must NOT
+// call t.Parallel(). The returned closure restores the prior enabled value
+// and is intended for deferred invocation. (AC62)
+func SetEnabled(b bool) func() {
+	prev := enabled
+	enabled = b
+	return func() { enabled = prev }
+}
+
 // color256 is true when the terminal advertises 256-color support.
 var color256 = func() bool {
 	ct := os.Getenv("COLORTERM")

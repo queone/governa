@@ -327,7 +327,8 @@ type versionTarget struct {
 func detectVersionTargets(repoRoot string) ([]versionTarget, error) {
 	var targets []versionTarget
 
-	// cmd/*/main.go scan for programVersion.
+	// cmd/*/main.go scan for programVersion. Legitimate in both template and
+	// consumer repos — always scanned.
 	cmdDir := filepath.Join(repoRoot, "cmd")
 	entries, err := os.ReadDir(cmdDir)
 	if err == nil {
@@ -346,17 +347,21 @@ func detectVersionTargets(repoRoot string) ([]versionTarget, error) {
 		}
 	}
 
-	// Root TEMPLATE_VERSION.
-	tvPath := filepath.Join(repoRoot, "TEMPLATE_VERSION")
-	if _, err := os.Stat(tvPath); err == nil {
-		targets = append(targets, versionTarget{path: tvPath, kind: "TEMPLATE_VERSION"})
-	}
-
-	// internal/templates/version.go for TemplateVersion.
-	tvGoPath := filepath.Join(repoRoot, "internal", "templates", "version.go")
-	if content, err := os.ReadFile(tvGoPath); err == nil {
-		if templateConstRe.Match(content) {
-			targets = append(targets, versionTarget{path: tvGoPath, kind: "TemplateVersion"})
+	// Template-version targets (TEMPLATE_VERSION + internal/templates/version.go)
+	// are gated on internal/templates/base/ presence. That directory exists only
+	// in governa itself; in consumer repos TEMPLATE_VERSION tracks the governa
+	// baseline the consumer synced from and must NOT change at consumer release
+	// prep. Matches cmd/governa/main.go's detectGovernaCheckout signal. (AC62)
+	if info, err := os.Stat(filepath.Join(repoRoot, "internal", "templates", "base")); err == nil && info.IsDir() {
+		tvPath := filepath.Join(repoRoot, "TEMPLATE_VERSION")
+		if _, err := os.Stat(tvPath); err == nil {
+			targets = append(targets, versionTarget{path: tvPath, kind: "TEMPLATE_VERSION"})
+		}
+		tvGoPath := filepath.Join(repoRoot, "internal", "templates", "version.go")
+		if content, err := os.ReadFile(tvGoPath); err == nil {
+			if templateConstRe.Match(content) {
+				targets = append(targets, versionTarget{path: tvGoPath, kind: "TemplateVersion"})
+			}
 		}
 	}
 

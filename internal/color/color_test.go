@@ -254,3 +254,29 @@ func TestFormatUsage(t *testing.T) {
 		}
 	})
 }
+
+// AC62: SetEnabled toggles the package-level enabled var and returns a
+// restore closure. Not parallel-safe by design.
+func TestColorSetEnabledTogglesAndRestores(t *testing.T) {
+	// Record the current state so we can confirm round-trip.
+	before := enabled
+
+	restore := SetEnabled(true)
+	if !enabled {
+		t.Errorf("after SetEnabled(true): enabled = false, want true")
+	}
+	restore()
+	if enabled != before {
+		t.Errorf("after restore: enabled = %v, want %v", enabled, before)
+	}
+
+	// Disable path.
+	restore = SetEnabled(false)
+	if enabled {
+		t.Errorf("after SetEnabled(false): enabled = true, want false")
+	}
+	restore()
+	if enabled != before {
+		t.Errorf("after second restore: enabled = %v, want %v", enabled, before)
+	}
+}

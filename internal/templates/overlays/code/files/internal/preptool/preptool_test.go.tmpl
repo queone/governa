@@ -168,6 +168,9 @@ func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
 		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
+	// AC62: template-version detection is gated on internal/templates/base/ presence.
+	// This fixture represents the governa-the-template-repo path.
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 
 	targets, err = detectVersionTargets(dir)
 	if err != nil {
@@ -185,6 +188,91 @@ func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 	}
 }
 
+// AC62 AT1: consumer repo (no internal/templates/base/) — TEMPLATE_VERSION
+// and internal/templates/version.go must NOT be picked up as bump targets.
+// Simulates skout's v0.44.1 release-prep scenario.
+func TestPrepSkipsTemplateVersionOnConsumerRepo(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.38.0\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
+		"package templates\n\nconst TemplateVersion = \"0.38.0\"\n")
+	// Consumer scenario: no internal/templates/base/ directory.
+
+	targets, err := detectVersionTargets(dir)
+	if err != nil {
+		t.Fatalf("detectVersionTargets: %v", err)
+	}
+	for _, tgt := range targets {
+		if tgt.kind == "TEMPLATE_VERSION" {
+			t.Errorf("consumer repo: TEMPLATE_VERSION must not be detected, got %v", tgt)
+		}
+		if tgt.kind == "TemplateVersion" {
+			t.Errorf("consumer repo: TemplateVersion must not be detected, got %v", tgt)
+		}
+	}
+}
+
+// AC62 AT2: template repo (internal/templates/base/ present) — both
+// TEMPLATE_VERSION and TemplateVersion are detected. Governa-case regression guard.
+func TestPrepDetectsTemplateVersionOnTemplateRepo(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
+		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
+
+	targets, err := detectVersionTargets(dir)
+	if err != nil {
+		t.Fatalf("detectVersionTargets: %v", err)
+	}
+	kinds := map[string]bool{}
+	for _, tgt := range targets {
+		kinds[tgt.kind] = true
+	}
+	if !kinds["TEMPLATE_VERSION"] {
+		t.Errorf("template repo: TEMPLATE_VERSION not detected")
+	}
+	if !kinds["TemplateVersion"] {
+		t.Errorf("template repo: TemplateVersion not detected")
+	}
+}
+
+// AC62 AT3: cmd/*/main.go programVersion detection is orthogonal to the
+// template-marker gate — detected in both consumer and template repos.
+func TestPrepDetectsProgramVersionBothRepoKinds(t *testing.T) {
+	t.Run("consumer (no base/)", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
+			"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+		targets, _ := detectVersionTargets(dir)
+		found := false
+		for _, tgt := range targets {
+			if tgt.kind == "programVersion" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("programVersion must be detected in consumer repo")
+		}
+	})
+	t.Run("template (with base/)", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
+			"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+		mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
+		targets, _ := detectVersionTargets(dir)
+		found := false
+		for _, tgt := range targets {
+			if tgt.kind == "programVersion" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("programVersion must be detected in template repo")
+		}
+	})
+}
+
 // AT7: version bumps rewrite the constant; idempotent on already-matching.
 func TestPrepBumpsVersionConstants(t *testing.T) {
 	dir := t.TempDir()
@@ -195,6 +283,8 @@ func TestPrepBumpsVersionConstants(t *testing.T) {
 		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
 	tvGo := filepath.Join(dir, "internal", "templates", "version.go")
 	mustWrite(t, tvGo, "package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
+	// AC62: template-version detection gated on internal/templates/base/ presence.
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 
 	targets, _ := detectVersionTargets(dir)
 	for _, t2 := range targets {
@@ -336,6 +426,8 @@ func TestPrepDryRunWritesNothing(t *testing.T) {
 	gitInitFixture(t, dir)
 	tvPath := filepath.Join(dir, "TEMPLATE_VERSION")
 	mustWrite(t, tvPath, "0.1.0\n")
+	// AC62: TEMPLATE_VERSION detection gated on internal/templates/base/ presence.
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 	chPath := filepath.Join(dir, "CHANGELOG.md")
 	mustWrite(t, chPath, "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
 	acPath := filepath.Join(dir, "docs", "ac60-x.md")
@@ -538,5 +630,29 @@ func TestParseACRefs(t *testing.T) {
 	}
 	if got := parseACRefs("no refs here"); got != nil {
 		t.Errorf("no refs: got %v", got)
+	}
+}
+
+// Usage text is non-empty and mentions the canonical invocation shape.
+func TestUsage(t *testing.T) {
+	t.Parallel()
+	u := Usage()
+	if len(u) == 0 {
+		t.Fatal("Usage() returned empty string")
+	}
+	for _, want := range []string{"prep vX.Y.Z", "--dry-run", "--no-build", "--help"} {
+		if !strings.Contains(u, want) {
+			t.Errorf("Usage() missing %q. got:\n%s", want, u)
+		}
+	}
+}
+
+// moveFeedbackCompanion errors when the source path doesn't exist.
+func TestMoveFeedbackCompanionMissingSource(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	_, err := moveFeedbackCompanion(dir, filepath.Join(dir, "docs", "nope-feedback.md"))
+	if err == nil {
+		t.Error("expected error on missing source, got nil")
 	}
 }

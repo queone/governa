@@ -4,9 +4,7 @@ This file is the governance contract for this repo and the only doc guaranteed t
 
 ## Purpose
 
-This file is the base governance contract for a generated repo.
-Keep content here focused on cross-repo governance. Detail, rationale, and examples belong in supplementary docs — see `Governed Sections` below.
-Repo-specific workflow belongs in the selected overlay, not here.
+governa is a template repo that syncs governance into new and existing repositories, and maintains itself through enhance mode.
 
 ## Governed Sections
 

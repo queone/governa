@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.40.0 | AC62+AC63: consumer-feedback cleanup + sync feedback-closure advisor |
 | 0.39.0 | AC61: slim README template + arch.md Core Files section |
 | 0.38.0 | AC60: ./prep.sh release-staging tool + 2-step checklist |
 | 0.37.0 | AC58+AC59: section-order advisor + governance doc canonicalization — `detectSectionOrderDrift` emits Advisory Notes on `keep` files showing current vs template order (rename-aware). `plan.md` reordered (IE ↔ Deferred) and `Current Platform` removed (dup arch.md). Role-assignment rule consolidated in `AGENTS.md`; adversarial-check principle consolidated in `docs/roles/README.md` (dev/qa pointers; maintainer unchanged). Brittle step-N refs replaced with stable section refs. |
