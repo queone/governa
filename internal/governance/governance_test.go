@@ -9920,3 +9920,207 @@ func TestCritiqueOwnershipRulePresent(t *testing.T) {
 		}
 	}
 }
+
+// --- AC65 tests (Phase 1 critique protocol: ac-template Director Review + critique-protocol.md + dev-cycle reference) ---
+
+// ac65AcTemplateSources returns the three ac-template.md locations.
+// Reused across AC65 tests.
+func ac65AcTemplateSources() []struct {
+	label string
+	read  func() ([]byte, error)
+} {
+	return []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"docs/ac-template.md", func() ([]byte, error) {
+			return os.ReadFile("../../docs/ac-template.md")
+		}},
+		{"examples/code/docs/ac-template.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/ac-template.md")
+		}},
+		{"overlay ac-template.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/ac-template.md.tmpl")
+		}},
+	}
+}
+
+// ac65CritiqueProtocolSources returns the three critique-protocol.md locations.
+func ac65CritiqueProtocolSources() []struct {
+	label string
+	read  func() ([]byte, error)
+} {
+	return []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"docs/critique-protocol.md", func() ([]byte, error) {
+			return os.ReadFile("../../docs/critique-protocol.md")
+		}},
+		{"examples/code/docs/critique-protocol.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/critique-protocol.md")
+		}},
+		{"overlay critique-protocol.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/critique-protocol.md.tmpl")
+		}},
+	}
+}
+
+// ac65DevelopmentCycleSources returns the three development-cycle.md locations.
+func ac65DevelopmentCycleSources() []struct {
+	label string
+	read  func() ([]byte, error)
+} {
+	return []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"docs/development-cycle.md", func() ([]byte, error) {
+			return os.ReadFile("../../docs/development-cycle.md")
+		}},
+		{"examples/code/docs/development-cycle.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/development-cycle.md")
+		}},
+		{"overlay development-cycle.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/development-cycle.md.tmpl")
+		}},
+	}
+}
+
+// TestDirectorReviewSectionInACTemplate (AC65 AT1) asserts the three
+// ac-template.md locations each contain the new ## Director Review section
+// with body guidance and the Companion Artifacts pointer to critique-protocol.md.
+// Scope: the template file itself, not ACs drafted from the template.
+func TestDirectorReviewSectionInACTemplate(t *testing.T) {
+	t.Parallel()
+	const (
+		headingMarker = "\n## Director Review\n"
+		bodyGuidance  = "List every scope or wording trade-off chosen between two or more viable options"
+		protocolLink  = "docs/critique-protocol.md"
+	)
+	for _, tc := range ac65AcTemplateSources() {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		count := strings.Count(content, headingMarker)
+		if count != 1 {
+			t.Errorf("%s: expected exactly one '## Director Review' heading, got %d", tc.label, count)
+		}
+		if !strings.Contains(content, bodyGuidance) {
+			t.Errorf("%s: missing body guidance %q", tc.label, bodyGuidance)
+		}
+		if !strings.Contains(content, protocolLink) {
+			t.Errorf("%s: Companion Artifacts missing pointer to %q", tc.label, protocolLink)
+		}
+	}
+}
+
+// TestCritiqueProtocolDocPresent (AC65 AT2) asserts that the three
+// critique-protocol.md locations each contain the required clauses:
+// round-append structure, the five terminator fields, F-new-N monotonic
+// numbering, ### F<N> finding heading level, QA-authors-directly clause,
+// and the critique-file lifecycle clause.
+func TestCritiqueProtocolDocPresent(t *testing.T) {
+	t.Parallel()
+	requiredSubstrings := []string{
+		"## Round N",
+		"append-only",
+		"### F<N>",
+		"monotonically across all subsequent rounds",
+		"QA authors the critique file directly",
+		"Unresolved findings",
+		"Residual risks accepted",
+		"Coverage",
+		"Director attention",
+		"Verdict",
+		"deleted at release prep alongside the AC",
+	}
+	for _, tc := range ac65CritiqueProtocolSources() {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		for _, sub := range requiredSubstrings {
+			if !strings.Contains(content, sub) {
+				t.Errorf("%s: missing required substring %q", tc.label, sub)
+			}
+		}
+	}
+}
+
+// TestDevelopmentCycleReferencesCritiqueProtocol (AC65 AT3) asserts that
+// the three development-cycle.md locations each reference docs/critique-protocol.md
+// exactly once.
+func TestDevelopmentCycleReferencesCritiqueProtocol(t *testing.T) {
+	t.Parallel()
+	const ref = "docs/critique-protocol.md"
+	for _, tc := range ac65DevelopmentCycleSources() {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		count := strings.Count(string(raw), ref)
+		if count != 1 {
+			t.Errorf("%s: expected exactly one reference to %q, got %d", tc.label, ref, count)
+		}
+	}
+}
+
+// TestPhase1ProtocolSyncClassification (AC65 AT4) asserts that the
+// ac-template.md Companion Artifacts edit (adding the critique-protocol.md
+// pointer to the -critique.md bullet) classifies as "cosmetic" per the sync
+// scorer. Narrowed per Round 1 F3: development-cycle.md's one-line addition
+// is not tested here — the classifier surface is cleanest on the substantive
+// body edit to Companion Artifacts.
+func TestPhase1ProtocolSyncClassification(t *testing.T) {
+	t.Parallel()
+
+	// Minimal synthetic ac-template.md. Before: AC64's QA-owned sentence only.
+	// After: AC64 sentence + AC65 pointer sentence to critique-protocol.md.
+	before := `# AC Template
+
+## Companion Artifacts
+
+- **` + "`docs/ac<N>-<slug>-critique.md`" + `** — external-review findings. **QA-owned.** DEV does not write to this file. Deleted at release prep alongside the AC.
+- **` + "`docs/ac<N>-<slug>-feedback.md`" + `** — per-sync feedback.
+
+## Other Section
+
+Content.
+`
+	after := `# AC Template
+
+## Companion Artifacts
+
+- **` + "`docs/ac<N>-<slug>-critique.md`" + `** — external-review findings. **QA-owned.** DEV does not write to this file. Critique file structure is **round-append** with a five-field terminator-with-residuals shape. See ` + "`docs/critique-protocol.md`" + ` for the full protocol. Deleted at release prep alongside the AC.
+- **` + "`docs/ac<N>-<slug>-feedback.md`" + `** — per-sync feedback.
+
+## Other Section
+
+Content.
+`
+
+	dir := t.TempDir()
+	acTemplatePath := filepath.Join(dir, "ac-template.md")
+	if err := os.WriteFile(acTemplatePath, []byte(before), 0o644); err != nil {
+		t.Fatalf("write before: %v", err)
+	}
+
+	// ac-template.md is an overlay-provided file (not AGENTS.md), so classification
+	// flows through scoreOverlayCollision, not scoreGovernanceCollision.
+	score := scoreOverlayCollision(acTemplatePath, after, "old-checksum", "new-checksum")
+
+	cls, ok := score.changedClassifications["Companion Artifacts"]
+	if !ok {
+		t.Fatalf("changedClassifications missing 'Companion Artifacts'; got: %v", score.changedClassifications)
+	}
+	if cls != "cosmetic" {
+		t.Errorf("Companion Artifacts classification = %q, want cosmetic", cls)
+	}
+}

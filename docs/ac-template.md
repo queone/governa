@@ -8,7 +8,7 @@ The AC is the implementation contract for one approved roadmap item. The full de
 
 ACs produce three optional companion files that live alongside the AC doc in `docs/`. All are instructional scaffolding — delete this `## Companion Artifacts` section when copying the template into a real AC.
 
-- **`docs/ac<N>-<slug>-critique.md`** — external-review findings against the AC before implementation begins. The critique gate requires either this file or findings integrated directly into the AC itself (see `AGENTS.md` Approval Boundaries). **QA-owned.** DEV does not write to this file. DEV's response to findings is the AC revision itself (tracked in `git log`/`git diff`), optionally summarized in a `Disposition Log` subsection under Implementation Notes for ACs with extensive critique rounds. Deleted at release prep alongside the AC.
+- **`docs/ac<N>-<slug>-critique.md`** — external-review findings against the AC before implementation begins. The critique gate requires either this file or findings integrated directly into the AC itself (see `AGENTS.md` Approval Boundaries). **QA-owned.** DEV does not write to this file. DEV's response to findings is the AC revision itself (tracked in `git log`/`git diff`), optionally summarized in a `Disposition Log` subsection under Implementation Notes for ACs with extensive critique rounds. Critique file structure is **round-append** with a five-field terminator-with-residuals shape. See `docs/critique-protocol.md` for the full protocol (round heading levels, `F-new-N` monotonic numbering, terminator field order, DEV cross-reference sections). Deleted at release prep alongside the AC.
 - **`docs/ac<N>-<slug>-feedback.md`** — per-sync feedback artifact produced by `governa sync` ACs. Captures genuine observations about the sync output (template defaults that fight the repo, scoring gaps, methodology issues, things that landed well). At release prep, moved to `.governa/feedback/ac<N>-<slug>.md` instead of deleted, so the consumer's feedback persists for governa's future `enhance -r` runs.
 - **`docs/ac<N>-<slug>-dispositions.md`** — companion artifact for partial-adopt files. When an AC performs partial adoption — adopts some template content while preserving some existing content — list every preserved difference with: (1) content kept, (2) template content rejected, (3) repo-specific reason. Deleted at release prep alongside the AC. Before deletion, consolidate any long-term WHY-reasons into inline comments or durable docs. This records what was preserved during one AC; use `governa ack <path> --reason "..."` separately when a stable file-level carve-out should stop reappearing in future sync reviews.
 
@@ -74,6 +74,14 @@ List the docs that must be updated as part of this AC. If a change touches code 
 - `arch.md` — what section
 - `README.md` — what section
 - `CHANGELOG.md` — the release row is added at release prep time, not during implementation (the file itself is created by `governa sync` as a stub)
+
+## Director Review
+
+List every scope or wording trade-off chosen between two or more viable options during the DEV/QA cycle. Each entry names the option taken and a one-line why. Empty is allowed — write `None` when the AC has no judgment calls worth surfacing.
+
+QA's final-round terminator cross-checks that this list is exhaustive (not just the calls DEV feels uncertain about). Omissions surfaced by QA land in the critique file's `Director attention` field.
+
+- Decision X: option taken (alternatives considered: A, B). Why: <one-line>.
 
 ## Status
 
