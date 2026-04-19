@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,7 +72,7 @@ func Usage() string {
 	}, "When targets are specified, validation (vet, fmt, test, staticcheck) runs\nonly against those cmd packages. To validate the full repo, run with no targets.")
 }
 
-// Run executes the full build-and-validation pipeline (tidy, fmt, vet, test, staticcheck, binary install).
+// Run executes the full build-and-validation pipeline (mdcheck, tidy, fmt, vet, test, staticcheck, binary install).
 func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 	modulePath, err := modulePath()
 	if err != nil {
@@ -84,7 +85,18 @@ func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 	ext := binaryExt()
 	scopes := packageScopes(cfg.Targets)
 
-	fmt.Fprintln(out, color.Yel("==> Update go.mod to reflect actual dependencies"))
+	fmt.Fprintln(out, color.Yel("==> Check markdown for nested fence issues"))
+	findings, err := CheckNestedFences(".")
+	if err != nil {
+		return fmt.Errorf("mdcheck: %w", err)
+	}
+	if len(findings) > 0 {
+		writeIndented(out, strings.Join(findings, "\n"))
+		return fmt.Errorf("mdcheck found %d nested-fence issue(s)", len(findings))
+	}
+	fmt.Fprintln(out, "    No nested-fence issues found.")
+
+	fmt.Fprintln(out, "\n"+color.Yel("==> Update go.mod to reflect actual dependencies"))
 	if err := runStreaming(out, errOut, "go", "mod", "tidy"); err != nil {
 		return err
 	}
@@ -570,6 +582,164 @@ func runStreaming(out io.Writer, errOut io.Writer, name string, args ...string) 
 		return fmt.Errorf("%s %s failed: %w", name, strings.Join(args, " "), err)
 	}
 	return nil
+}
+
+// CheckNestedFences walks tracked markdown files under dir and returns findings
+// for 3-backtick fenced blocks that contain a tagged 3-backtick line
+// (e.g. ```text, ```go). CommonMark treats such a line as a close of the outer
+// fence, but the info string signals author-intent-to-nest — a legitimate close
+// carries no info string. The fix is to widen the outer fence to 4+ backticks
+// or switch it to ~~~.
+//
+// Walk scope: git ls-files when available; otherwise filesystem walk skipping
+// .git/, node_modules/, vendor/.
+func CheckNestedFences(dir string) ([]string, error) {
+	files, err := listMarkdownFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	var findings []string
+	for _, path := range files {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			rel = path
+		}
+		findings = append(findings, scanNestedFences(rel, string(content))...)
+	}
+	return findings, nil
+}
+
+// scanNestedFences implements the state machine described in CheckNestedFences.
+func scanNestedFences(path, content string) []string {
+	var findings []string
+	lines := strings.Split(content, "\n")
+
+	var delimChar byte // 0 means not in fence, '`' or '~' otherwise
+	var delimCount int
+	var openerLine int
+
+	for i, line := range lines {
+		lineNum := i + 1
+		dc, count, hasInfo, ok := parseFenceLine(line)
+		if !ok {
+			continue
+		}
+		if delimChar == 0 {
+			delimChar = dc
+			delimCount = count
+			openerLine = lineNum
+			continue
+		}
+		// In a fence. Check for close: same delimiter, count >= opener, no info string.
+		if dc == delimChar && count >= delimCount && !hasInfo {
+			delimChar = 0
+			delimCount = 0
+			continue
+		}
+		// Bug pattern: inside a 3-backtick fence, encountering an exactly-3-backtick
+		// line with a tagged info string. CommonMark would close the outer fence here,
+		// but the tag signals author-intent-to-nest — flag and exit the fence state.
+		if delimChar == '`' && delimCount == 3 && dc == '`' && count == 3 && hasInfo {
+			findings = append(findings, fmt.Sprintf(
+				"%s:%d: 3-backtick fence opened at line %d contains nested tagged fence; use 4+ backticks or ~~~ for the outer fence",
+				path, lineNum, openerLine,
+			))
+			delimChar = 0
+			delimCount = 0
+		}
+		// Otherwise: content line that happens to contain fence chars; stay in fence.
+	}
+	return findings
+}
+
+// parseFenceLine recognizes a markdown fence-opener-or-closer line.
+// Returns (delimChar, runLength, hasInfoString, ok). A fence line has a
+// leading (optional) whitespace, then 3+ backticks or tildes, then an
+// optional info string whose first character is non-whitespace and
+// (for backtick fences) non-backtick.
+func parseFenceLine(line string) (byte, int, bool, bool) {
+	// Strip leading whitespace
+	i := 0
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
+	}
+	// CommonMark allows up to 3 leading spaces; more is indented code, not a fence.
+	// We accept any whitespace here — overly-generous in edge cases, fine for our purposes.
+	if i >= len(line) {
+		return 0, 0, false, false
+	}
+	first := line[i]
+	if first != '`' && first != '~' {
+		return 0, 0, false, false
+	}
+	count := 0
+	for i+count < len(line) && line[i+count] == first {
+		count++
+	}
+	if count < 3 {
+		return 0, 0, false, false
+	}
+	// Everything after the delimiter run
+	rest := strings.TrimRight(line[i+count:], " \t")
+	hasInfo := len(rest) > 0
+	// Backtick fences may not contain backticks in their info string.
+	if first == '`' && strings.ContainsRune(rest, '`') {
+		return 0, 0, false, false
+	}
+	return first, count, hasInfo, true
+}
+
+// listMarkdownFiles returns absolute-or-relative paths to tracked .md files
+// under dir. Prefers git ls-files for accuracy; falls back to filesystem walk
+// skipping .git/, node_modules/, vendor/.
+func listMarkdownFiles(dir string) ([]string, error) {
+	cmd := exec.Command("git", "-C", dir, "ls-files", "*.md")
+	output, err := cmd.Output()
+	if err == nil {
+		var files []string
+		scanner := bufio.NewScanner(bytes.NewReader(output))
+		for scanner.Scan() {
+			rel := strings.TrimSpace(scanner.Text())
+			if rel == "" {
+				continue
+			}
+			files = append(files, filepath.Join(dir, rel))
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			return nil, fmt.Errorf("scan git ls-files: %w", scanErr)
+		}
+		return files, nil
+	}
+	// Fallback: filesystem walk
+	var files []string
+	skipDirs := map[string]bool{
+		".git":         true,
+		"node_modules": true,
+		"vendor":       true,
+	}
+	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".md") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("walk %s: %w", dir, walkErr)
+	}
+	return files, nil
 }
 
 func writeIndented(out io.Writer, text string) {

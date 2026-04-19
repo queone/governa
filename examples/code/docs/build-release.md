@@ -10,13 +10,14 @@ This repo has a single canonical build/test workflow: `./build.sh`.
 
 The build pipeline runs these steps in order, fail-hard on each:
 
-1. `go mod tidy` — ensure `go.mod` and `go.sum` are consistent
-2. `go fmt ./...` — **fail-hard.** If `go fmt` rewrote any file (non-empty stdout), the build fails. Re-run after committing the formatting fix.
-3. `go fix ./...` — advisory; output is logged but does not break the build
-4. `go vet ./...` — **fail-hard**
-5. Test suite with coverage — fail-hard on any test failure
-6. `staticcheck ./...` — **fail-hard.** Installed via `go install staticcheck@latest` before each run.
-7. Binary build — installs utilities to `$GOPATH/bin`
+1. `mdcheck` — **fail-hard.** Scans tracked markdown files for nested-fence bugs (3-backtick outer fence containing a tagged 3-backtick inner opener). The fix is to widen the outer fence to 4+ backticks or switch to `~~~`.
+2. `go mod tidy` — ensure `go.mod` and `go.sum` are consistent
+3. `go fmt ./...` — **fail-hard.** If `go fmt` rewrote any file (non-empty stdout), the build fails. Re-run after committing the formatting fix.
+4. `go fix ./...` — advisory; output is logged but does not break the build
+5. `go vet ./...` — **fail-hard**
+6. Test suite with coverage — fail-hard on any test failure
+7. `staticcheck ./...` — **fail-hard.** Installed via `go install staticcheck@latest` before each run.
+8. Binary build — installs utilities to `$GOPATH/bin`
 
 Invoking individual Go tools directly skips the tidy/fmt/lint pipeline above. A "passing" direct invocation can still produce a build that `./build.sh` would reject. The wrapper guarantees that what passes locally is what would pass in CI.
 

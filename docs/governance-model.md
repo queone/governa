@@ -110,13 +110,7 @@ The canonical entrypoint is `cmd/governa/main.go`, installed via `go install git
 
 ## CLI Convention
 
-Every bootstrap argument should have:
-
-- a single-letter short flag
-- a long-form alias
-
-The short flag is required.
-The long form exists as the readable alias.
+Flag-shape convention lives in `AGENTS.md` `Project Rules` — see the rule on short/long flag forms. Applies repo-wide to every tool governa ships.
 
 Recommended flag mapping (mode is determined by subcommand, not a flag):
 
@@ -133,7 +127,7 @@ Recommended flag mapping (mode is determined by subcommand, not a flag):
 -d, --dry-run
 ```
 
-This convention should be documented and kept consistent across governa subcommands.
+This mapping is documented and kept consistent across governa subcommands.
 
 ## Agent Agnosticism
 

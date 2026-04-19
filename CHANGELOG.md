@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.41.0 | AC64: flag convention + mdcheck step + critique ownership rule |
 | 0.40.0 | AC62+AC63: consumer-feedback cleanup + sync feedback-closure advisor |
 | 0.39.0 | AC61: slim README template + arch.md Core Files section |
 | 0.38.0 | AC60: ./prep.sh release-staging tool + 2-step checklist |

@@ -621,6 +621,238 @@ func TestStripAnsiPassthroughPlainText(t *testing.T) {
 	}
 }
 
+// --- CheckNestedFences / scanNestedFences tests (AC64 AT4, AT5) ---
+
+// AT4(i) Clean markdown with no fences produces no findings.
+// AT4(ii) 3-backtick outer fence containing a tagged 3-backtick opener → one finding at the inner line.
+// AT4(iii) 4-backtick outer fence containing 3-backtick inner → no findings.
+// AT4(iv) ~~~ outer fence containing 3-backtick inner → no findings.
+// AT4(v) Two sibling 3-backtick code blocks separated by prose → no findings.
+// AT4(vi) 3-backtick fence containing a plain ``` untagged close line → no findings.
+// AT4(vii) 4-backtick outer containing a tagged 4-backtick inner → no findings (exactly-three anchor).
+// AT4(viii) 3-backtick outer containing a line starting with 4 backticks (tagged) → no findings
+//
+//	(per CommonMark that line is not a nested opener — the tagged 4-backtick line
+//	 stays as content because it carries an info string so cannot close a 3-backtick
+//	 outer either; my state machine keeps it as content, which is correct).
+func TestScanNestedFences(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		content  string
+		want     int // number of findings
+		wantLine int // line number of the (single) finding, or 0 if none
+	}{
+		{
+			name:    "i_clean_no_fences",
+			content: "# Title\n\nPlain text only.\n",
+			want:    0,
+		},
+		{
+			name: "ii_bug_pattern",
+			content: "# Title\n" +
+				"\n" +
+				"```markdown\n" +
+				"outer fence contents\n" +
+				"```text\n" +
+				"inner content that author intended to nest\n" +
+				"```\n" +
+				"```\n",
+			want:     1,
+			wantLine: 5,
+		},
+		{
+			name: "iii_4backtick_outer_3backtick_inner",
+			content: "# Title\n" +
+				"\n" +
+				"````markdown\n" +
+				"```text\n" +
+				"inner content\n" +
+				"```\n" +
+				"````\n",
+			want: 0,
+		},
+		{
+			name: "iv_tilde_outer_3backtick_inner",
+			content: "# Title\n" +
+				"\n" +
+				"~~~markdown\n" +
+				"```text\n" +
+				"inner content\n" +
+				"```\n" +
+				"~~~\n",
+			want: 0,
+		},
+		{
+			name: "v_sibling_code_blocks",
+			content: "# Title\n" +
+				"\n" +
+				"```go\n" +
+				"first block\n" +
+				"```\n" +
+				"\n" +
+				"Some prose between.\n" +
+				"\n" +
+				"```go\n" +
+				"second block\n" +
+				"```\n",
+			want: 0,
+		},
+		{
+			name: "vi_plain_close",
+			content: "```\n" +
+				"content\n" +
+				"```\n",
+			want: 0,
+		},
+		{
+			name: "vii_4backtick_outer_tagged_4backtick_inner",
+			content: "````markdown\n" +
+				"````go\n" +
+				"inner\n" +
+				"````\n" +
+				"````\n",
+			want: 0,
+		},
+		{
+			name: "viii_3backtick_outer_tagged_4backtick_line",
+			content: "```\n" +
+				"````go\n" +
+				"content that stays inside the 3-backtick fence\n" +
+				"````\n" +
+				"```\n",
+			want: 0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			findings := scanNestedFences("test.md", tc.content)
+			if len(findings) != tc.want {
+				t.Fatalf("findings count = %d, want %d\nfindings: %v", len(findings), tc.want, findings)
+			}
+			if tc.want > 0 && tc.wantLine > 0 {
+				wantSubstr := "test.md:" + itoa(tc.wantLine) + ":"
+				if !strings.Contains(findings[0], wantSubstr) {
+					t.Fatalf("finding missing line marker %q; got %q", wantSubstr, findings[0])
+				}
+			}
+		})
+	}
+}
+
+// TestParseFenceLineEdgeCases covers the parser directly.
+func TestParseFenceLineEdgeCases(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		line      string
+		wantOk    bool
+		wantChar  byte
+		wantCount int
+		wantInfo  bool
+	}{
+		{line: "```", wantOk: true, wantChar: '`', wantCount: 3, wantInfo: false},
+		{line: "```text", wantOk: true, wantChar: '`', wantCount: 3, wantInfo: true},
+		{line: "````", wantOk: true, wantChar: '`', wantCount: 4, wantInfo: false},
+		{line: "````go", wantOk: true, wantChar: '`', wantCount: 4, wantInfo: true},
+		{line: "~~~", wantOk: true, wantChar: '~', wantCount: 3, wantInfo: false},
+		{line: "~~~markdown", wantOk: true, wantChar: '~', wantCount: 3, wantInfo: true},
+		{line: "  ```text", wantOk: true, wantChar: '`', wantCount: 3, wantInfo: true}, // leading ws
+		{line: "``", wantOk: false}, // only 2 backticks
+		{line: "plain text", wantOk: false},
+		{line: "```text```", wantOk: false}, // info string cannot contain backticks
+		{line: "", wantOk: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			t.Parallel()
+			dc, count, hasInfo, ok := parseFenceLine(tc.line)
+			if ok != tc.wantOk {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOk)
+			}
+			if !ok {
+				return
+			}
+			if dc != tc.wantChar {
+				t.Fatalf("delim = %q, want %q", dc, tc.wantChar)
+			}
+			if count != tc.wantCount {
+				t.Fatalf("count = %d, want %d", count, tc.wantCount)
+			}
+			if hasInfo != tc.wantInfo {
+				t.Fatalf("hasInfo = %v, want %v", hasInfo, tc.wantInfo)
+			}
+		})
+	}
+}
+
+// TestCheckNestedFencesOnFixtureDir stages synthetic .md files in a
+// temp directory and invokes CheckNestedFences directly (AC64 AT5).
+// The test does NOT invoke the full Run() pipeline — algorithm correctness
+// is covered by TestScanNestedFences; this AT covers the walk + finding-
+// formatting code path on real files.
+func TestCheckNestedFencesOnFixtureDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Fixture 1: a file with the bug pattern
+	buggy := "# Title\n\n```markdown\noutside\n```text\ninside\n```\n```\n"
+	if err := os.WriteFile(filepath.Join(dir, "buggy.md"), []byte(buggy), 0o644); err != nil {
+		t.Fatalf("write buggy.md: %v", err)
+	}
+	// Fixture 2: a clean file
+	clean := "# Title\n\nPlain prose.\n\n```go\nclean code\n```\n"
+	if err := os.WriteFile(filepath.Join(dir, "clean.md"), []byte(clean), 0o644); err != nil {
+		t.Fatalf("write clean.md: %v", err)
+	}
+
+	findings, err := CheckNestedFences(dir)
+	if err != nil {
+		t.Fatalf("CheckNestedFences error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings count = %d, want 1\nfindings: %v", len(findings), findings)
+	}
+	if !strings.Contains(findings[0], "buggy.md:5:") {
+		t.Fatalf("finding missing expected path/line; got: %q", findings[0])
+	}
+	if !strings.Contains(findings[0], "3-backtick fence opened at line 3") {
+		t.Fatalf("finding missing outer-line reference; got: %q", findings[0])
+	}
+}
+
+// TestCheckNestedFencesCleanDir verifies zero findings on a dir with no markdown.
+func TestCheckNestedFencesCleanDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	findings, err := CheckNestedFences(dir)
+	if err != nil {
+		t.Fatalf("CheckNestedFences error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("expected zero findings, got %d: %v", len(findings), findings)
+	}
+}
+
+// itoa is a test-local helper (strconv.Itoa without the import churn).
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	buf := []byte{}
+	for n > 0 {
+		buf = append([]byte{byte('0' + n%10)}, buf...)
+		n /= 10
+	}
+	if neg {
+		buf = append([]byte{'-'}, buf...)
+	}
+	return string(buf)
+}
+
 func TestGoFmtNonEmptyOutputFailsBuild(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -9721,3 +9721,202 @@ func TestFeedbackAdvisoryUsesExistingHasAdvisoryGate(t *testing.T) {
 		t.Log("renderSyncReview in governa's own repo produced no feedback closures; gate verified indirectly via AT6 behavior.")
 	}
 }
+
+// --- AC64 tests (flag convention + critique ownership rule + sync classification) ---
+
+// ac64FlagBullet is the exact bullet substring added to Project Rules across
+// the four AGENTS.md locations. Tested as a substring, not an exact-match line.
+const ac64FlagBullet = "- New CLI flags pair a one-letter short form (the standard form; leads help output) with a long-form alias; migrate existing when their code is next touched."
+
+// ac64CritiqueGateParenthetical is the exact parenthetical inserted into the
+// AC critique gate bullet in Approval Boundaries across all four AGENTS.md.
+const ac64CritiqueGateParenthetical = "(QA-owned; DEV responds via the AC revision, not the critique file)"
+
+// ac64CritiqueGatePrefix is the unique prefix identifying the AC critique gate
+// bullet line; used to pin AT9(d)'s substring check to that exact line.
+const ac64CritiqueGatePrefix = "- **AC critique gate:**"
+
+// ac64AcTemplateOwnershipSentence is the ownership prose added to the
+// -critique.md Companion Artifact bullet across three ac-template.md locations.
+const ac64AcTemplateOwnershipSentence = "**QA-owned.** DEV does not write to this file"
+
+// TestFlagConventionRulePresent (AC64 AT1) asserts the exact compact bullet
+// is present in each of the four AGENTS.md files and appears after the
+// "Every AC must label..." bullet with no intervening `- ` bullet.
+func TestFlagConventionRulePresent(t *testing.T) {
+	t.Parallel()
+	const priorBullet = "Every AC must label each acceptance test as"
+	for _, tc := range ac59AgentsFiles() {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		if !strings.Contains(content, ac64FlagBullet) {
+			t.Errorf("%s: missing flag-convention bullet; expected substring %q", tc.label, ac64FlagBullet)
+			continue
+		}
+		// Structural position check: find the "Every AC must label..." line,
+		// then scan forward and assert the next `- ` bullet line is the
+		// flag-convention bullet (no other bullet between them).
+		lines := strings.Split(content, "\n")
+		priorIdx := -1
+		for i, line := range lines {
+			if strings.Contains(line, priorBullet) {
+				priorIdx = i
+				break
+			}
+		}
+		if priorIdx < 0 {
+			t.Errorf("%s: could not locate prior bullet %q", tc.label, priorBullet)
+			continue
+		}
+		foundFlag := false
+		for i := priorIdx + 1; i < len(lines); i++ {
+			trim := strings.TrimLeft(lines[i], " \t")
+			if !strings.HasPrefix(trim, "- ") {
+				continue
+			}
+			// First bullet found after priorIdx must be ours.
+			if strings.Contains(lines[i], ac64FlagBullet) {
+				foundFlag = true
+			} else {
+				t.Errorf("%s: expected flag-convention bullet directly after %q; got %q", tc.label, priorBullet, lines[i])
+			}
+			break
+		}
+		if !foundFlag {
+			t.Errorf("%s: no bullet followed the prior line", tc.label)
+		}
+	}
+}
+
+// TestFlagConventionRuleSyncClassification (AC64 AT2) asserts that appending
+// the compact flag bullet to Project Rules and the parenthetical to the AC
+// critique gate bullet in Approval Boundaries both classify as "cosmetic"
+// (body edits), not "structural".
+func TestFlagConventionRuleSyncClassification(t *testing.T) {
+	t.Parallel()
+
+	// Minimal two-section synthetic AGENTS.md. The before/after deltas match
+	// what AC64 applies in real files: append one bullet to Project Rules,
+	// insert a parenthetical into an existing Approval Boundaries bullet.
+	before := `# AGENTS.md
+
+## Approval Boundaries
+
+- Rule A.
+- **AC critique gate:** See ` + "`docs/ac-template.md`" + ` for more.
+- Rule C.
+
+## Project Rules
+
+- Rule one.
+- Rule two.
+- Every AC must label each acceptance test as ` + "`[Automated]`" + ` or ` + "`[Manual]`" + `. See ` + "`docs/ac-template.md`" + `.
+`
+	after := `# AGENTS.md
+
+## Approval Boundaries
+
+- Rule A.
+- **AC critique gate:** See ` + "`docs/ac-template.md`" + ` ` + ac64CritiqueGateParenthetical + ` for more.
+- Rule C.
+
+## Project Rules
+
+- Rule one.
+- Rule two.
+- Every AC must label each acceptance test as ` + "`[Automated]`" + ` or ` + "`[Manual]`" + `. See ` + "`docs/ac-template.md`" + `.
+` + ac64FlagBullet + `
+`
+	dir := t.TempDir()
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	if err := os.WriteFile(agentsPath, []byte(before), 0o644); err != nil {
+		t.Fatalf("write before: %v", err)
+	}
+
+	score := scoreGovernanceCollision(
+		operation{path: agentsPath, content: after},
+		"old-checksum",
+		"new-checksum",
+	)
+
+	projectRulesCls, ok := score.changedClassifications["Project Rules"]
+	if !ok {
+		t.Fatalf("changedClassifications missing 'Project Rules'; got: %v", score.changedClassifications)
+	}
+	if projectRulesCls != "cosmetic" {
+		t.Errorf("Project Rules classification = %q, want cosmetic", projectRulesCls)
+	}
+	approvalCls, ok := score.changedClassifications["Approval Boundaries"]
+	if !ok {
+		t.Fatalf("changedClassifications missing 'Approval Boundaries'; got: %v", score.changedClassifications)
+	}
+	if approvalCls != "cosmetic" {
+		t.Errorf("Approval Boundaries classification = %q, want cosmetic", approvalCls)
+	}
+}
+
+// TestCritiqueOwnershipRulePresent (AC64 AT9) asserts the QA-owned sentence
+// appears in each of the three ac-template.md locations, and the
+// critique-gate parenthetical appears on the AC critique gate line in each
+// of the four AGENTS.md files (section-anchored to prevent false-pass from
+// a misplaced parenthetical elsewhere in the file).
+func TestCritiqueOwnershipRulePresent(t *testing.T) {
+	t.Parallel()
+
+	// Part (a-c): ac-template.md ownership sentence in three locations.
+	acTemplateSources := []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"docs/ac-template.md", func() ([]byte, error) {
+			return os.ReadFile("../../docs/ac-template.md")
+		}},
+		{"examples/code/docs/ac-template.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/ac-template.md")
+		}},
+		{"overlay ac-template.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/ac-template.md.tmpl")
+		}},
+	}
+	for _, tc := range acTemplateSources {
+		content, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		if !strings.Contains(string(content), ac64AcTemplateOwnershipSentence) {
+			t.Errorf("%s: missing ownership sentence %q", tc.label, ac64AcTemplateOwnershipSentence)
+		}
+	}
+
+	// Part (d): AGENTS.md parenthetical anchored to the AC critique gate bullet.
+	for _, tc := range ac59AgentsFiles() {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		lines := strings.Split(content, "\n")
+		gateLineIdx := -1
+		for i, line := range lines {
+			trim := strings.TrimLeft(line, " \t")
+			if strings.HasPrefix(trim, ac64CritiqueGatePrefix) {
+				gateLineIdx = i
+				break
+			}
+		}
+		if gateLineIdx < 0 {
+			t.Errorf("%s: could not locate AC critique gate bullet (prefix %q)", tc.label, ac64CritiqueGatePrefix)
+			continue
+		}
+		if !strings.Contains(lines[gateLineIdx], ac64CritiqueGateParenthetical) {
+			t.Errorf("%s: AC critique gate line missing parenthetical %q; line is: %q",
+				tc.label, ac64CritiqueGateParenthetical, lines[gateLineIdx])
+		}
+	}
+}
