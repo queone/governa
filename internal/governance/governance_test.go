@@ -3196,17 +3196,17 @@ func TestWhySectionInReadmeTemplates(t *testing.T) {
 	for path, label := range files {
 		content := readRepoFile(t, path)
 		whyIdx := strings.Index(content, "## Why")
-		overviewIdx := strings.Index(content, "## Overview")
 		if whyIdx < 0 {
 			t.Errorf("%s: %s must contain ## Why section", path, label)
 			continue
 		}
-		if overviewIdx < 0 {
-			t.Errorf("%s: %s must contain ## Overview section", path, label)
-			continue
-		}
-		if whyIdx >= overviewIdx {
-			t.Errorf("%s: ## Why (at %d) must come before ## Overview (at %d)", path, whyIdx, overviewIdx)
+		// AC61 removed ## Overview from the CODE overlay README; DOC overlay
+		// retains it. When a file still has ## Overview, assert Why precedes
+		// it. When it does not, Why is the only prescribed heading.
+		if overviewIdx := strings.Index(content, "## Overview"); overviewIdx >= 0 {
+			if whyIdx >= overviewIdx {
+				t.Errorf("%s: ## Why (at %d) must come before ## Overview (at %d)", path, whyIdx, overviewIdx)
+			}
 		}
 	}
 }
@@ -8991,6 +8991,170 @@ func TestTemplateEmitsPrepTooling(t *testing.T) {
 		}
 		if !strings.Contains(string(content), tc.wantSubstr) {
 			t.Errorf("%s (%s): expected substring %q, got first 200 chars: %q", tc.description, tc.path, tc.wantSubstr, string(content[:min(200, len(content))]))
+		}
+	}
+}
+
+// ---- AC61 ----
+
+// countLevel2Headings returns the number of "^## " level-2 heading lines in content.
+func countLevel2Headings(content string) int {
+	n := 0
+	for line := range strings.SplitSeq(content, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			n++
+		}
+	}
+	return n
+}
+
+// AC61 AT1: the CODE overlay README template retains only the Why heading.
+func TestCodeOverlayReadmeIsSlim(t *testing.T) {
+	t.Parallel()
+	content, err := fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/README.md.tmpl")
+	if err != nil {
+		t.Fatalf("read overlay README template: %v", err)
+	}
+	s := string(content)
+	if got := countLevel2Headings(s); got != 1 {
+		t.Errorf("overlay README ## heading count = %d, want 1", got)
+	}
+	if !strings.Contains(s, "## Why") {
+		t.Error("overlay README missing ## Why heading")
+	}
+	if !strings.Contains(s, "{{REPO_NAME}}") {
+		t.Error("overlay README missing {{REPO_NAME}} placeholder")
+	}
+	if !strings.Contains(s, "{{PROJECT_PURPOSE}}") {
+		t.Error("overlay README missing {{PROJECT_PURPOSE}} placeholder")
+	}
+}
+
+// AC61 AT2: the rendered CODE example README has the same slim shape.
+func TestCodeExampleReadmeIsSlim(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../examples/code/README.md")
+	if err != nil {
+		t.Fatalf("read example README: %v", err)
+	}
+	s := string(content)
+	if got := countLevel2Headings(s); got != 1 {
+		t.Errorf("example README ## heading count = %d, want 1", got)
+	}
+	if !strings.Contains(s, "## Why") {
+		t.Error("example README missing ## Why heading")
+	}
+	removed := []string{
+		"## Overview",
+		"## Core Repo Files",
+		"## Working Agreement",
+		"## Workflow Summary",
+		"## Replace Me",
+	}
+	for _, heading := range removed {
+		if strings.Contains(s, heading) {
+			t.Errorf("example README still contains %q — AC61 should have removed it", heading)
+		}
+	}
+}
+
+// AC61 AT3: the CODE overlay arch template carries a Core Files section
+// between Major Components and Data And Control Flow.
+func TestCodeOverlayArchHasCoreFilesSection(t *testing.T) {
+	t.Parallel()
+	content, err := fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/arch.md.tmpl")
+	if err != nil {
+		t.Fatalf("read overlay arch template: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "## Core Files") {
+		t.Fatal("overlay arch template missing ## Core Files section")
+	}
+	mustHave := []string{
+		"`AGENTS.md`",
+		"`plan.md`",
+		"`build.sh`",
+		"`prep.sh`",
+		"`cmd/build/main.go`",
+		"`cmd/prep/main.go`",
+		"`cmd/rel/main.go`",
+		"`docs/development-cycle.md`",
+		"`docs/ac-template.md`",
+		"`docs/build-release.md`",
+	}
+	for _, entry := range mustHave {
+		if !strings.Contains(s, entry) {
+			t.Errorf("overlay arch ## Core Files missing %s", entry)
+		}
+	}
+	// Ordering check: Major Components → Core Files → Data And Control Flow.
+	majorIdx := strings.Index(s, "## Major Components")
+	coreIdx := strings.Index(s, "## Core Files")
+	flowIdx := strings.Index(s, "## Data And Control Flow")
+	if majorIdx < 0 || coreIdx < 0 || flowIdx < 0 {
+		t.Fatalf("expected headings missing: majorIdx=%d coreIdx=%d flowIdx=%d", majorIdx, coreIdx, flowIdx)
+	}
+	if !(majorIdx < coreIdx && coreIdx < flowIdx) {
+		t.Errorf("section order broken: ## Major Components (@%d) → ## Core Files (@%d) → ## Data And Control Flow (@%d)", majorIdx, coreIdx, flowIdx)
+	}
+}
+
+// AC61 AT4: the rendered CODE example arch carries the same Core Files shape.
+func TestCodeExampleArchHasCoreFilesSection(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../examples/code/arch.md")
+	if err != nil {
+		t.Fatalf("read example arch: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "## Core Files") {
+		t.Fatal("example arch missing ## Core Files section")
+	}
+	majorIdx := strings.Index(s, "## Major Components")
+	coreIdx := strings.Index(s, "## Core Files")
+	flowIdx := strings.Index(s, "## Data And Control Flow")
+	if !(majorIdx < coreIdx && coreIdx < flowIdx) {
+		t.Errorf("section order broken: ## Major Components (@%d) → ## Core Files (@%d) → ## Data And Control Flow (@%d)", majorIdx, coreIdx, flowIdx)
+	}
+}
+
+// AC61 AT5: root governa README retains its product-landing-page headings.
+// Guards against accidentally sweeping the root README into the template cleanup.
+func TestRootGovernaReadmeUnchanged(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read root README: %v", err)
+	}
+	s := string(content)
+	for _, heading := range []string{"## Modes", "## Design", "## Self-Hosting Status"} {
+		if !strings.Contains(s, heading) {
+			t.Errorf("root README missing product-landing heading %q — AC61 must not sweep root README into template cleanup", heading)
+		}
+	}
+}
+
+// AC61 AT6: root governa arch.md does not gain a Core Files section.
+// This is intentional — governa's arch is already comprehensive via Major
+// Components. The absence is asserted so a future AC that explicitly adds
+// Core Files to root arch updates this assertion deliberately.
+func TestRootGovernaArchUnchangedByAC61(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../arch.md")
+	if err != nil {
+		t.Fatalf("read root arch: %v", err)
+	}
+	if strings.Contains(string(content), "## Core Files") {
+		t.Error("root arch.md unexpectedly contains ## Core Files — AC61 should not add it here")
+	}
+}
+
+// AC61 AT7: scaffoldMarkers no longer contains the dead "## Replace Me" entry.
+func TestScaffoldMarkersNoReplaceMe(t *testing.T) {
+	t.Parallel()
+	for _, m := range scaffoldMarkers {
+		if m == "## Replace Me" {
+			t.Errorf("scaffoldMarkers still contains dead marker %q — AC61 should have removed it", m)
 		}
 	}
 }

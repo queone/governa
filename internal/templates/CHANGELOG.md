@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.39.0 | AC61: slim README template + arch.md Core Files section |
 | 0.38.0 | AC60: ./prep.sh release-staging tool + 2-step checklist |
 | 0.37.0 | AC58+AC59: section-order advisor + governance doc canonicalization — `detectSectionOrderDrift` emits Advisory Notes on `keep` files showing current vs template order (rename-aware). `plan.md` reordered (IE ↔ Deferred) and `Current Platform` removed (dup arch.md). Role-assignment rule consolidated in `AGENTS.md`; adversarial-check principle consolidated in `docs/roles/README.md` (dev/qa pointers; maintainer unchanged). Brittle step-N refs replaced with stable section refs. |
 | 0.36.0 | AC57: monotonic AC numbering across release-prep deletions — `nextACNumber` consults `git log --all --pretty=%B` alongside `docs/` so deleted ACs still contribute to the max. Two-layer seam: `gitACMaxFn` + `extractACNumbersFromGitOutput` parser (handles `AC53+AC54` composites). Disk-only fallback + stderr warning on git-unavailable. `docs/ac-template.md` preamble + `docs/development-cycle.md` step 2 rewritten (overlay + example copies) to codify the rule for consumer-repo DEVs. |

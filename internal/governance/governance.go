@@ -3330,7 +3330,6 @@ var knownMergeTargets = map[string]bool{
 var scaffoldMarkers = []string{
 	"State why this repo exists",
 	"Document the system's major components",
-	"## Replace Me",
 	"project-specific anti-patterns and guardrails here",
 	"active work items only; remove when shipped",
 }
