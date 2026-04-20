@@ -4467,31 +4467,81 @@ func isRepoOwnedConsumerOnlySection(name string) bool {
 	return repoOwnedConsumerOnlySections[name]
 }
 
-// applyPlanMdSkeletonPolicy downgrades an "adopt" recommendation on plan.md
-// to "keep" when the only changed sections are skeleton sections (whose
-// content is expected to differ from the template). Adopt is preserved when
-// structural drift is present (missing sections, etc.). No-op for files
-// other than plan.md or non-adopt recommendations. (AC53 IE6)
+// applyPlanMdSkeletonPolicy handles three related cases for plan.md scoring:
+//
+//	Case 1 (AC53 IE6): downgrade "adopt" to "keep" when all changed sections
+//	are skeleton sections (content expected to differ from the template).
+//
+//	Case 2 (AC67): clear standingDrift + driftSections when all drift sections
+//	are skeleton. Prevents promoteStandingDrift (called after this function)
+//	from re-escalating keep back to adopt for repo-owned content drift on
+//	same-version syncs.
+//
+//	Case 3 (AC67, defensive): filter skeleton-section entries out of
+//	structuralNotes. Currently unreachable because plan.md skeleton sections
+//	don't trigger subsection-nesting notes, but keeps the policy coherent
+//	against future detector additions.
+//
+// All three cases share one gate: filepath.Base(score.path) == "plan.md"
+// and len(missingSections) == 0. When the consumer is missing a template
+// skeleton section, structural drift is real and adopt is preserved — the
+// early-return short-circuits all three cases.
+//
+// No-op for files other than plan.md.
 func applyPlanMdSkeletonPolicy(score *collisionScore) {
 	if filepath.Base(score.path) != "plan.md" {
 		return
 	}
-	if score.recommendation != "adopt" {
-		return
-	}
 	if len(score.missingSections) > 0 {
-		return // structural drift — preserve adopt
+		return // structural drift — preserve adopt; don't clear flags
 	}
-	if len(score.changedSections) == 0 {
-		return // adopt was set for a non-content reason; preserve
-	}
-	for _, name := range score.changedSections {
-		if !planMdSkeletonSections[name] {
-			return // a non-skeleton section changed — preserve adopt
+
+	// Helper: are all of these section names in the skeleton list?
+	// Returns false when the input is empty (caller expected to check length).
+	allSkeleton := func(names []string) bool {
+		if len(names) == 0 {
+			return false
 		}
+		for _, name := range names {
+			if !planMdSkeletonSections[name] {
+				return false
+			}
+		}
+		return true
 	}
-	score.recommendation = "keep"
-	score.reason = fmt.Sprintf("plan.md skeleton sections only — content differs as expected (%s)", strings.Join(score.changedSections, ", "))
+
+	// Case 1 (AC53 IE6): downgrade adopt → keep when all changed sections are skeleton.
+	if score.recommendation == "adopt" && allSkeleton(score.changedSections) {
+		score.recommendation = "keep"
+		score.reason = fmt.Sprintf("plan.md skeleton sections only — content differs as expected (%s)", strings.Join(score.changedSections, ", "))
+	}
+
+	// Case 2 (AC67): clear standing-drift flag when all drift sections are skeleton.
+	// Prevents promoteStandingDrift from re-escalating keep → adopt for repo-owned
+	// content drift detected on same-version syncs. Compose the clarifying reason
+	// string before nil'ing driftSections so the list names survive into the message
+	// (symmetric with Case 1's reason-setting — consumers reading .governa/sync-review.md
+	// see why plan.md skeleton drift was treated as expected, not drift).
+	if score.standingDrift && allSkeleton(score.driftSections) {
+		reason := fmt.Sprintf("plan.md skeleton sections only — standing drift as expected (%s)", strings.Join(score.driftSections, ", "))
+		score.standingDrift = false
+		score.driftSections = nil
+		score.reason = reason
+	}
+
+	// Case 3 (AC67, defensive): filter skeleton-section entries out of structuralNotes.
+	// Currently unreachable because plan.md skeleton sections don't trigger
+	// subsection-nesting notes, but keeps the policy coherent against future
+	// detector additions that might emit structural observations on skeleton sections.
+	if len(score.structuralNotes) > 0 {
+		filtered := score.structuralNotes[:0]
+		for _, n := range score.structuralNotes {
+			if !planMdSkeletonSections[n.section] {
+				filtered = append(filtered, n)
+			}
+		}
+		score.structuralNotes = filtered
+	}
 }
 
 // closesMarkerRe matches the `closes <consumer>:IE<N>` convention introduced

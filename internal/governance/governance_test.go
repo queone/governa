@@ -10356,3 +10356,154 @@ func TestLocalRulesGuidanceInDevelopmentCycle(t *testing.T) {
 		}
 	}
 }
+
+// --- AC67 tests (plan.md skeleton policy end-to-end fix) ---
+
+// TestPlanMdSkeletonPolicyClearsStandingDriftEndToEnd (AC67 AT1) is the
+// end-to-end test AC66 should have had. It simulates the full runSync
+// sequence by calling scoreOverlayCollision → promoteStandingDrift →
+// promoteStructuralNotes in order (matching governance.go:1877-1884).
+// Pre-AC67 the skeleton policy's downgrade was silently undone by
+// promoteStandingDrift. Post-AC67, Case 2 clears standingDrift so the
+// promoter finds nothing to re-escalate.
+func TestPlanMdSkeletonPolicyClearsStandingDriftEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	// Consumer plan.md has repo content in three skeleton sections;
+	// Deferred and Ideas To Explore match template placeholders.
+	consumer := buildPlanMd(
+		"Repo-specific product direction.",
+		"- Priority 1\n- Priority 2",
+		"",
+		"",
+		"- Repo constraint A\n- Repo constraint B",
+	)
+	template := buildPlanMd("", "", "", "", "")
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte(consumer), 0o644); err != nil {
+		t.Fatalf("write plan.md: %v", err)
+	}
+
+	// Same-version sync: old == new checksum → templateChanged=false →
+	// scoreOverlayCollision enters the standing-drift branch.
+	score := scoreOverlayCollision(planPath, template, "checksum", "checksum")
+	// Simulate the runSync call sequence (governance.go:1877-1884).
+	promoteStandingDrift(&score)
+	promoteStructuralNotes(&score)
+
+	if score.recommendation != "keep" {
+		t.Errorf("recommendation = %q, want keep (end-to-end with standing drift cleared); reason = %q", score.recommendation, score.reason)
+	}
+	if score.standingDrift {
+		t.Errorf("standingDrift = true, want false (Case 2 should have cleared it)")
+	}
+	const wantReasonSubstr = "plan.md skeleton sections only — standing drift as expected"
+	if !strings.Contains(score.reason, wantReasonSubstr) {
+		t.Errorf("reason = %q, want substring %q", score.reason, wantReasonSubstr)
+	}
+}
+
+// TestPlanMdSkeletonPolicyPreservesNonPlanMdDrift (AC67 AT2) is a regression
+// guard. A non-plan.md overlay file with standing drift in a shared section
+// must still promote to "adopt" via promoteStandingDrift. Proves the
+// filepath.Base gate in applyPlanMdSkeletonPolicy correctly scopes the fix
+// to plan.md and doesn't spill to other files.
+func TestPlanMdSkeletonPolicyPreservesNonPlanMdDrift(t *testing.T) {
+	t.Parallel()
+
+	// Synthetic docs/build-release.md-shaped file with standing drift in a shared section.
+	template := "# Build and Release\n\n## Build\n\nStandard build content.\n\n## Pre-Release Checklist\n\nStandard checklist.\n"
+	consumer := "# Build and Release\n\n## Build\n\nConsumer-modified build content.\n\n## Pre-Release Checklist\n\nStandard checklist.\n"
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "build-release.md")
+	if err := os.WriteFile(filePath, []byte(consumer), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	// Same-version sync → standing-drift branch fires.
+	score := scoreOverlayCollision(filePath, template, "checksum", "checksum")
+	promoteStandingDrift(&score)
+	promoteStructuralNotes(&score)
+
+	if score.recommendation != "adopt" {
+		t.Errorf("recommendation = %q, want adopt (non-plan.md standing drift should still promote); reason = %q", score.recommendation, score.reason)
+	}
+}
+
+// TestPlanMdSkeletonPolicyPreservesMissingSectionDrift (AC67 AT3) is a
+// regression guard for the missingSections gate on Case 1's adopt-path.
+// Consumer plan.md is missing a template skeleton section; template changed
+// since last sync. Structural drift is real → adopt is preserved.
+// The shared early-return at the top of applyPlanMdSkeletonPolicy also
+// short-circuits Cases 2 and 3 by construction.
+func TestPlanMdSkeletonPolicyPreservesMissingSectionDrift(t *testing.T) {
+	t.Parallel()
+
+	// Consumer plan.md is missing ## Ideas To Explore entirely.
+	consumer := `# Plan
+
+## Product Direction
+
+Repo-specific direction.
+
+## Priorities
+
+- Priority 1
+
+## Deferred
+
+| ID | Description | Reason |
+|----|-------------|--------|
+
+## Constraints
+
+- Repo constraint.
+`
+	// Template has all five sections including the one consumer is missing.
+	template := buildPlanMd("", "", "", "", "")
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte(consumer), 0o644); err != nil {
+		t.Fatalf("write plan.md: %v", err)
+	}
+
+	// Template changed since last sync: old != new checksum.
+	score := scoreOverlayCollision(planPath, template, "old-checksum", "new-checksum")
+	promoteStandingDrift(&score)
+	promoteStructuralNotes(&score)
+
+	if score.recommendation != "adopt" {
+		t.Errorf("recommendation = %q, want adopt (missingSections > 0 is structural drift); reason = %q", score.recommendation, score.reason)
+	}
+}
+
+// TestPlanMdSkeletonPolicyFiltersStructuralNotes exercises AC67 Case 3's
+// defensive filter directly. Case 3 is unreachable via normal scorer flow
+// (plan.md skeleton sections don't trigger subsection-nesting notes today)
+// but the policy should still filter skeleton entries if a future detector
+// emits structural observations on them. Constructs a synthetic score with
+// structuralNotes populated and calls applyPlanMdSkeletonPolicy directly.
+func TestPlanMdSkeletonPolicyFiltersStructuralNotes(t *testing.T) {
+	t.Parallel()
+	score := collisionScore{
+		path:           "/some/dir/plan.md",
+		recommendation: "keep",
+		structuralNotes: []structuralNote{
+			{section: "Priorities", observation: "fake skeleton note"},   // skeleton — should be filtered
+			{section: "Constraints", observation: "fake skeleton note"},  // skeleton — should be filtered
+			{section: "Non Skeleton", observation: "fake non-skel note"}, // not skeleton — should be kept
+		},
+	}
+	applyPlanMdSkeletonPolicy(&score)
+
+	if len(score.structuralNotes) != 1 {
+		t.Fatalf("structuralNotes length = %d, want 1 (skeleton notes should be filtered out); notes: %+v", len(score.structuralNotes), score.structuralNotes)
+	}
+	if score.structuralNotes[0].section != "Non Skeleton" {
+		t.Errorf("surviving note section = %q, want %q", score.structuralNotes[0].section, "Non Skeleton")
+	}
+}
