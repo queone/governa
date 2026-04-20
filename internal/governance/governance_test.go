@@ -9713,9 +9713,9 @@ const ac64CritiqueGateParenthetical = "(QA-owned; DEV responds via the AC revisi
 // bullet line; used to pin AT9(d)'s substring check to that exact line.
 const ac64CritiqueGatePrefix = "- **AC critique gate:**"
 
-// ac64AcTemplateOwnershipSentence is the ownership prose added to the
-// -critique.md Companion Artifact bullet across three ac-template.md locations.
-const ac64AcTemplateOwnershipSentence = "**QA-owned.** DEV does not write to this file"
+// (AC64's ac64AcTemplateOwnershipSentence const was removed in AC69 Part D —
+// the separate-file ownership sentence no longer exists; integrated-mode
+// substrings are inlined in TestCritiqueOwnershipRulePresent.)
 
 // TestFlagConventionRulePresent (AC64 AT1) asserts the exact compact bullet
 // is present in each of the four AGENTS.md files and appears after the
@@ -9841,10 +9841,19 @@ func TestFlagConventionRuleSyncClassification(t *testing.T) {
 // critique-gate parenthetical appears on the AC critique gate line in each
 // of the four AGENTS.md files (section-anchored to prevent false-pass from
 // a misplaced parenthetical elsewhere in the file).
+// TestCritiqueOwnershipRulePresent (AC64 original; AC69 rewritten for integrated mode):
+// asserts that (a) the three ac-template.md locations describe integrated-mode
+// critique ("## Critique" section inside the AC, not a separate file), and
+// (b) the AC critique gate bullet in all four AGENTS.md files references
+// integrated-mode wording. Separate `-critique.md` file references removed per AC69 Part D.
 func TestCritiqueOwnershipRulePresent(t *testing.T) {
 	t.Parallel()
 
-	// Part (a-c): ac-template.md ownership sentence in three locations.
+	// AC69 Part D: new integrated-mode substrings (replace AC64's separate-file assertions).
+	const acTemplateIntegratedSubstring = "Critique lives inside the AC"
+	const agentsMdIntegratedSubstring = "integrated into the AC's `## Critique` section"
+
+	// Part (a-c): ac-template.md integrated-mode sentence in three locations.
 	acTemplateSources := []struct {
 		label string
 		read  func() ([]byte, error)
@@ -9865,12 +9874,12 @@ func TestCritiqueOwnershipRulePresent(t *testing.T) {
 			t.Errorf("%s: read: %v", tc.label, err)
 			continue
 		}
-		if !strings.Contains(string(content), ac64AcTemplateOwnershipSentence) {
-			t.Errorf("%s: missing ownership sentence %q", tc.label, ac64AcTemplateOwnershipSentence)
+		if !strings.Contains(string(content), acTemplateIntegratedSubstring) {
+			t.Errorf("%s: missing integrated-mode substring %q", tc.label, acTemplateIntegratedSubstring)
 		}
 	}
 
-	// Part (d): AGENTS.md parenthetical anchored to the AC critique gate bullet.
+	// Part (d): AGENTS.md critique gate bullet contains integrated-mode substring (anchored to the bullet line).
 	for _, tc := range ac59AgentsFiles() {
 		raw, err := tc.read()
 		if err != nil {
@@ -9891,9 +9900,9 @@ func TestCritiqueOwnershipRulePresent(t *testing.T) {
 			t.Errorf("%s: could not locate AC critique gate bullet (prefix %q)", tc.label, ac64CritiqueGatePrefix)
 			continue
 		}
-		if !strings.Contains(lines[gateLineIdx], ac64CritiqueGateParenthetical) {
-			t.Errorf("%s: AC critique gate line missing parenthetical %q; line is: %q",
-				tc.label, ac64CritiqueGateParenthetical, lines[gateLineIdx])
+		if !strings.Contains(lines[gateLineIdx], agentsMdIntegratedSubstring) {
+			t.Errorf("%s: AC critique gate line missing integrated-mode substring %q; line is: %q",
+				tc.label, agentsMdIntegratedSubstring, lines[gateLineIdx])
 		}
 	}
 }
@@ -9995,25 +10004,32 @@ func TestDirectorReviewSectionInACTemplate(t *testing.T) {
 	}
 }
 
-// TestCritiqueProtocolDocPresent (AC65 AT2) asserts that the three
-// critique-protocol.md locations each contain the required clauses:
-// round-append structure, the five terminator fields, F-new-N monotonic
-// numbering, ### F<N> finding heading level, QA-authors-directly clause,
-// and the critique-file lifecycle clause.
+// TestCritiqueProtocolDocPresent (AC65 AT2; AC69 Part D rewritten for integrated mode):
+// asserts that the three critique-protocol.md locations each describe integrated-mode
+// (critique lives in the AC's `## Critique` section, not a separate file), with
+// round-append structure, integrated-mode heading levels (### Round N / #### F<N>),
+// F-new-N monotonic numbering, and the five terminator fields. Separate-file
+// references (`docs/ac<N>-<slug>-critique.md` file path, "QA authors the critique
+// file directly") are deliberately absent post-AC69.
 func TestCritiqueProtocolDocPresent(t *testing.T) {
 	t.Parallel()
 	requiredSubstrings := []string{
-		"## Round N",
-		"append-only",
-		"### F<N>",
-		"monotonically across all subsequent rounds",
-		"QA authors the critique file directly",
-		"Unresolved findings",
-		"Residual risks accepted",
-		"Coverage",
-		"Director attention",
-		"Verdict",
-		"deleted at release prep alongside the AC",
+		"## Critique", // integrated-mode section ref
+		"### Round N", // H3 round heading (integrated mode)
+		"#### F<N>",   // H4 finding heading (integrated mode)
+		"append-only", // round structure
+		"monotonically across all subsequent rounds", // F-new-N numbering
+		"transcribes",             // QA-authored, DEV transcribes (replaces "QA authors the critique file directly")
+		"Unresolved findings",     // terminator field 1
+		"Residual risks accepted", // terminator field 2
+		"Coverage",                // terminator field 3
+		"Director attention",      // terminator field 4
+		"Verdict",                 // terminator field 5
+	}
+	forbiddenSubstrings := []string{
+		"## Round N Summary (terminator)",          // old H2 terminator heading (integrated uses ### Round N Summary)
+		"QA authors the critique file directly",    // old separate-file authorship clause
+		"deleted at release prep alongside the AC", // old file-lifecycle clause (no separate file now)
 	}
 	for _, tc := range ac65CritiqueProtocolSources() {
 		raw, err := tc.read()
@@ -10025,6 +10041,11 @@ func TestCritiqueProtocolDocPresent(t *testing.T) {
 		for _, sub := range requiredSubstrings {
 			if !strings.Contains(content, sub) {
 				t.Errorf("%s: missing required substring %q", tc.label, sub)
+			}
+		}
+		for _, forb := range forbiddenSubstrings {
+			if strings.Contains(content, forb) {
+				t.Errorf("%s: contains forbidden (old separate-file) substring %q", tc.label, forb)
 			}
 		}
 	}
@@ -10709,4 +10730,451 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// --- AC69 tests ---
+
+// TestCanonicalBuildSmokeTestClausePresent (AC69 AT2) asserts the smoke-test
+// clause appears on the same line as the canonical-build bullet in all four
+// AGENTS.md locations. Substring-only check could false-pass if the clause
+// landed elsewhere in the file; the same-line check pins it to the bullet.
+func TestCanonicalBuildSmokeTestClausePresent(t *testing.T) {
+	t.Parallel()
+	const (
+		bulletAnchor = "Always use the repo's canonical build command"
+		smokeClause  = "For quick smoke-testing of a single utility"
+	)
+	for _, tc := range ac59AgentsFiles() {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		lines := strings.Split(content, "\n")
+		found := false
+		for _, line := range lines {
+			if strings.Contains(line, bulletAnchor) && strings.Contains(line, smokeClause) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s: smoke-test clause %q not on same line as canonical-build bullet anchor %q", tc.label, smokeClause, bulletAnchor)
+		}
+	}
+}
+
+// TestSummarizeChangeEdgeCases exercises the less-common summarizeChange branches
+// (multi-bullet delta, subsection add/remove, no-match fallback) to keep
+// AC69 C1's summary helper covered end-to-end.
+func TestSummarizeChangeEdgeCases(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		existing string
+		proposed string
+		want     string
+	}{
+		{"two-bullets-added", "- a\n", "- a\n- b\n- c\n", "2 bullets added"},
+		{"two-bullets-removed", "- a\n- b\n- c\n", "- a\n", "2 bullets removed"},
+		{"subsection-added", "body\n", "body\n\n### Sub\n\ntext\n", "subsection added"},
+		{"subsection-removed", "body\n\n### Sub\n\ntext\n", "body\n", "subsection removed"},
+		{"no-match-fallback", "alpha\nbeta\n", "gamma\ndelta\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := summarizeChange(tc.existing, tc.proposed)
+			if got != tc.want {
+				t.Errorf("summarizeChange(%q, %q) = %q, want %q", tc.existing, tc.proposed, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestFeedbackHelperEdgeCases exercises the feedback-parser helpers' fallback
+// branches (missing headings, no bolded title, long-body truncation).
+func TestFeedbackHelperEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("extractSectionBody-missing-heading", func(t *testing.T) {
+		t.Parallel()
+		got := extractSectionBody("# Title\n\n## Something\n\nx\n", "## Other")
+		if got != "" {
+			t.Errorf("expected empty body for missing heading; got %q", got)
+		}
+	})
+
+	t.Run("truncateForReason-long-body", func(t *testing.T) {
+		t.Parallel()
+		long := strings.Repeat("x", 250)
+		got := truncateForReason(long)
+		if len(got) != 200 {
+			t.Errorf("long body should truncate to 200 chars; got len=%d", len(got))
+		}
+		if !strings.HasSuffix(got, "...") {
+			t.Errorf("truncated body should end with ellipsis; got %q", got)
+		}
+	})
+
+	t.Run("truncateForReason-empty", func(t *testing.T) {
+		t.Parallel()
+		if got := truncateForReason(""); got != "" {
+			t.Errorf("empty body should return empty; got %q", got)
+		}
+	})
+
+	t.Run("splitBoldedTitle-no-bold", func(t *testing.T) {
+		t.Parallel()
+		title, body := splitBoldedTitle("plain bullet text without bold")
+		if title != "plain bullet text without bold" || body != "" {
+			t.Errorf("no-bold input should return whole string as title; got title=%q body=%q", title, body)
+		}
+	})
+}
+
+// TestEnhanceReadsConsumerFeedback (AC69 AT1) asserts that `ReviewEnhancement`
+// scans .governa/feedback/*.md and surfaces both ## Upstream suggestions and
+// ## Observations as candidates with category-labeled Summary strings.
+func TestEnhanceReadsConsumerFeedback(t *testing.T) {
+	t.Parallel()
+	refDir := t.TempDir()
+	feedbackDir := filepath.Join(refDir, ".governa", "feedback")
+	if err := os.MkdirAll(feedbackDir, 0o755); err != nil {
+		t.Fatalf("mkdir feedback: %v", err)
+	}
+
+	// Synthetic feedback file with 2 suggestions + 1 landed-well + 2 friction = 5 candidates.
+	feedback := `# AC6 consumer sync feedback
+
+## Upstream suggestions
+
+### First suggestion title
+
+First suggestion body paragraph with some content.
+
+### Second suggestion title
+
+Second suggestion body.
+
+## Observations about the sync itself
+
+### Landed well
+
+- **Landed observation one.** Body of landed observation one.
+
+### Friction surfaced during adoption
+
+- **Friction observation one.** Body of friction observation one.
+- **Friction observation two.** Body of friction observation two.
+
+## Metadata
+
+- Sync range: 0.30.0 → 0.42.0
+`
+	feedbackPath := filepath.Join(feedbackDir, "ac6-governa-sync-0.42.0.md")
+	if err := os.WriteFile(feedbackPath, []byte(feedback), 0o644); err != nil {
+		t.Fatalf("write feedback: %v", err)
+	}
+
+	candidates, err := reviewFeedbackFiles(refDir)
+	if err != nil {
+		t.Fatalf("reviewFeedbackFiles: %v", err)
+	}
+	if len(candidates) != 5 {
+		t.Fatalf("candidate count = %d, want 5; candidates: %+v", len(candidates), candidates)
+	}
+
+	// Verify each expected label form appears in at least one Summary field.
+	wantLabels := []string{
+		"[suggestion from governa-sync 0.42.0]",
+		"[observation (landed well) from governa-sync 0.42.0]",
+		"[observation (friction) from governa-sync 0.42.0]",
+	}
+	for _, want := range wantLabels {
+		found := false
+		for _, c := range candidates {
+			if c.Summary == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing label %q among candidates", want)
+			for _, c := range candidates {
+				t.Logf("  candidate Summary: %q", c.Summary)
+			}
+		}
+	}
+
+	// Count per category: 2 suggestions + 2 friction + 1 landed-well.
+	var nSug, nFric, nLanded int
+	for _, c := range candidates {
+		switch {
+		case strings.Contains(c.Summary, "[suggestion from"):
+			nSug++
+		case strings.Contains(c.Summary, "[observation (friction) from"):
+			nFric++
+		case strings.Contains(c.Summary, "[observation (landed well) from"):
+			nLanded++
+		}
+	}
+	if nSug != 2 || nFric != 2 || nLanded != 1 {
+		t.Errorf("category counts: suggestions=%d (want 2), friction=%d (want 2), landed=%d (want 1)", nSug, nFric, nLanded)
+	}
+
+	// All feedback candidates should have Disposition=defer and ChangeOrigin=feedback.
+	for _, c := range candidates {
+		if c.Disposition != "defer" {
+			t.Errorf("candidate %q: Disposition = %q, want defer", c.Summary, c.Disposition)
+		}
+		if c.ChangeOrigin != "feedback" {
+			t.Errorf("candidate %q: ChangeOrigin = %q, want feedback", c.Summary, c.ChangeOrigin)
+		}
+	}
+
+	// Empty-feedback-dir case — no feedback dir at all.
+	emptyDir := t.TempDir()
+	emptyCandidates, emptyErr := reviewFeedbackFiles(emptyDir)
+	if emptyErr != nil {
+		t.Errorf("empty feedback dir should not error; got: %v", emptyErr)
+	}
+	if len(emptyCandidates) != 0 {
+		t.Errorf("empty feedback dir should produce zero candidates; got: %d", len(emptyCandidates))
+	}
+}
+
+// TestRecommendationReasonIncludesSummary (AC69 AT3) asserts that reason
+// strings include a "what changed" summary after the classification word
+// when a recognized change pattern is present (e.g., bullet added/removed).
+func TestRecommendationReasonIncludesSummary(t *testing.T) {
+	t.Parallel()
+	// Consumer has the template shape plus one extra bullet in ## Review Style.
+	existing := "# AGENTS.md\n\n## Review Style\n\n- rule 1\n- rule 2\n- rule 3\n"
+	proposed := "# AGENTS.md\n\n## Review Style\n\n- rule 1\n- rule 2\n"
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "file.md")
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Template changed between syncs so contentChanged path fires.
+	score := scoreOverlayCollision(path, proposed, "old", "new")
+	// Reason should carry both the classification word and the summary.
+	if !strings.Contains(score.reason, "cosmetic") {
+		t.Errorf("reason should contain classification 'cosmetic'; got: %q", score.reason)
+	}
+	// Consumer has 1 bullet more than proposed → summary phrasing "bullet removed"
+	// (from the template's perspective, a bullet was removed to reach the proposed state).
+	if !strings.Contains(score.reason, "bullet removed") {
+		t.Errorf("reason should contain summary 'bullet removed' (consumer has extra bullet); got: %q", score.reason)
+	}
+}
+
+// TestPurposeClassifiedConsumerOwned (AC69 AT4) asserts that Purpose
+// section changes get the 'consumer-owned' classification instead of
+// 'cosmetic', because Purpose is repo-specific content by design.
+func TestPurposeClassifiedConsumerOwned(t *testing.T) {
+	t.Parallel()
+	existing := "# AGENTS.md\n\n## Purpose\n\nRepo-specific purpose paragraph.\n"
+	proposed := "# AGENTS.md\n\n## Purpose\n\nTemplate placeholder purpose.\n"
+	cls := classifySections(existing, proposed, []string{"Purpose"})
+	if cls["Purpose"] != "consumer-owned" {
+		t.Errorf("Purpose classification = %q, want consumer-owned", cls["Purpose"])
+	}
+	// And the reason-building path should surface the new label.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "AGENTS.md")
+	if err := os.WriteFile(path, []byte(existing), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	score := scoreOverlayCollision(path, proposed, "old", "new")
+	if !strings.Contains(score.reason, "consumer-owned") {
+		t.Errorf("reason should contain 'consumer-owned' for Purpose drift; got: %q", score.reason)
+	}
+	if strings.Contains(score.reason, "Purpose (cosmetic)") {
+		t.Errorf("reason should NOT classify Purpose as cosmetic; got: %q", score.reason)
+	}
+}
+
+// TestAckReviewProposesDropForSubsumedEntries (AC69 AT6) asserts that
+// `governa ack --review` proposes `drop ack` for entries whose consumer
+// file byte-matches the template's current proposed content, and
+// `keep ack` for entries that still diverge. Read-only: no manifest mutation.
+func TestAckReviewProposesDropForSubsumedEntries(t *testing.T) {
+	// No t.Parallel() — this test captures stdout via a pipe, which can't
+	// be safely parallelized.
+	templateRoot, targetDir := bootstrapSyncedCodeRepo(t)
+
+	// Case 1: ack a file WITHOUT modifying it → consumer == template →
+	// --review should propose "drop ack — subsumed by template".
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/roles/dev.md",
+		AckReason: "unmodified file ack for review-test",
+	}); err != nil {
+		t.Fatalf("ack dev role (unmodified): %v", err)
+	}
+
+	// Case 2: modify + ack a second file → consumer != template → --review
+	// should propose "keep ack".
+	appendRepoSpecificDrift(t, targetDir, "docs/build-release.md", "- repo-specific release note")
+	if err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckPath:   "docs/build-release.md",
+		AckReason: "repo-specific release note",
+	}); err != nil {
+		t.Fatalf("ack build-release (modified): %v", err)
+	}
+
+	// Capture stdout while runAckReview runs.
+	origStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("pipe: %v", pipeErr)
+	}
+	os.Stdout = w
+
+	err := runAck(templates.DiskFS(templateRoot), templateRoot, Config{
+		Mode:      ModeAck,
+		Target:    targetDir,
+		AckReview: true,
+	})
+
+	w.Close()
+	os.Stdout = origStdout
+	output, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read stdout: %v", readErr)
+	}
+	if err != nil {
+		t.Fatalf("runAck --review: %v", err)
+	}
+
+	got := string(output)
+
+	// Drop-section assertions: unmodified file should be proposed for drop.
+	if !strings.Contains(got, "## Drop ack — subsumed by template") {
+		t.Errorf("expected Drop ack section in output:\n%s", got)
+	}
+	if !strings.Contains(got, "`docs/roles/dev.md`") {
+		t.Errorf("expected docs/roles/dev.md in Drop ack section")
+	}
+	// The drop entry should mention the byte-match detection and --remove.
+	if !strings.Contains(got, "byte-matches the template") {
+		t.Errorf("drop entry should explain the byte-match detection")
+	}
+	if !strings.Contains(got, "--remove") {
+		t.Errorf("drop entry should reference --remove for operator follow-up")
+	}
+
+	// Keep-section assertions: modified file should be in Keep ack.
+	if !strings.Contains(got, "## Keep ack") {
+		t.Errorf("expected Keep ack section in output:\n%s", got)
+	}
+	if !strings.Contains(got, "`docs/build-release.md`") {
+		t.Errorf("expected docs/build-release.md in Keep ack section")
+	}
+
+	// Header should report the counts.
+	if !strings.Contains(got, "2 entries (1 keep, 1 drop candidate)") {
+		t.Errorf("expected 2-entries (1 keep, 1 drop) header; got:\n%s", got)
+	}
+
+	// Verify no state mutation: manifest still has 2 ack entries after --review.
+	manifest, ok, manErr := readManifest(targetDir)
+	if manErr != nil || !ok {
+		t.Fatalf("readManifest after --review: ok=%v err=%v", ok, manErr)
+	}
+	if len(manifest.Acknowledged) != 2 {
+		t.Errorf("manifest Acknowledged count after --review = %d, want 2 (no mutation)", len(manifest.Acknowledged))
+	}
+}
+
+// TestSyncReviewEnumeratesKeptFilesInAdoptMode (AC69 AT5) asserts that when
+// adopts > 0, the sync review emits a ## Kept Files (no action) section
+// listing the keep + acknowledged files. CLEAN-mode syncs (zero adopts)
+// produce no Kept Files section (AC68's one-liner already covers them).
+func TestSyncReviewEnumeratesKeptFilesInAdoptMode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adopt-mode-enumerates-keeps", func(t *testing.T) {
+		t.Parallel()
+		scores := []collisionScore{
+			{path: "/tmp/repo/adopt-a.md", recommendation: "adopt", reason: "x"},
+			{path: "/tmp/repo/adopt-b.md", recommendation: "adopt", reason: "y"},
+			{path: "/tmp/repo/keep-1.md", recommendation: "keep", reason: "identical to template"},
+			{path: "/tmp/repo/keep-2.md", recommendation: "keep", reason: "identical to template"},
+			{path: "/tmp/repo/keep-3.md", recommendation: "keep", reason: "identical to template"},
+		}
+		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		if !strings.Contains(out, "## Kept Files (no action)") {
+			t.Errorf("adopt-mode output should contain '## Kept Files (no action)' section; got:\n%s", out)
+		}
+		// All three keep-file paths should appear in the section.
+		for _, rel := range []string{"keep-1.md", "keep-2.md", "keep-3.md"} {
+			if !strings.Contains(out, rel) {
+				t.Errorf("Kept Files section should contain %q", rel)
+			}
+		}
+	})
+
+	t.Run("clean-mode-no-kept-files-section", func(t *testing.T) {
+		t.Parallel()
+		scores := []collisionScore{
+			{path: "/tmp/repo/keep-1.md", recommendation: "keep", reason: "identical to template"},
+			{path: "/tmp/repo/keep-2.md", recommendation: "keep", reason: "identical to template"},
+		}
+		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		if strings.Contains(out, "## Kept Files (no action)") {
+			t.Errorf("CLEAN-mode output should NOT contain '## Kept Files (no action)' section; AC68 one-liner handles it. Got:\n%s", out)
+		}
+	})
+}
+
+// TestNotAgentsMdCarveoutInGovernedSections (AC69 AT7) asserts the Not-AGENTS.md
+// carve-out bullet appears at the bottom of the Governed Sections list (below
+// `- `Project Rules“) in all four AGENTS.md locations. Bidirectional visibility
+// of the invariant: agent reading AGENTS.md sees "don't add ## Local Rules here"
+// without consulting docs/development-cycle.md.
+func TestNotAgentsMdCarveoutInGovernedSections(t *testing.T) {
+	t.Parallel()
+	const carveoutSubstring = "Repo-specific rules do **not** add a new `## Local Rules` section to this file"
+	for _, tc := range ac59AgentsFiles() {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		// Locate the Governed Sections heading, then extract the block content up to
+		// the next ## heading.
+		gsStart := strings.Index(content, "## Governed Sections\n")
+		if gsStart < 0 {
+			t.Errorf("%s: could not locate ## Governed Sections heading", tc.label)
+			continue
+		}
+		bodyStart := gsStart + len("## Governed Sections\n")
+		remainder := content[bodyStart:]
+		before, _, ok := strings.Cut(remainder, "\n## ")
+		var gsBlock string
+		if !ok {
+			gsBlock = remainder
+		} else {
+			gsBlock = before
+		}
+		if !strings.Contains(gsBlock, carveoutSubstring) {
+			t.Errorf("%s: carve-out substring not found within Governed Sections block; block content:\n%s", tc.label, gsBlock)
+			continue
+		}
+		// Confirm carve-out appears after `- `Project Rules`` within the block.
+		prIdx := strings.Index(gsBlock, "- `Project Rules`")
+		carveIdx := strings.Index(gsBlock, carveoutSubstring)
+		if prIdx < 0 || carveIdx < prIdx {
+			t.Errorf("%s: carve-out bullet should appear after the Project Rules list item", tc.label)
+		}
+	}
 }

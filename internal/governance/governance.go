@@ -63,6 +63,7 @@ type Config struct {
 	AckPath            string
 	AckReason          string
 	AckRemove          bool
+	AckReview          bool // AC69 C4: governa ack --review — read-only, proposes keep/drop per acked entry
 	Type               RepoType
 	RepoName           string
 	Purpose            string
@@ -183,6 +184,8 @@ func parseAckArgs(args []string) (Config, bool, error) {
 			return Config{}, true, nil
 		case arg == "-x" || arg == "--remove":
 			cfg.AckRemove = true
+		case arg == "-r" || arg == "--review":
+			cfg.AckReview = true
 		case arg == "-m" || arg == "--reason":
 			i++
 			if i >= len(args) {
@@ -331,8 +334,9 @@ func ModeHelp(mode Mode) string {
 		return color.FormatUsage("governa ack <path> [options]", []color.UsageLine{
 			{Flag: "-m, --reason", Desc: "single-line justification for acknowledged drift"},
 			{Flag: "-x, --remove", Desc: "remove an existing acknowledged-drift entry"},
+			{Flag: "-r, --review", Desc: "read-only: propose keep/drop for each acked entry (no path required)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
-		}, "Use `governa ack <path> --reason \"...\"` to suppress stable adopt churn, or `governa ack --remove <path>` to return a file to normal adopt-flow treatment.")
+		}, "Use `governa ack <path> --reason \"...\"` to suppress stable adopt churn, `governa ack --remove <path>` to return a file to normal adopt-flow treatment, or `governa ack --review` to audit existing entries against the current template.")
 	}
 	return ""
 }
@@ -973,6 +977,87 @@ func validateAckReason(reason string) error {
 	return nil
 }
 
+// runAckReview implements AC69 C4 `governa ack --review`. Read-only: iterates
+// the manifest's Acknowledged entries and, for each, byte-compares the consumer
+// file against the template's current proposed content. Byte-exact match →
+// propose "drop ack — subsumed by template"; otherwise → propose "keep ack".
+// Output groups entries by proposed action; no state mutation.
+func runAckReview(tfs fs.FS, repoRoot string, cfg Config, targetAbs string, manifest Manifest) error {
+	if len(manifest.Acknowledged) == 0 {
+		fmt.Println("no acknowledged-drift entries in manifest")
+		return nil
+	}
+	// Compute scores for the full sync so we can look up each acked path's
+	// current proposed content.
+	scores, _, _, err := computeLiveSyncScores(tfs, repoRoot, targetAbs, cfg, manifest)
+	if err != nil {
+		return err
+	}
+	scoreMap := scoredPaths(scores, targetAbs)
+
+	type reviewRow struct {
+		path     string
+		reason   string
+		subsumed bool
+	}
+	var rows []reviewRow
+	for _, entry := range manifest.Acknowledged {
+		row := reviewRow{path: entry.Path, reason: entry.Reason}
+		fullPath := filepath.Join(targetAbs, filepath.FromSlash(entry.Path))
+		consumer, readErr := os.ReadFile(fullPath)
+		if readErr != nil {
+			// Consumer file missing — ack is stale in a different way; recommend drop.
+			row.subsumed = true
+			rows = append(rows, row)
+			continue
+		}
+		score, ok := scoreMap[entry.Path]
+		if !ok || score.proposedContent == "" {
+			// No proposed content from the template for this path — treat as
+			// "can't determine subsumption" → default to keep.
+			rows = append(rows, row)
+			continue
+		}
+		if string(consumer) == score.proposedContent {
+			row.subsumed = true
+		}
+		rows = append(rows, row)
+	}
+
+	// Split into the two buckets.
+	var keeps, drops []reviewRow
+	for _, r := range rows {
+		if r.subsumed {
+			drops = append(drops, r)
+		} else {
+			keeps = append(keeps, r)
+		}
+	}
+
+	fmt.Printf("ack review — %d entries (%d keep, %d drop candidate)\n\n", len(rows), len(keeps), len(drops))
+
+	if len(keeps) > 0 {
+		fmt.Println("## Keep ack")
+		fmt.Println()
+		for _, r := range keeps {
+			fmt.Printf("- `%s` — reason: %s\n", r.path, r.reason)
+		}
+		fmt.Println()
+	}
+
+	if len(drops) > 0 {
+		fmt.Println("## Drop ack — subsumed by template")
+		fmt.Println()
+		for _, r := range drops {
+			fmt.Printf("- `%s` — reason: %s\n", r.path, r.reason)
+			fmt.Printf("  Consumer file byte-matches the template's current proposed content. Run `governa ack %s --remove` to drop.\n", r.path)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
 func runAck(tfs fs.FS, repoRoot string, cfg Config) error {
 	targetAbs, err := filepath.Abs(cfg.Target)
 	if err != nil {
@@ -989,6 +1074,11 @@ func runAck(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 	if !ok {
 		return errors.New("no manifest; run `governa sync` first")
+	}
+	// AC69 C4: --review mode — read-only; diff each acked entry against the
+	// current template and propose keep/drop per entry by byte-exact comparison.
+	if cfg.AckReview {
+		return runAckReview(tfs, repoRoot, cfg, targetAbs, manifest)
 	}
 	repoRel, err := normalizeRepoPath(targetAbs, cfg.AckPath)
 	if err != nil {
@@ -1554,6 +1644,15 @@ func ReviewEnhancement(tfs fs.FS, repoRoot string, referenceRoot string) (Enhanc
 		candidates = append(candidates, governanceCandidates...)
 	}
 
+	// AC69 Part A: read .governa/feedback/*.md files and surface suggestions
+	// and observations as candidates. Malformed or missing feedback files are
+	// skipped silently.
+	if feedbackCandidates, err := reviewFeedbackFiles(referenceRoot); err != nil {
+		return EnhancementReport{}, err
+	} else {
+		candidates = append(candidates, feedbackCandidates...)
+	}
+
 	mappings := []enhancementMapping{
 		{Area: "CODE overlay", ReferencePaths: []string{"README.md"}, TemplateTarget: "overlays/code/files/README.md.tmpl"},
 		{Area: "CODE overlay", ReferencePaths: []string{"arch.md"}, TemplateTarget: "overlays/code/files/arch.md.tmpl"},
@@ -2106,6 +2205,258 @@ func formatCandidateLine(c EnhancementCandidate, referenceRoot string) string {
 		fmt.Fprintf(&b, " summary=%s", c.Summary)
 	}
 	return b.String()
+}
+
+// feedbackFilenameRe matches the persisted feedback-file filename convention:
+// ac<N>-<slug>-<version>.md where <version> is a dotted semver. Per AC63's
+// filename convention (docs/build-release.md Template Upgrade step 5).
+var feedbackFilenameRe = regexp.MustCompile(`^ac(\d+)-(.+)-(\d+\.\d+\.\d+)\.md$`)
+
+// reviewFeedbackFiles scans <referenceRoot>/.governa/feedback/*.md, parses
+// each file's ## Upstream suggestions section (entries are ### subheadings)
+// and ## Observations about the sync itself section (entries are top-level
+// `- ` bullets under two category H3s: `### Landed well` / `### Friction
+// surfaced during adoption`), and returns one EnhancementCandidate per entry.
+// Labels carry the source + category via the Summary field. Malformed files
+// are skipped silently. (AC69 Part A)
+func reviewFeedbackFiles(referenceRoot string) ([]EnhancementCandidate, error) {
+	feedbackDir := filepath.Join(referenceRoot, ".governa", "feedback")
+	entries, err := os.ReadDir(feedbackDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read feedback dir: %w", err)
+	}
+	var candidates []EnhancementCandidate
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		match := feedbackFilenameRe.FindStringSubmatch(name)
+		if match == nil {
+			// Filename doesn't match the convention — skip silently.
+			continue
+		}
+		slug := match[2]
+		version := match[3]
+		relPath := filepath.Join(".governa", "feedback", name)
+		fullPath := filepath.Join(feedbackDir, name)
+		raw, readErr := os.ReadFile(fullPath)
+		if readErr != nil {
+			continue
+		}
+		content := string(raw)
+
+		// Parse ## Upstream suggestions — each ### subheading = candidate.
+		for _, s := range parseFeedbackSection(content, "## Upstream suggestions", "###") {
+			candidates = append(candidates, EnhancementCandidate{
+				Area:            "consumer feedback — suggestion",
+				Path:            relPath,
+				Section:         s.title,
+				Disposition:     "defer",
+				Reason:          truncateForReason(s.body),
+				Portability:     "n/a",
+				CollisionImpact: "none",
+				ChangeOrigin:    "feedback",
+				Summary:         fmt.Sprintf("[suggestion from %s %s]", slug, version),
+			})
+		}
+
+		// Parse ## Observations about the sync itself — bullets under each
+		// category H3 (### Landed well / ### Friction surfaced during adoption).
+		obsBlocks := parseFeedbackObservations(content)
+		for _, block := range obsBlocks {
+			labelCategory := block.category // "landed well" or "friction"
+			for _, entry := range block.bullets {
+				candidates = append(candidates, EnhancementCandidate{
+					Area:            fmt.Sprintf("consumer feedback — observation (%s)", labelCategory),
+					Path:            relPath,
+					Section:         entry.title,
+					Disposition:     "defer",
+					Reason:          truncateForReason(entry.body),
+					Portability:     "n/a",
+					CollisionImpact: "none",
+					ChangeOrigin:    "feedback",
+					Summary:         fmt.Sprintf("[observation (%s) from %s %s]", labelCategory, slug, version),
+				})
+			}
+		}
+	}
+	return candidates, nil
+}
+
+// feedbackEntry is a parsed title/body pair from a feedback file.
+type feedbackEntry struct {
+	title string
+	body  string
+}
+
+// feedbackObservationBlock groups observation bullets by category.
+type feedbackObservationBlock struct {
+	category string          // "landed well" or "friction"
+	bullets  []feedbackEntry // one per bullet
+}
+
+// parseFeedbackSection extracts ### subheading entries from within a top-level
+// ## section. sectionHeading is the exact ## heading line to search for
+// (e.g., "## Upstream suggestions"). subheadingMarker is the heading marker
+// ("###"). Returns one entry per ### subheading inside that section.
+func parseFeedbackSection(content, sectionHeading, subheadingMarker string) []feedbackEntry {
+	body := extractSectionBody(content, sectionHeading)
+	if body == "" {
+		return nil
+	}
+	var entries []feedbackEntry
+	lines := strings.Split(body, "\n")
+	var current *feedbackEntry
+	prefix := subheadingMarker + " "
+	for _, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			if current != nil {
+				current.body = strings.TrimSpace(current.body)
+				entries = append(entries, *current)
+			}
+			current = &feedbackEntry{title: strings.TrimPrefix(line, prefix)}
+			continue
+		}
+		if current != nil {
+			current.body += line + "\n"
+		}
+	}
+	if current != nil {
+		current.body = strings.TrimSpace(current.body)
+		entries = append(entries, *current)
+	}
+	return entries
+}
+
+// parseFeedbackObservations extracts observation bullets grouped by category.
+// Reads the body of ## Observations about the sync itself, then walks its
+// ### subheadings (### Landed well / ### Friction surfaced during adoption
+// — other categories are tolerated for forward-compatibility). Within each
+// category, top-level `- ` bullets become entries. A bullet's bolded first
+// phrase (between ** markers, up to sentence-ending period) is the title;
+// remainder is the body.
+func parseFeedbackObservations(content string) []feedbackObservationBlock {
+	body := extractSectionBody(content, "## Observations about the sync itself")
+	if body == "" {
+		return nil
+	}
+	var blocks []feedbackObservationBlock
+	lines := strings.Split(body, "\n")
+	var currentBlock *feedbackObservationBlock
+	var currentBullet *feedbackEntry
+	flushBullet := func() {
+		if currentBullet != nil && currentBlock != nil {
+			currentBullet.body = strings.TrimSpace(currentBullet.body)
+			currentBlock.bullets = append(currentBlock.bullets, *currentBullet)
+			currentBullet = nil
+		}
+	}
+	flushBlock := func() {
+		flushBullet()
+		if currentBlock != nil {
+			blocks = append(blocks, *currentBlock)
+			currentBlock = nil
+		}
+	}
+	for _, line := range lines {
+		// New category heading.
+		if strings.HasPrefix(line, "### ") {
+			flushBlock()
+			categoryRaw := strings.ToLower(strings.TrimPrefix(line, "### "))
+			var category string
+			switch {
+			case strings.Contains(categoryRaw, "landed well"):
+				category = "landed well"
+			case strings.Contains(categoryRaw, "friction"):
+				category = "friction"
+			default:
+				// Tolerate unknown category — label with raw title for forward-compat.
+				category = strings.TrimSpace(categoryRaw)
+			}
+			currentBlock = &feedbackObservationBlock{category: category}
+			continue
+		}
+		if currentBlock == nil {
+			// Skip content before the first category heading.
+			continue
+		}
+		// Top-level bullet: `- **<title>.** <body...>`.
+		if strings.HasPrefix(line, "- ") {
+			flushBullet()
+			rest := strings.TrimPrefix(line, "- ")
+			title, body := splitBoldedTitle(rest)
+			currentBullet = &feedbackEntry{title: title, body: body + "\n"}
+			continue
+		}
+		// Continuation of current bullet (indented wrap).
+		if currentBullet != nil && (strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") || strings.TrimSpace(line) == "") {
+			currentBullet.body += line + "\n"
+		}
+	}
+	flushBlock()
+	return blocks
+}
+
+// splitBoldedTitle extracts the bolded first phrase of a bullet as the title
+// and returns the remainder as the body. Input shape: `**<title>.** <body>`.
+// If the bold pattern doesn't match, the whole string becomes the title and
+// the body is empty.
+func splitBoldedTitle(s string) (string, string) {
+	if strings.HasPrefix(s, "**") {
+		// Find the closing **.
+		rest := s[2:]
+		if before, after, ok := strings.Cut(rest, "**"); ok {
+			title := before
+			// Strip trailing period from title.
+			title = strings.TrimSuffix(strings.TrimSpace(title), ".")
+			body := strings.TrimSpace(after)
+			return title, body
+		}
+	}
+	return strings.TrimSpace(s), ""
+}
+
+// extractSectionBody returns the body of a top-level ## section (text between
+// the heading and the next ## heading, or end of file). Returns "" if the
+// heading is not found.
+func extractSectionBody(content, heading string) string {
+	idx := strings.Index(content, heading+"\n")
+	if idx < 0 {
+		// Try also at EOF (no trailing newline).
+		if strings.HasSuffix(content, heading) {
+			return ""
+		}
+		return ""
+	}
+	afterHeading := content[idx+len(heading)+1:]
+	before, _, ok := strings.Cut(afterHeading, "\n## ")
+	if !ok {
+		return afterHeading
+	}
+	return before
+}
+
+// truncateForReason shortens a long body paragraph to a single line (the
+// first non-empty line) for use in the enhance output's reason field.
+func truncateForReason(body string) string {
+	for line := range strings.SplitSeq(body, "\n") {
+		trim := strings.TrimSpace(line)
+		if trim == "" {
+			continue
+		}
+		if len(trim) > 200 {
+			return trim[:197] + "..."
+		}
+		return trim
+	}
+	return ""
 }
 
 func reviewGovernedSections(tfs fs.FS, referenceRoot string, mmap map[string]ManifestEntry) ([]EnhancementCandidate, error) {
@@ -3104,7 +3455,8 @@ type collisionScore struct {
 	proposedSections       int
 	missingSections        []string          // sections in proposed but not in existing
 	changedSections        []string          // shared sections with different content (markdown only)
-	changedClassifications map[string]string // section name → "structural" or "cosmetic"
+	changedClassifications map[string]string // section name → "structural", "cosmetic", or "consumer-owned" (AC69)
+	changedSummaries       map[string]string // section name → short summary of what changed (AC69); empty when no pattern matches
 	contentChanged         bool              // true when template source changed and existing differs from new template
 	proposedContent        string            // the template content for the review doc
 	governancePatch        string            // non-empty if this is an AGENTS.md patch with missing sections
@@ -3240,6 +3592,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 		if len(score.changedSections) > 0 {
 			score.contentChanged = true
 			score.changedClassifications = classifySections(existingContent, proposedContent, score.changedSections)
+			score.changedSummaries = summarizeSections(existingContent, proposedContent, score.changedSections)
 		}
 	} else if existingContent != proposedContent {
 		// Template unchanged since last sync but file still differs — standing drift.
@@ -3254,7 +3607,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	if score.existingLines >= 2*score.proposedLines {
 		if score.contentChanged {
 			score.recommendation = "adopt"
-			score.reason = fmt.Sprintf("existing is more developed (%d lines vs %d proposed) but template sections changed: %s", score.existingLines, score.proposedLines, taggedSectionList(score.changedSections, score.changedClassifications))
+			score.reason = fmt.Sprintf("existing is more developed (%d lines vs %d proposed) but template sections changed: %s", score.existingLines, score.proposedLines, taggedSectionList(score.changedSections, score.changedClassifications, score.changedSummaries))
 			return score
 		}
 		score.recommendation = "keep"
@@ -3264,7 +3617,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	if score.existingSections > score.proposedSections {
 		if score.contentChanged {
 			score.recommendation = "adopt"
-			score.reason = fmt.Sprintf("existing has richer structure (%d sections vs %d proposed) but template sections changed: %s", score.existingSections, score.proposedSections, taggedSectionList(score.changedSections, score.changedClassifications))
+			score.reason = fmt.Sprintf("existing has richer structure (%d sections vs %d proposed) but template sections changed: %s", score.existingSections, score.proposedSections, taggedSectionList(score.changedSections, score.changedClassifications, score.changedSummaries))
 			return score
 		}
 		score.recommendation = "keep"
@@ -3277,7 +3630,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 	if score.existingSections >= score.proposedSections && len(score.missingSections) > 0 {
 		if score.contentChanged {
 			score.recommendation = "adopt"
-			score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications))
+			score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications, score.changedSummaries))
 			return score
 		}
 		score.recommendation = "keep"
@@ -3292,7 +3645,7 @@ func scoreOverlayCollision(existingPath string, proposedContent string, oldSourc
 
 	if score.contentChanged {
 		score.recommendation = "adopt"
-		score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications))
+		score.reason = fmt.Sprintf("template sections changed: %s", taggedSectionList(score.changedSections, score.changedClassifications, score.changedSummaries))
 		return score
 	}
 	score.recommendation = "keep"
@@ -3465,14 +3818,16 @@ func scoreGovernanceCollision(op operation, oldSourceChecksum string, newSourceC
 			changedGoverned := detectChangedGovernedSections(string(existingContent), op.content)
 			if len(changedGoverned) > 0 {
 				cls := classifySections(string(existingContent), op.content, changedGoverned)
+				summaries := summarizeSections(string(existingContent), op.content, changedGoverned)
 				return collisionScore{
 					path:                   op.path,
 					recommendation:         "adopt",
-					reason:                 fmt.Sprintf("governed sections changed: %s", taggedSectionList(changedGoverned, cls)),
+					reason:                 fmt.Sprintf("governed sections changed: %s", taggedSectionList(changedGoverned, cls, summaries)),
 					existingLines:          countLines(string(existingContent)),
 					proposedLines:          countLines(op.content),
 					changedSections:        changedGoverned,
 					changedClassifications: cls,
+					changedSummaries:       summaries,
 					contentChanged:         true,
 					proposedContent:        op.content,
 				}
@@ -3638,7 +3993,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 				fmt.Fprintf(&b, " — adds sections: %s", strings.Join(s.missingSections, ", "))
 			}
 			if len(s.changedSections) > 0 {
-				fmt.Fprintf(&b, " — template-driven: %s", taggedSectionList(s.changedSections, s.changedClassifications))
+				fmt.Fprintf(&b, " — template-driven: %s", taggedSectionList(s.changedSections, s.changedClassifications, s.changedSummaries))
 			}
 			if len(s.driftSections) > 0 {
 				fmt.Fprintf(&b, " — consumer-drift: %s", strings.Join(s.driftSections, ", "))
@@ -3655,6 +4010,27 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 			fmt.Fprintf(&b, " → `diff %s .governa/proposed/%s`\n", rel, rel)
 		}
 		fmt.Fprintln(&b, "")
+	}
+
+	// AC69 C3: Kept Files section — when adopts > 0, enumerate keep and
+	// acknowledged files so the operator doesn't have to cross-reference the
+	// Recommendations table to see what was reviewed-and-left-alone vs what
+	// needs action. CLEAN-mode syncs (zero adopts) skip this section because
+	// the AC68 compact one-liner already conveys the same info in less space.
+	if adopts > 0 {
+		var keptFiles []collisionScore
+		for _, s := range scores {
+			if s.recommendation == "keep" || s.recommendation == "acknowledged" {
+				keptFiles = append(keptFiles, s)
+			}
+		}
+		if len(keptFiles) > 0 {
+			fmt.Fprintf(&b, "\n## Kept Files (no action)\n\n")
+			for _, s := range keptFiles {
+				fmt.Fprintf(&b, "- `%s`: %s\n", relPath(s.path), s.reason)
+			}
+			fmt.Fprintln(&b, "")
+		}
 	}
 
 	// Advisory notes: keep files with missing sections, section renames,
@@ -3977,14 +4353,28 @@ func abs(x int) int {
 	return x
 }
 
-// taggedSectionList formats changed section names with their classification,
-// e.g. "Pre-Release Checklist (structural), Build (cosmetic)".
-func taggedSectionList(sections []string, classifications map[string]string) string {
+// taggedSectionList formats changed section names with their classification
+// and (optionally) a one-line summary of what changed.
+// Examples:
+//   - with classifications only: "Pre-Release Checklist (structural), Build (cosmetic)"
+//   - with summaries: "Project Rules (cosmetic: bullet added), Build (cosmetic)"
+//
+// The summaries map may be nil or missing entries — any section without a
+// summary falls back to "Name (class)". (AC69 C1 added the summaries parameter.)
+func taggedSectionList(sections []string, classifications, summaries map[string]string) string {
 	parts := make([]string, len(sections))
 	for i, name := range sections {
-		if cls, ok := classifications[name]; ok {
+		cls, hasCls := classifications[name]
+		summary := ""
+		if summaries != nil {
+			summary = summaries[name]
+		}
+		switch {
+		case hasCls && summary != "":
+			parts[i] = fmt.Sprintf("%s (%s: %s)", name, cls, summary)
+		case hasCls:
 			parts[i] = fmt.Sprintf("%s (%s)", name, cls)
-		} else {
+		default:
 			parts[i] = name
 		}
 	}
@@ -4139,9 +4529,92 @@ func classifySections(existingContent, proposedContent string, changedSections [
 	proposedMap := sectionMap(parseLevel2Sections(proposedContent))
 	result := make(map[string]string, len(changedSections))
 	for _, name := range changedSections {
+		// AC69 C2: Purpose is consumer-owned by design (placeholder-driven
+		// per AC62 Leg 3). Content drift there is expected, not a classification
+		// of wording change. Label accordingly.
+		if name == "Purpose" {
+			result[name] = "consumer-owned"
+			continue
+		}
 		result[name] = classifyChange(existingMap[name], proposedMap[name])
 	}
 	return result
+}
+
+// summarizeSections produces a one-line "what changed" summary per changed
+// section, parallel to classifySections. Returns a map; sections with no
+// recognizable change pattern get an empty string (omit from output). The
+// Purpose section (AC69 C2 consumer-owned) gets no summary — the classification
+// itself conveys the meaning. (AC69 C1)
+func summarizeSections(existingContent, proposedContent string, changedSections []string) map[string]string {
+	existingMap := sectionMap(parseLevel2Sections(existingContent))
+	proposedMap := sectionMap(parseLevel2Sections(proposedContent))
+	result := make(map[string]string, len(changedSections))
+	for _, name := range changedSections {
+		if name == "Purpose" {
+			continue
+		}
+		summary := summarizeChange(existingMap[name], proposedMap[name])
+		if summary != "" {
+			result[name] = summary
+		}
+	}
+	return result
+}
+
+// summarizeChange returns a short human-readable description of what
+// changed between two section bodies, for the small set of recognizable
+// patterns. Returns "" when no pattern matches (caller falls back to the
+// classification word alone). Patterns: bullet count delta, subsection
+// count delta. More patterns can be added later. (AC69 C1)
+func summarizeChange(existingBody, proposedBody string) string {
+	eBullets := countBullets(existingBody)
+	pBullets := countBullets(proposedBody)
+	bulletDelta := pBullets - eBullets
+	switch {
+	case bulletDelta == 1:
+		return "bullet added"
+	case bulletDelta == -1:
+		return "bullet removed"
+	case bulletDelta > 1:
+		return fmt.Sprintf("%d bullets added", bulletDelta)
+	case bulletDelta < -1:
+		return fmt.Sprintf("%d bullets removed", -bulletDelta)
+	}
+	eSub := countSubsectionHeadings(existingBody)
+	pSub := countSubsectionHeadings(proposedBody)
+	switch {
+	case pSub > eSub:
+		return "subsection added"
+	case eSub > pSub:
+		return "subsection removed"
+	}
+	return ""
+}
+
+// countBullets returns the number of top-level bullet list items (lines
+// starting with "- " after optional leading whitespace) in a section body.
+func countBullets(body string) int {
+	n := 0
+	for line := range strings.SplitSeq(body, "\n") {
+		trim := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trim, "- ") {
+			n++
+		}
+	}
+	return n
+}
+
+// countSubsectionHeadings returns the number of ### H3 subsection headings
+// in a section body.
+func countSubsectionHeadings(body string) int {
+	n := 0
+	for line := range strings.SplitSeq(body, "\n") {
+		if strings.HasPrefix(line, "### ") {
+			n++
+		}
+	}
+	return n
 }
 
 // parseLevel3Sections parses ### subsections within a ## section body.

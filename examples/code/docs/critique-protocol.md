@@ -1,26 +1,32 @@
 # AC Critique Protocol
 
-Formalizes the AC/critique loop referenced in `AGENTS.md` Approval Boundaries → AC critique gate. The file `docs/ac<N>-<slug>-critique.md` is QA-owned — DEV does not write to it (see `docs/ac-template.md` Companion Artifacts). This doc codifies what the file contains across rounds.
+Formalizes the AC/critique loop referenced in `AGENTS.md` Approval Boundaries → AC critique gate. QA findings live inside the AC file in a `## Critique` section — there is no separate companion file. This doc codifies what that section contains across rounds.
+
+## Where findings live
+
+Every AC carries a `## Critique` section (typically the second-to-last top-level section, above `## Status`). QA-authored content lands there; DEV transcribes QA's findings verbatim from the critique channel into this section. DEV's response to each finding is visible as AC revisions (via `git log`/`git diff`) plus entries in the `### Disposition Log` subsection under `## Implementation Notes`.
 
 ## Round structure — append-only
 
-Each QA round adds a new `## Round N` heading (round 1 is the initial critique; rounds 2+ are verification passes). Round sections are never edited retroactively; new information goes in a new round.
+Each QA round adds a new `### Round N` H3 heading inside the `## Critique` section (round 1 is the initial critique; rounds 2+ are verification passes). Round sections are never edited retroactively; new information goes in a new round.
 
 ## Finding heading level
 
-Each finding is an `### F<N>` H3 heading with a severity label. Example:
+Each finding is an `#### F<N>` H4 heading with a severity label. Example:
 
-    ### F1 [Blocker] — governance-model.md already carries this convention
+    #### F1 [Blocker] — governance-model.md already carries this convention
 
-Round 1 findings use labels `F1`, `F2`, …. All rounds after round 1 use `F-new-N` labels numbered **monotonically across all subsequent rounds** (e.g., Round 2 uses `F-new-1`, `F-new-2`; if Round 3 introduces a new finding it is `F-new-3`, not a fresh `F-new-1`). This keeps labels globally unique across the critique file and makes cross-references unambiguous.
+Round 1 findings use labels `F1`, `F2`, …. All rounds after round 1 use `F-new-N` labels numbered **monotonically across all subsequent rounds** (e.g., Round 2 uses `F-new-1`, `F-new-2`; if Round 3 introduces a new finding it is `F-new-3`, not a fresh `F-new-1`). This keeps labels globally unique across the AC's critique history and makes cross-references unambiguous.
+
+Heading-level note: the integrated-mode levels are `## Critique` (H2) → `### Round N` (H3) → `#### F<N>` (H4). The extra depth comes from embedding rounds inside the AC rather than using a separate file; round headings were H2 in the prior separate-file mode.
 
 ## Authoring mechanism
 
-QA authors the critique file directly — there is no transport or intermediary. In the current cross-session shuffle this is a human (or agent) writing to the file; in future Phase 2 automation a QA subagent writes the file. Either way, the mechanism is direct write.
+QA authors findings in the critique channel (the mechanism the director chooses — today a separate Claude Code session relaying findings in conversation; future Phase 2 automation may spawn a QA subagent). DEV transcribes those findings **verbatim** into the AC's `## Critique` section. DEV does not modify or reinterpret QA's wording — the content is QA-authored even though DEV operates the write.
 
 ## Terminator shape — five fields in order
 
-QA's final round writes `## Round N Summary (terminator)` with exactly these fields in order:
+QA's final round writes `### Round N Summary` with exactly these fields in order:
 
 1. **Unresolved findings** — list by severity: blocker / major / minor / nit. Empty allowed.
 2. **Residual risks accepted** — items QA flagged but chose not to block on. Empty allowed.
@@ -30,14 +36,14 @@ QA's final round writes `## Round N Summary (terminator)` with exactly these fie
 
 ## DEV's cross-references in the AC
 
-DEV maintains two sections that pair with the critique file:
+DEV maintains two sections that pair with the `## Critique` section:
 
 - **`### Disposition Log`** (H3 subsection under `## Implementation Notes`) — cross-references each QA finding by label and names the resulting AC change. Required for ACs with extensive critique rounds; optional otherwise (`git log` on the AC file carries the same info for short cycles).
 - **`## Director Review`** (top-level, between `## Documentation Updates` and `## Status`) — lists every viable-options trade-off chosen during the cycle (not just ones DEV feels uncertain about). QA's final-round `Director attention` field cross-checks that this list is exhaustive and surfaces omissions.
 
-## Critique file lifecycle
+## Lifecycle
 
-The critique file is **not** deleted when QA converges (verdict `no blockers`). It is deleted at release prep alongside the AC, matching the companion-artifact pattern introduced in AC55 and tightened in AC64.
+The `## Critique` section is part of the AC file itself. The entire AC (including its critique history) is deleted at release prep alongside other per-AC artifacts, matching the companion-artifact pattern introduced in AC55 and tightened in AC64.
 
 ## Termination
 
