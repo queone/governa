@@ -3644,6 +3644,39 @@ func TestACTemplateEnrichedStructure(t *testing.T) {
 	}
 }
 
+// AT1 (AC70): `## Feedback Credits` section present in all three AC-template
+// locations, positioned between `## Objective Fit` and `## In Scope`, and
+// carries the scaffolding sentence that tells DEVs why the shape is
+// load-bearing.
+func TestFeedbackCreditsSectionInACTemplate(t *testing.T) {
+	t.Parallel()
+	templatePaths := []string{
+		"docs/ac-template.md",
+		"internal/templates/overlays/code/files/docs/ac-template.md.tmpl",
+		"examples/code/docs/ac-template.md",
+	}
+	for _, path := range templatePaths {
+		content := readRepoFile(t, path)
+
+		// Exactly-once occurrence.
+		if got := strings.Count(content, "## Feedback Credits"); got != 1 {
+			t.Errorf("%s: ## Feedback Credits count = %d, want 1", path, got)
+		}
+
+		// Scaffolding sentence that flags the prep-time parse contract.
+		if !strings.Contains(content, "`prep.sh` reads this section at release prep") {
+			t.Errorf("%s: missing scaffolding sentence '`prep.sh` reads this section at release prep'", path)
+		}
+
+		// Section ordering: Objective Fit → Feedback Credits → In Scope.
+		assertSectionOrdering(t, content, path,
+			"## Objective Fit",
+			"## Feedback Credits",
+			"## In Scope",
+		)
+	}
+}
+
 func TestGovernanceImprovementsFromSkout(t *testing.T) {
 	t.Parallel()
 	agentsPaths := []string{
@@ -7909,6 +7942,20 @@ func TestEmbeddedChangelogInSyncWithRoot(t *testing.T) {
 	}
 }
 
+// AT6 (AC70 Part D): both CHANGELOG copies carry the utils closure credit on
+// the v0.45.0 row so utils' next sync auto-prunes `ac6-governa-sync-0.42.0.md`
+// via AC63's feedback-closure advisor.
+func TestChangelogV045xCreditsUtilsFeedback(t *testing.T) {
+	t.Parallel()
+	want := "(addresses utils feedback from v0.42.0 syncs)"
+	for _, rel := range []string{"CHANGELOG.md", "internal/templates/CHANGELOG.md"} {
+		c := readRepoFile(t, rel)
+		if !strings.Contains(c, want) {
+			t.Errorf("%s: missing closure credit %q", rel, want)
+		}
+	}
+}
+
 // AT5: director.md invariant — no ## Counterparts section added; remains a reference doc.
 func TestDirectorMdNoCounterparts(t *testing.T) {
 	t.Parallel()
@@ -10830,6 +10877,87 @@ func TestFeedbackHelperEdgeCases(t *testing.T) {
 		title, body := splitBoldedTitle("plain bullet text without bold")
 		if title != "plain bullet text without bold" || body != "" {
 			t.Errorf("no-bold input should return whole string as title; got title=%q body=%q", title, body)
+		}
+	})
+}
+
+// AT5 (AC70): printEnhancementSummary emits a one-line credit hint whenever
+// the report carries at least one feedback-origin candidate, and does not
+// emit the hint when none are present.
+func TestEnhanceEmitsFeedbackCreditHint(t *testing.T) {
+	// Not parallel-safe: swaps os.Stdout.
+	const hintMarker = "add a `## Feedback Credits` section to the AC"
+
+	capture := func(report EnhancementReport) string {
+		t.Helper()
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe: %v", err)
+		}
+		os.Stdout = w
+		printEnhancementSummary(report)
+		w.Close()
+		os.Stdout = oldStdout
+		out, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatalf("read captured output: %v", err)
+		}
+		return string(out)
+	}
+
+	t.Run("feedback-origin candidate fires hint", func(t *testing.T) {
+		report := EnhancementReport{
+			ReferenceRoot: "/tmp/ref",
+			Candidates: []EnhancementCandidate{
+				{
+					Area:            "consumer feedback — suggestion",
+					Path:            ".governa/feedback/ac6-governa-sync-0.42.0.md",
+					Section:         "something consumer suggested",
+					Disposition:     "defer",
+					Portability:     "n/a",
+					CollisionImpact: "none",
+					ChangeOrigin:    "feedback",
+					Reason:          "consumer suggested something",
+					Summary:         "[suggestion from governa-sync 0.42.0]",
+				},
+			},
+		}
+		output := capture(report)
+		if !strings.Contains(output, hintMarker) {
+			t.Errorf("feedback-origin candidate: hint substring %q missing from output:\n%s", hintMarker, output)
+		}
+	})
+
+	t.Run("non-feedback candidate suppresses hint", func(t *testing.T) {
+		report := EnhancementReport{
+			ReferenceRoot: "/tmp/ref",
+			Candidates: []EnhancementCandidate{
+				{
+					Area:            "overlay",
+					Path:            "arch.md",
+					Disposition:     "accept",
+					Portability:     "portable",
+					CollisionImpact: "none",
+					ChangeOrigin:    "reference",
+					Reason:          "overlay drift",
+				},
+			},
+		}
+		output := capture(report)
+		if strings.Contains(output, hintMarker) {
+			t.Errorf("non-feedback candidate: hint should not appear; output:\n%s", output)
+		}
+	})
+
+	t.Run("empty candidates suppresses hint", func(t *testing.T) {
+		report := EnhancementReport{
+			ReferenceRoot: "/tmp/ref",
+			Candidates:    nil,
+		}
+		output := capture(report)
+		if strings.Contains(output, hintMarker) {
+			t.Errorf("empty candidates: hint should not appear; output:\n%s", output)
 		}
 	})
 }

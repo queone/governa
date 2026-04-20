@@ -27,6 +27,14 @@ Describe the change in one short paragraph.
 3. **What existing decision does it depend on or risk contradicting?** Reference the prior AC, architectural decision, or shipped feature that this builds on. If it contradicts a prior decision, say so explicitly and explain why the contradiction is intentional.
 4. **Intentional pivot?** If yes, state that here and reaffirm point 2.
 
+## Feedback Credits
+
+*(Optional — include only when this AC addresses consumer sync feedback. Omit the section entirely otherwise.)*
+
+List every consumer feedback source this AC addresses. Each bullet names the consumer and the source version (the governa version the consumer synced against when they produced the feedback). Format is load-bearing: `prep.sh` reads this section at release prep and requires the release message to contain a matching `(addresses <consumer> feedback from v<X.Y.Z> syncs)` string per entry.
+
+- <consumer> v<X.Y.Z> — one-line description of what part of the feedback this AC addresses.
+
 ## In Scope
 
 List the concrete changes this AC will make. Use sub-headings for grouping (e.g. "Files to create", "Files to modify", "Schema changes"). Be specific — file paths, function names, table columns. The In Scope list is the authoritative scope contract.

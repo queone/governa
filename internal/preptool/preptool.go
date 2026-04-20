@@ -36,6 +36,10 @@ var (
 	// acFileRe matches docs/ac<N>-<slug>.md and any companion suffix; we split
 	// the canonical AC file from companions by checking the suffix separately.
 	acFileRe = regexp.MustCompile(`^ac([0-9]+)-[^/]+\.md$`)
+	// feedbackCreditRe parses one bullet from a `## Feedback Credits` section.
+	// Consumer must start with a letter (scaffolding `<consumer>` placeholders
+	// are filtered out by the leading-letter constraint). (AC70 Part B)
+	feedbackCreditRe = regexp.MustCompile(`^- ([a-zA-Z][a-zA-Z0-9-]*) v([0-9]+\.[0-9]+\.[0-9]+)\b`)
 )
 
 const maxMessageLen = 80
@@ -157,6 +161,15 @@ func Run(cfg Config) error {
 	acFiles, critiqueFiles, dispFiles, feedbackFiles, err := findACCompanions(cfg.RepoRoot, acNums)
 	if err != nil {
 		return fmt.Errorf("prep: find AC companions: %w", err)
+	}
+
+	// Phase 6a: validate feedback credits against release message. (AC70)
+	// Each AC file may declare a `## Feedback Credits` section; every entry
+	// requires a matching `(addresses <consumer> feedback from v<X.Y.Z>
+	// syncs)` substring in the release message. Runs before writes (and
+	// before DryRun printing) so missing credits fail fast.
+	if err := validateFeedbackCredits(acFiles, cfg.Message); err != nil {
+		return fmt.Errorf("prep: %w", err)
 	}
 
 	versionStripped := strings.TrimPrefix(cfg.Version, "v")
@@ -542,6 +555,82 @@ func applyChangelogInsert(path, versionStripped, message string) error {
 	updated = append(updated, newRow)
 	updated = append(updated, lines[unreleasedIdx+1:]...)
 	return os.WriteFile(path, []byte(strings.Join(updated, "\n")), 0o644)
+}
+
+// feedbackCredit represents one entry parsed from an AC's `## Feedback
+// Credits` section. ACFile is the path of the AC that declared it.
+type feedbackCredit struct {
+	Consumer string
+	Version  string
+	ACFile   string
+}
+
+// creditString returns the exact substring the release message must contain
+// for this credit to satisfy AC70 Part B validation.
+func (c feedbackCredit) creditString() string {
+	return fmt.Sprintf("(addresses %s feedback from v%s syncs)", c.Consumer, c.Version)
+}
+
+// extractFeedbackCreditsFromContent walks markdown `content` looking for a
+// `## Feedback Credits` section and returns every bullet that matches the
+// feedbackCreditRe shape. Scaffolding bullets (angle-bracket placeholders)
+// are filtered out by the regex's leading-letter constraint. Returns an
+// empty slice when the section is absent or contains no matching entries.
+func extractFeedbackCreditsFromContent(content string) []feedbackCredit {
+	lines := strings.Split(content, "\n")
+	inSection := false
+	var credits []feedbackCredit
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") {
+			if strings.TrimSpace(line) == "## Feedback Credits" {
+				inSection = true
+				continue
+			}
+			if inSection {
+				break
+			}
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		if m := feedbackCreditRe.FindStringSubmatch(line); m != nil {
+			credits = append(credits, feedbackCredit{Consumer: m[1], Version: m[2]})
+		}
+	}
+	return credits
+}
+
+// validateFeedbackCredits parses every acFile's `## Feedback Credits`
+// section and verifies message contains the required `(addresses <consumer>
+// feedback from v<X.Y.Z> syncs)` substring per entry. Returns nil when
+// every declared credit is satisfied (including the common case where no
+// AC declares any). (AC70 Part B)
+func validateFeedbackCredits(acFiles []string, message string) error {
+	var missing []feedbackCredit
+	for _, path := range acFiles {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		for _, c := range extractFeedbackCreditsFromContent(string(content)) {
+			c.ACFile = path
+			if !strings.Contains(message, c.creditString()) {
+				missing = append(missing, c)
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("release message missing feedback credit(s):\n")
+	for _, c := range missing {
+		fmt.Fprintf(&b, "  - %s declares %q v%s; release message must contain %q\n",
+			c.ACFile, c.Consumer, c.Version, c.creditString())
+	}
+	b.WriteString("see docs/build-release.md Pre-Release Checklist CHANGELOG step for the convention")
+	return errors.New(b.String())
 }
 
 // moveFeedbackCompanion moves docs/ac<N>-<slug>-feedback.md to

@@ -2160,7 +2160,26 @@ func printEnhancementSummary(report EnhancementReport) {
 	for _, c := range report.Candidates {
 		fmt.Println(formatCandidateLine(c, report.ReferenceRoot))
 	}
+	// AC70 Part C: nudge DEV to record the closure credit when at least one
+	// feedback-origin candidate is present. Fires once per run, not per
+	// candidate, to keep output terse.
+	if hasFeedbackCandidate(report.Candidates) {
+		fmt.Println()
+		fmt.Printf("%s if a governa AC addresses any of these, add a `## Feedback Credits` section to the AC naming the consumer + source version, and include `(addresses <consumer> feedback from v<X.Y.Z> syncs)` in the release message. See docs/ac-template.md § Feedback Credits.\n",
+			color.Yel("hint:"))
+	}
 	printEnhanceDrift(report.Candidates)
+}
+
+// hasFeedbackCandidate reports whether at least one candidate originated
+// from a .governa/feedback/ file. (AC70 Part C)
+func hasFeedbackCandidate(candidates []EnhancementCandidate) bool {
+	for _, c := range candidates {
+		if c.ChangeOrigin == "feedback" {
+			return true
+		}
+	}
+	return false
 }
 
 func printEnhanceDrift(candidates []EnhancementCandidate) {

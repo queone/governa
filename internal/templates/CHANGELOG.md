@@ -3,7 +3,8 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
-| 0.45.0 | AC69: enhance feedback loop + utils feedback + integrated critique default |
+| 0.45.1 | AC70: Feedback Credits enforcement (addresses utils feedback from v0.42.0 syncs) |
+| 0.45.0 | AC69: enhance feedback loop + utils feedback + integrated critique default (addresses utils feedback from v0.42.0 syncs) |
 | 0.44.0 | AC68: tighten sync-review.md (methodology extract + CLEAN compact) |
 | 0.43.1 | AC67: plan.md skeleton policy end-to-end fix |
 | 0.43.0 | AC66: plan.md skeleton coverage + `## Local Rules` convention |
