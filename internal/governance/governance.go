@@ -3830,6 +3830,9 @@ func compareStructure(existingContent, proposedContent string) []structuralNote 
 
 	var notes []structuralNote
 	for _, es := range existingSections {
+		if isRepoOwnedConsumerOnlySection(es.Name) {
+			continue // AC66: consumer-owned sections (e.g., "Local Rules") don't emit structural notes
+		}
 		proposedBody, exists := proposedMap[es.Name]
 		if !exists {
 			continue
@@ -3856,6 +3859,9 @@ func detectChangedSections(existingContent, proposedContent string) []string {
 
 	var changed []string
 	for _, es := range existingSections {
+		if isRepoOwnedConsumerOnlySection(es.Name) {
+			continue // AC66: consumer-owned sections don't count as drift
+		}
 		proposedBody, exists := proposedMap[es.Name]
 		if !exists {
 			continue
@@ -4413,6 +4419,9 @@ func computeBulletRemovals(existingContent, proposedContent string) []bulletRemo
 	proposed := bulletsBySection(proposedContent)
 	var out []bulletRemoval
 	for name, existCount := range existing {
+		if isRepoOwnedConsumerOnlySection(name) {
+			continue // AC66: consumer-owned sections don't emit bullet-removal advisories
+		}
 		propCount, ok := proposed[name]
 		if !ok {
 			continue
@@ -4430,11 +4439,32 @@ func computeBulletRemovals(existingContent, proposedContent string) []bulletRemo
 // planMdSkeletonSections lists plan.md sections whose content the template
 // only seeds with placeholder prose. Repos are expected to fill these with
 // project-specific content; sync should not flag content differences as
-// "adopt" for these sections alone. (AC53 IE6)
+// "adopt" for these sections alone. (AC53 IE6; AC66 added Constraints and
+// Deferred to cover the full set of consumer-fillable plan.md sections.)
 var planMdSkeletonSections = map[string]bool{
 	"Product Direction": true,
 	"Priorities":        true,
 	"Ideas To Explore":  true,
+	"Constraints":       true, // AC66
+	"Deferred":          true, // AC66
+}
+
+// repoOwnedConsumerOnlySections lists section names the scorer treats as
+// consumer-owned even when present in the consumer but absent from the
+// template. Sections with these names never contribute to drift detection,
+// structural notes, or bullet-removal advisories. Shared mental model with
+// planMdSkeletonSections (both are "repo-owned section" concepts) but
+// separate plumbing: the skeleton policy is a post-hoc downgrade on plan.md,
+// this registry is an upfront filter applied to any overlay file. (AC66)
+var repoOwnedConsumerOnlySections = map[string]bool{
+	"Local Rules": true,
+}
+
+// isRepoOwnedConsumerOnlySection reports whether a section name is in the
+// consumer-owned registry. Named helper (rather than inline map lookups) so
+// future additions and call-site edits stay terse. (AC66)
+func isRepoOwnedConsumerOnlySection(name string) bool {
+	return repoOwnedConsumerOnlySections[name]
 }
 
 // applyPlanMdSkeletonPolicy downgrades an "adopt" recommendation on plan.md

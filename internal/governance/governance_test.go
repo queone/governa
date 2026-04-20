@@ -7703,21 +7703,6 @@ func TestPlanMdSkeletonPolicyEscalatesOnMissingSection(t *testing.T) {
 	}
 }
 
-// IE6 negative: a non-skeleton section changing keeps adopt.
-func TestPlanMdSkeletonPolicyKeepsAdoptForNonSkeletonChange(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	planPath := filepath.Join(dir, "plan.md")
-	existing := "# Plan\n\n## Product Direction\n\nrepo dir\n\n## Constraints\n\nrepo-old constraint\n"
-	mustWrite(t, planPath, existing)
-	// Constraints is NOT a skeleton section — template change here must remain adopt.
-	proposed := "# Plan\n\n## Product Direction\n\nrepo dir\n\n## Constraints\n\ntemplate-new constraint\n"
-	score := scoreOverlayCollision(planPath, proposed, "old", "new")
-	if score.recommendation != "adopt" {
-		t.Fatalf("recommendation = %q, want adopt (Constraints is not skeleton); reason = %q", score.recommendation, score.reason)
-	}
-}
-
 // AC53 IE8: consumerNameFromTarget prefers go.mod module path basename.
 func TestConsumerNameFromTargetPrefersGoModBasename(t *testing.T) {
 	t.Parallel()
@@ -10122,5 +10107,252 @@ Content.
 	}
 	if cls != "cosmetic" {
 		t.Errorf("Companion Artifacts classification = %q, want cosmetic", cls)
+	}
+}
+
+// --- AC66 tests (plan.md skeleton policy coverage + Local Rules convention) ---
+
+// planMdTemplateShell is a minimal plan.md that matches the template's
+// section structure. Tests swap individual section bodies to simulate
+// consumer content without introducing unrelated diffs.
+const planMdTemplateShell = `# Plan
+
+## Product Direction
+
+{{PRODUCT_DIRECTION}}
+
+## Priorities
+
+{{PRIORITIES}}
+
+## Deferred
+
+{{DEFERRED}}
+
+## Ideas To Explore
+
+{{IDEAS}}
+
+## Constraints
+
+{{CONSTRAINTS}}
+`
+
+// buildPlanMd renders a synthetic plan.md with caller-supplied section bodies.
+// Omitted fields render as the template's placeholder text.
+func buildPlanMd(productDirection, priorities, deferred, ideas, constraints string) string {
+	if productDirection == "" {
+		productDirection = "Placeholder product direction."
+	}
+	if priorities == "" {
+		priorities = "(no active roadmap items)"
+	}
+	if deferred == "" {
+		deferred = "| ID | Description | Reason |\n|----|-------------|--------|"
+	}
+	if ideas == "" {
+		ideas = "Pre-rubric ideas captured for future discussion."
+	}
+	if constraints == "" {
+		constraints = "- Placeholder constraint."
+	}
+	s := planMdTemplateShell
+	s = strings.Replace(s, "{{PRODUCT_DIRECTION}}", productDirection, 1)
+	s = strings.Replace(s, "{{PRIORITIES}}", priorities, 1)
+	s = strings.Replace(s, "{{DEFERRED}}", deferred, 1)
+	s = strings.Replace(s, "{{IDEAS}}", ideas, 1)
+	s = strings.Replace(s, "{{CONSTRAINTS}}", constraints, 1)
+	return s
+}
+
+// TestPlanMdSkeletonPolicyCoversConstraints (AC66 AT1) asserts that repo
+// content in the Constraints section alone is classified as "keep", not
+// "adopt". Pre-AC66 this failed because Constraints was not in the
+// skeleton-sections registry.
+func TestPlanMdSkeletonPolicyCoversConstraints(t *testing.T) {
+	t.Parallel()
+
+	template := buildPlanMd("", "", "", "", "")
+	consumer := buildPlanMd("", "", "", "", "- Repo-specific constraint A.\n- Repo-specific constraint B.")
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte(consumer), 0o644); err != nil {
+		t.Fatalf("write plan.md: %v", err)
+	}
+
+	// Template is the "proposed" content; old == new checksum means template unchanged
+	// since last sync. Consumer differs only in the Constraints body.
+	score := scoreOverlayCollision(planPath, template, "checksum", "checksum")
+	if score.recommendation != "keep" {
+		t.Errorf("recommendation = %q, want keep (Constraints is a skeleton section)", score.recommendation)
+	}
+}
+
+// TestPlanMdSkeletonPolicyCoversDeferred (AC66 AT2) asserts repo content in
+// the Deferred section alone classifies as "keep".
+func TestPlanMdSkeletonPolicyCoversDeferred(t *testing.T) {
+	t.Parallel()
+
+	template := buildPlanMd("", "", "", "", "")
+	consumer := buildPlanMd("", "", "| DEF1 | Deferred item | Blocked on X |", "", "")
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte(consumer), 0o644); err != nil {
+		t.Fatalf("write plan.md: %v", err)
+	}
+
+	score := scoreOverlayCollision(planPath, template, "checksum", "checksum")
+	if score.recommendation != "keep" {
+		t.Errorf("recommendation = %q, want keep (Deferred is a skeleton section)", score.recommendation)
+	}
+}
+
+// TestPlanMdSkeletonPolicyCoversAllSkeletonSections (AC66 AT3) asserts repo
+// content in all five skeleton sections classifies as "keep".
+func TestPlanMdSkeletonPolicyCoversAllSkeletonSections(t *testing.T) {
+	t.Parallel()
+
+	template := buildPlanMd("", "", "", "", "")
+	consumer := buildPlanMd(
+		"Real product direction.",
+		"- Priority 1\n- Priority 2",
+		"| DEF1 | Item | Reason |",
+		"- IE1: idea A\n- IE2: idea B",
+		"- Real constraint A\n- Real constraint B",
+	)
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte(consumer), 0o644); err != nil {
+		t.Fatalf("write plan.md: %v", err)
+	}
+
+	score := scoreOverlayCollision(planPath, template, "checksum", "checksum")
+	if score.recommendation != "keep" {
+		t.Errorf("recommendation = %q, want keep (all skeleton sections)", score.recommendation)
+	}
+}
+
+// TestLocalRulesSectionDoesNotTriggerDrift (AC66 AT4) asserts that when
+// consumer and template differ only by the presence of a ## Local Rules
+// section in the consumer, the scorer produces no drift, no structural note,
+// no bullet-removal advisory, and does not recommend "adopt". Synthetic
+// inputs are constrained to this single diff — any non-zero absolute count
+// below indicates the regression this AT guards against.
+func TestLocalRulesSectionDoesNotTriggerDrift(t *testing.T) {
+	t.Parallel()
+
+	template := `# Build and Release
+
+## Build
+
+Standard build content.
+
+## Pre-Release Checklist
+
+Standard checklist content.
+`
+	consumer := `# Build and Release
+
+## Build
+
+Standard build content.
+
+## Pre-Release Checklist
+
+Standard checklist content.
+
+## Local Rules
+
+- Repo-specific rule that governa's template does not carry.
+- Another repo-specific rule.
+`
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "build-release.md")
+	if err := os.WriteFile(filePath, []byte(consumer), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	// Template unchanged since last sync (old == new checksum). Consumer has
+	// the Local Rules addition; everything else is byte-identical to template.
+	score := scoreOverlayCollision(filePath, template, "checksum", "checksum")
+
+	if score.standingDrift {
+		t.Errorf("standingDrift = true, want false (Local Rules should not trigger drift)")
+	}
+	if len(score.structuralNotes) != 0 {
+		t.Errorf("structuralNotes length = %d, want 0; notes: %+v", len(score.structuralNotes), score.structuralNotes)
+	}
+	if len(score.bulletRemovals) != 0 {
+		t.Errorf("bulletRemovals length = %d, want 0; removals: %+v", len(score.bulletRemovals), score.bulletRemovals)
+	}
+	if score.recommendation == "adopt" {
+		t.Errorf("recommendation = %q, want anything but adopt (Local Rules alone should not force adopt)", score.recommendation)
+	}
+}
+
+// TestRepoOwnedConsumerOnlySectionsRegistry (AC66 AT5) asserts the registry
+// contains exactly "Local Rules" at draft time. Future additions update the
+// expected count here.
+func TestRepoOwnedConsumerOnlySectionsRegistry(t *testing.T) {
+	t.Parallel()
+
+	if !repoOwnedConsumerOnlySections["Local Rules"] {
+		t.Errorf("registry missing 'Local Rules' entry")
+	}
+	if len(repoOwnedConsumerOnlySections) != 1 {
+		t.Errorf("registry size = %d, want 1 (current draft ships only 'Local Rules')", len(repoOwnedConsumerOnlySections))
+	}
+	if !isRepoOwnedConsumerOnlySection("Local Rules") {
+		t.Errorf("isRepoOwnedConsumerOnlySection(\"Local Rules\") returned false")
+	}
+	if isRepoOwnedConsumerOnlySection("Local Rule") {
+		t.Errorf("isRepoOwnedConsumerOnlySection(\"Local Rule\") returned true (only exact match should hit)")
+	}
+}
+
+// TestLocalRulesGuidanceInDevelopmentCycle (AC66 AT6) asserts that the
+// three development-cycle.md locations each carry the new ## Local Rules
+// subsection with the expected guidance + AGENTS.md carve-out substrings.
+func TestLocalRulesGuidanceInDevelopmentCycle(t *testing.T) {
+	t.Parallel()
+	const (
+		headingMarker  = "\n## Local Rules\n"
+		guidanceSubstr = "Place these in a `## Local Rules` section at the end of the relevant supplementary governance doc"
+		carveoutSubstr = "Not AGENTS.md"
+	)
+	sources := []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"docs/development-cycle.md", func() ([]byte, error) {
+			return os.ReadFile("../../docs/development-cycle.md")
+		}},
+		{"examples/code/docs/development-cycle.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/development-cycle.md")
+		}},
+		{"overlay development-cycle.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/development-cycle.md.tmpl")
+		}},
+	}
+	for _, tc := range sources {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		if count := strings.Count(content, headingMarker); count != 1 {
+			t.Errorf("%s: expected exactly one '## Local Rules' heading, got %d", tc.label, count)
+		}
+		if !strings.Contains(content, guidanceSubstr) {
+			t.Errorf("%s: missing guidance substring %q", tc.label, guidanceSubstr)
+		}
+		if !strings.Contains(content, carveoutSubstr) {
+			t.Errorf("%s: missing AGENTS.md carve-out substring %q", tc.label, carveoutSubstr)
+		}
 	}
 }

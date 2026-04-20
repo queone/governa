@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.43.0 | AC66: plan.md skeleton coverage + `## Local Rules` convention |
 | 0.42.0 | AC65: tighten AC/critique protocol for DEV/QA Phase 1 |
 | 0.41.0 | AC64: flag convention + mdcheck step + critique ownership rule |
 | 0.40.0 | AC62+AC63: consumer-feedback cleanup + sync feedback-closure advisor |
