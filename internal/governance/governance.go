@@ -3555,41 +3555,10 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprint(&b, changes)
 	}
 
-	fmt.Fprintln(&b, "## Evaluation Methodology")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "**Default to adopting template content.** Keep existing content only when it is repo-specific and the reason is documented. Adoptions are non-trivial changes to governance docs — draft an AC before applying them so the work gets scoped and reviewed through the normal development cycle.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "The repo agent must follow these steps for every `adopt` item:")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "1. **Structure pass — match the template shape.**")
-	fmt.Fprintln(&b, "   - The agent must adopt template section names and ordering unless the repo has a documented reason to diverge.")
-	fmt.Fprintln(&b, "   - The agent must collapse repo subsections that add formatting but not semantic distinction to match the template's flatter structure.")
-	fmt.Fprintln(&b, "   - If collapsing would lose genuinely repo-specific detail, the agent must keep it inline under the template's section rather than adding new headings.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "2. **Content pass — adopt template wording as the base.**")
-	fmt.Fprintln(&b, "   - For each section, the agent must start from the template text in `.governa/proposed/<file>`.")
-	fmt.Fprintln(&b, "   - The agent must layer repo-specific additions (project names, file paths, domain rules) on top.")
-	fmt.Fprintln(&b, "   - If the template wording covers the same intent with better or more general phrasing, the agent must adopt it and drop the repo's version.")
-	fmt.Fprintln(&b, "   - The agent must not sacrifice detail that is definitively specific to the repo.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "3. **Residual check — minimize future drift.**")
-	fmt.Fprintln(&b, "   - After edits, each remaining difference from the template must be explainable as repo-specific with a clear reason.")
-	fmt.Fprintln(&b, "   - If a difference has no repo-specific justification, the agent must adopt the template version.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "4. **Role files pass — adopt directory and file renames.**")
-	fmt.Fprintln(&b, "   - When the template renames or restructures a directory, the agent must migrate rather than maintain a divergent path.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "5. **Manifest pass — confirm baseline after adoptions.**")
-	fmt.Fprintln(&b, "   - Sync has already written the updated manifest and TEMPLATE_VERSION. After applying adoptions, the agent must confirm these baseline artifacts remain correct so the next sync diffs against the right starting point.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "6. **Report — explain each decision to the director.**")
-	fmt.Fprintln(&b, "   - For each `adopt` item, the agent must state one of: **adopted** (with summary of changes), **kept** (with documented repo-specific reason), or **needs director judgment** (with explanation).")
-	fmt.Fprintln(&b, "   - The agent must not silently skip any `adopt` item. Every item must have a stated disposition.")
-	fmt.Fprintln(&b, "   - For partial-adopt cases (adopting some template content while preserving some existing content), produce `docs/ac<N>-<slug>-dispositions.md` listing each preserved difference with (1) content kept, (2) template content rejected, (3) repo-specific reason. See `docs/ac-template.md` Companion Artifacts.")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "7. **Feedback — surface improvements for the governance template.**")
-	fmt.Fprintln(&b, "   - The agent must note any recommendations that were confusing, lacked sufficient context to evaluate, or didn't account for a common repo pattern.")
-	fmt.Fprintln(&b, "   - The director routes this feedback to governa DEV and QA to improve future sync output and methodology.")
+	// AC68: methodology pointer — extracted to docs/sync-methodology.md.
+	// Rendered every sync, including CLEAN runs, so the trail to the
+	// methodology is always present in sync output.
+	fmt.Fprintln(&b, "See `docs/sync-methodology.md` for the 7-step adoption methodology the repo agent must follow for every `adopt` item. The methodology applies on every sync that produces adopt items — skipping it means silently skipping rules the template expects every consumer to follow.")
 	fmt.Fprintln(&b, "")
 
 	if len(conflicts) > 0 {
@@ -3605,15 +3574,9 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		}
 	}
 
-	fmt.Fprintln(&b, "## Recommendations")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "| File | Recommendation | Reason | Existing Lines | Proposed Lines |")
-	fmt.Fprintln(&b, "|------|----------------|--------|---------------|----------------|")
-	for _, s := range scores {
-		fmt.Fprintf(&b, "| `%s` | %s | %s | %d | %d |\n", relPath(s.path), s.recommendation, s.reason, s.existingLines, s.proposedLines)
-	}
-
-	// Action summary
+	// Compute counts once so they're available for both the Recommendations
+	// compaction check (AC68: CLEAN mode when adopts == 0 && conflicts == 0)
+	// and the unified Summary at the bottom of the file.
 	keeps, adopts, acknowledged := 0, 0, 0
 	for _, s := range scores {
 		switch s.recommendation {
@@ -3625,11 +3588,19 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 			acknowledged++
 		}
 	}
-	fmt.Fprintf(&b, "\n## Summary\n\n")
-	fmt.Fprintf(&b, "- **keep**: %d files (no adoption work needed)\n", keeps)
-	fmt.Fprintf(&b, "- **adopt**: %d files (must compare `.governa/proposed/<file>` and adopt unless repo-specific)\n", adopts)
-	if acknowledged > 0 {
-		fmt.Fprintf(&b, "- **acknowledged**: %d files (stable carve-outs omitted from adopt work this round)\n", acknowledged)
+
+	fmt.Fprintln(&b, "## Recommendations")
+	fmt.Fprintln(&b, "")
+	// AC68: CLEAN-mode compaction — when there's no required adoption/conflict
+	// action, replace the per-file table with a single-line summary.
+	if adopts == 0 && len(conflicts) == 0 {
+		fmt.Fprintf(&b, "%d files reviewed, all aligned with template.\n", len(scores))
+	} else {
+		fmt.Fprintln(&b, "| File | Recommendation | Reason | Existing Lines | Proposed Lines |")
+		fmt.Fprintln(&b, "|------|----------------|--------|---------------|----------------|")
+		for _, s := range scores {
+			fmt.Fprintf(&b, "| `%s` | %s | %s | %d | %d |\n", relPath(s.path), s.recommendation, s.reason, s.existingLines, s.proposedLines)
+		}
 	}
 
 	if acknowledged > 0 {
@@ -3646,6 +3617,10 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	// Adoption Items — single detail section for all adopt files
 	if adopts > 0 {
 		fmt.Fprintf(&b, "\n## Adoption Items\n\n")
+		// AC68: methodology pointer as the first body line — lands the reminder
+		// exactly where operational attention falls when an agent acts on adoptions.
+		fmt.Fprintln(&b, "Follow the methodology in `docs/sync-methodology.md` for every item below.")
+		fmt.Fprintln(&b, "")
 		fmt.Fprintln(&b, "For each file below, read `.governa/proposed/<file>` and adopt the template content. Keep only content that is definitively repo-specific with a documented reason.")
 		fmt.Fprintln(&b, "")
 		for _, s := range scores {
@@ -3785,38 +3760,41 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		fmt.Fprintln(&b, "")
 	}
 
-	// Next Steps — closing action block. Content adapts to the sync outcome.
+	// AC68: unified Summary section — replaces the prior separate Summary
+	// (counts), Next Steps (action list), and Status (banner) sections.
+	// Single section carries status + counts + optional acknowledged-drift
+	// line + next-action bullets.
 	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "## Next Steps")
+	fmt.Fprintln(&b, "## Summary")
 	fmt.Fprintln(&b, "")
+	// Status field — PENDING when operator action required; CLEAN otherwise.
+	// `keep`-with-advisory items do not block; `CLEAN` means "no required
+	// adoption/conflict action," not "nothing to look at."
+	if adopts > 0 || len(conflicts) > 0 {
+		fmt.Fprintln(&b, "- **Status:** `PENDING` — operator review required.")
+	} else {
+		fmt.Fprintln(&b, "- **Status:** `CLEAN` — no required adoption/conflict action.")
+	}
+	// Counts field.
+	fmt.Fprintf(&b, "- **Counts:** keep: %d · adopt: %d · conflicts: %d.\n", keeps, adopts, len(conflicts))
+	// Acknowledged-drift conditional — preserves the signal the prior
+	// Next Steps carried for CLEAN-with-acknowledged syncs (AC68 R1/F3).
+	if acknowledged > 0 {
+		fmt.Fprintf(&b, "- **Acknowledged drift:** %d file(s) — see `## Acknowledged Drift`.\n", acknowledged)
+	}
+	// Next-action bullets — content adapts to the sync outcome.
 	switch {
 	case len(conflicts) > 0:
-		fmt.Fprintln(&b, "1. Resolve the conflicts above (each entry under `## Conflicts` has numbered steps).")
-		fmt.Fprintln(&b, "2. Re-run `governa sync` to complete the sync. Adoption items below stay until conflicts are cleared.")
+		fmt.Fprintln(&b, "- **Next:**")
+		fmt.Fprintln(&b, "  1. Resolve the conflicts above (each entry under `## Conflicts` has numbered steps).")
+		fmt.Fprintln(&b, "  2. Re-run `governa sync` to complete the sync. Adoption items stay until conflicts are cleared.")
 	case adopts > 0:
-		fmt.Fprintln(&b, "1. Work through `## Adoption Items` following the Evaluation Methodology above.")
-		fmt.Fprintln(&b, "2. After adoption decisions are made, commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.")
-		fmt.Fprintln(&b, "3. The review artifact (`.governa/sync-review.md`) and `.governa/proposed/` are working artifacts — not intended to be committed.")
+		fmt.Fprintln(&b, "- **Next:**")
+		fmt.Fprintln(&b, "  1. Work through `## Adoption Items` following the methodology in `docs/sync-methodology.md`.")
+		fmt.Fprintln(&b, "  2. After adoption decisions are made, commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.")
+		fmt.Fprintln(&b, "  3. `.governa/sync-review.md` and `.governa/proposed/` are working artifacts — not intended to be committed.")
 	default:
-		if acknowledged > 0 {
-			fmt.Fprintf(&b, "No adoption work needed. %d file(s) carry acknowledged drift (see `## Acknowledged Drift`).\n", acknowledged)
-		} else {
-			fmt.Fprintln(&b, "No adoption work needed.")
-		}
-		fmt.Fprintln(&b, "")
-		fmt.Fprintln(&b, "1. Commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.")
-		fmt.Fprintln(&b, "2. The review artifact (`.governa/sync-review.md`) is not intended to be committed.")
-	}
-	fmt.Fprintln(&b, "")
-
-	// Status reflects whether any blocking/mandatory operator action is
-	// required. `keep`-with-advisory items do not block — they are
-	// reviewable but not required — so `CLEAN` does not imply "nothing to
-	// look at," only "no required adoption/conflict action."
-	if adopts > 0 || len(conflicts) > 0 {
-		fmt.Fprintf(&b, "## Status\n\n`PENDING` — operator review required\n")
-	} else {
-		fmt.Fprintf(&b, "## Status\n\n`CLEAN` — no required adoption/conflict action\n")
+		fmt.Fprintln(&b, "- **Next:** commit `TEMPLATE_VERSION` and `.governa/manifest` to record the new baseline. Do not commit `.governa/sync-review.md` or `.governa/proposed/` (working artifacts).")
 	}
 	return b.String()
 }

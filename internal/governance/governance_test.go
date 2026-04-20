@@ -4489,45 +4489,32 @@ func TestScoreGovernanceKeepWhenTemplateUnchanged(t *testing.T) {
 	}
 }
 
-func TestRenderSyncReviewMethodology(t *testing.T) {
+// AC68: TestRenderSyncReviewMethodology (inline-methodology assertions) deleted.
+// Methodology content extracted to docs/sync-methodology.md; coverage now lives in
+// AT5 TestSyncMethodologyDocPresent (nine phrases in the new doc). Preamble
+// assertions preserved below in TestRenderSyncReviewPreamble.
+
+// TestRenderSyncReviewPreamble guards the preamble assertions that formerly
+// lived inside TestRenderSyncReviewMethodology: bookkeeping mention, working-
+// artifact disclaimer, and the AC68 methodology pointer. Runs on any output
+// regardless of CLEAN vs adoption-needed mode — preamble is constant.
+func TestRenderSyncReviewPreamble(t *testing.T) {
 	t.Parallel()
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
 	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
-	if !strings.Contains(output, "## Evaluation Methodology") {
-		t.Fatal("review doc should contain Evaluation Methodology section")
-	}
-	for _, phrase := range []string{
-		"Structure pass",
-		"Content pass",
-		"Residual check",
-		"Role files pass",
-		"Manifest pass",
-		"Report",
-		"Feedback",
-		"dispositions.md",
-		"Companion Artifacts",
-	} {
-		if !strings.Contains(output, phrase) {
-			t.Fatalf("review doc should contain %q in methodology", phrase)
-		}
-	}
-	// "What sync writes automatically" is merged into intro + methodology
-	if strings.Contains(output, "## What sync writes automatically") {
-		t.Fatal("review doc should not contain old bookkeeping section")
-	}
+	// Preamble bookkeeping assertions (preserved from the deleted
+	// TestRenderSyncReviewMethodology).
 	if !strings.Contains(output, "bookkeeping") {
-		t.Fatal("review doc intro should mention bookkeeping")
+		t.Error("review doc intro should mention bookkeeping")
 	}
 	if !strings.Contains(output, "not intended to be committed") {
-		t.Fatal("review doc intro should state artifacts are not intended to be committed")
+		t.Error("review doc intro should state artifacts are not intended to be committed")
 	}
-	if !strings.Contains(output, "Default to adopting") {
-		t.Fatal("methodology should contain imperative adoption preamble")
-	}
-	if !strings.Contains(output, "draft an AC") {
-		t.Fatal("methodology should nudge agents to use AC workflow")
+	// AC68 methodology pointer (must appear even on CLEAN runs).
+	if !strings.Contains(output, "See `docs/sync-methodology.md` for the 7-step adoption methodology") {
+		t.Error("review doc preamble should contain the docs/sync-methodology.md pointer")
 	}
 }
 
@@ -4573,7 +4560,7 @@ func TestRenderSyncReviewAdoptItems(t *testing.T) {
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatal("output should contain Adoption Items section")
 	}
-	if !strings.Contains(output, "**adopt**: 2") {
+	if !strings.Contains(output, "adopt: 2") {
 		t.Fatalf("output should show 2 adopt files, got:\n%s", output)
 	}
 	if !strings.Contains(output, "changed: Cycle (cosmetic)") {
@@ -6610,8 +6597,10 @@ func TestSymlinkConflictAgentsIntentNote(t *testing.T) {
 	}
 }
 
-// AT6: renderSyncReview output contains ## Next Steps before ## Status; content varies by scenario.
-func TestRenderSyncReviewNextSteps(t *testing.T) {
+// AC68: rewritten from TestRenderSyncReviewNextSteps. Next Steps + Status sections
+// were collapsed into a unified ## Summary. Asserts per-scenario wording in the
+// new Summary body without the old "## Next Steps before ## Status" ordering check.
+func TestRenderSyncReviewSummaryNextActions(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name       string
@@ -6629,7 +6618,7 @@ func TestRenderSyncReviewNextSteps(t *testing.T) {
 				{kind: "symlink-vs-regular", path: "/tmp/repo/CLAUDE.md", description: "### `CLAUDE.md`\n\nsome\n"},
 			},
 			wantPhrase: "Resolve the conflicts above",
-			dontWant:   "No adoption work needed",
+			dontWant:   "Work through `## Adoption Items`",
 		},
 		{
 			name: "adopt-only",
@@ -6637,7 +6626,7 @@ func TestRenderSyncReviewNextSteps(t *testing.T) {
 				{path: "/tmp/repo/file.md", recommendation: "adopt", reason: "x"},
 			},
 			conflicts:  nil,
-			wantPhrase: "Evaluation Methodology",
+			wantPhrase: "Work through `## Adoption Items`",
 			dontWant:   "Resolve the conflicts",
 		},
 		{
@@ -6646,28 +6635,29 @@ func TestRenderSyncReviewNextSteps(t *testing.T) {
 				{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical"},
 			},
 			conflicts:  nil,
-			wantPhrase: "No adoption work needed",
+			wantPhrase: "commit `TEMPLATE_VERSION`",
 			dontWant:   "Resolve the conflicts",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			out := renderSyncReview("/tmp/repo", tc.scores, tc.conflicts, "", "")
-			// Must contain Next Steps section
-			if !strings.Contains(out, "## Next Steps") {
-				t.Fatalf("output must contain ## Next Steps section, got:\n%s", out)
+			// Unified Summary section must be present.
+			if !strings.Contains(out, "## Summary") {
+				t.Fatalf("output must contain ## Summary section, got:\n%s", out)
 			}
-			// Next Steps must come before Status
-			nsIdx := strings.Index(out, "## Next Steps")
-			stIdx := strings.Index(out, "## Status")
-			if nsIdx < 0 || stIdx < 0 || nsIdx >= stIdx {
-				t.Fatalf("## Next Steps must come before ## Status")
+			// AC68: no standalone ## Next Steps or ## Status headings anymore.
+			if strings.Contains(out, "## Next Steps") {
+				t.Errorf("## Next Steps heading should be collapsed into ## Summary")
+			}
+			if strings.Contains(out, "## Status\n") || strings.HasSuffix(out, "## Status") {
+				t.Errorf("## Status heading should be collapsed into ## Summary (status is a field, not a section)")
 			}
 			if !strings.Contains(out, tc.wantPhrase) {
-				t.Fatalf("output should contain %q for scenario %q, got:\n%s", tc.wantPhrase, tc.name, out)
+				t.Errorf("output should contain %q for scenario %q, got:\n%s", tc.wantPhrase, tc.name, out)
 			}
 			if strings.Contains(out, tc.dontWant) {
-				t.Fatalf("output should NOT contain %q for scenario %q, got:\n%s", tc.dontWant, tc.name, out)
+				t.Errorf("output should NOT contain %q for scenario %q, got:\n%s", tc.dontWant, tc.name, out)
 			}
 		})
 	}
@@ -7072,8 +7062,10 @@ func TestIsGovernaOwnedPath(t *testing.T) {
 	}
 }
 
-// AT3: renderSyncReview Status line is context-aware.
-func TestRenderSyncReviewStatusContextAware(t *testing.T) {
+// AC68: rewritten from TestRenderSyncReviewStatusContextAware. Standalone
+// ## Status heading collapsed into ## Summary as a **Status:** bold-text field.
+// Asserts PENDING/CLEAN wording inside the Summary body across the scenarios.
+func TestRenderSyncReviewSummaryStatusField(t *testing.T) {
 	t.Parallel()
 
 	// Case: adopt items → PENDING
@@ -7081,10 +7073,10 @@ func TestRenderSyncReviewStatusContextAware(t *testing.T) {
 		{path: "/tmp/repo/x.md", recommendation: "adopt", reason: "x"},
 	}
 	outAdopt := renderSyncReview("/tmp/repo", adoptScores, nil, "", "")
-	if !strings.Contains(outAdopt, "## Status") ||
-		!strings.Contains(outAdopt, "PENDING") ||
+	if !strings.Contains(outAdopt, "## Summary") ||
+		!strings.Contains(outAdopt, "**Status:** `PENDING`") ||
 		!strings.Contains(outAdopt, "operator review required") {
-		t.Fatalf("adopt case should render PENDING with review-required wording, got:\n%s", outAdopt)
+		t.Fatalf("adopt case should render Summary with PENDING status field, got:\n%s", outAdopt)
 	}
 
 	// Case: conflicts only → PENDING
@@ -7092,8 +7084,8 @@ func TestRenderSyncReviewStatusContextAware(t *testing.T) {
 		{kind: "symlink-vs-regular", path: "/tmp/repo/CLAUDE.md", description: "### `CLAUDE.md`\n"},
 	}
 	outConflict := renderSyncReview("/tmp/repo", nil, conflicts, "", "")
-	if !strings.Contains(outConflict, "PENDING") {
-		t.Fatalf("conflict case should render PENDING, got:\n%s", outConflict)
+	if !strings.Contains(outConflict, "**Status:** `PENDING`") {
+		t.Fatalf("conflict case should render PENDING status field, got:\n%s", outConflict)
 	}
 
 	// Case: only keep items (no advisory) → CLEAN
@@ -7101,9 +7093,9 @@ func TestRenderSyncReviewStatusContextAware(t *testing.T) {
 		{path: "/tmp/repo/x.md", recommendation: "keep", reason: "identical"},
 	}
 	outClean := renderSyncReview("/tmp/repo", pureKeep, nil, "", "")
-	if !strings.Contains(outClean, "CLEAN") ||
+	if !strings.Contains(outClean, "**Status:** `CLEAN`") ||
 		!strings.Contains(outClean, "no required adoption/conflict action") {
-		t.Fatalf("pure-keep case should render CLEAN with narrow wording, got:\n%s", outClean)
+		t.Fatalf("pure-keep case should render CLEAN status field with narrow wording, got:\n%s", outClean)
 	}
 	if strings.Contains(outClean, "no operator action required") {
 		t.Fatalf("CLEAN wording should NOT overstate as 'no operator action required' — advisory cases are reviewable, got:\n%s", outClean)
@@ -7119,7 +7111,7 @@ func TestRenderSyncReviewStatusContextAware(t *testing.T) {
 		},
 	}
 	outAdvisory := renderSyncReview("/tmp/repo", keepWithAdvisory, nil, "", "")
-	if !strings.Contains(outAdvisory, "CLEAN") {
+	if !strings.Contains(outAdvisory, "**Status:** `CLEAN`") {
 		t.Fatalf("keep-with-advisory should still render CLEAN (advisory doesn't block), got:\n%s", outAdvisory)
 	}
 	if !strings.Contains(outAdvisory, "no required adoption/conflict action") {
@@ -8241,8 +8233,8 @@ func TestRunAckRendersAcknowledgedDriftAndRemoveRestoresAdoptFlow(t *testing.T) 
 		"## Acknowledged Drift",
 		"`docs/roles/dev.md`: repo-specific sync note",
 		"`docs/build-release.md`: repo-specific release note",
-		"**acknowledged**: 2",
-		"**adopt**: 0",
+		"**Acknowledged drift:** 2 file(s)",
+		"adopt: 0",
 	} {
 		if !strings.Contains(content, phrase) {
 			t.Fatalf("sync review missing %q:\n%s", phrase, content)
@@ -10506,4 +10498,215 @@ func TestPlanMdSkeletonPolicyFiltersStructuralNotes(t *testing.T) {
 	if score.structuralNotes[0].section != "Non Skeleton" {
 		t.Errorf("surviving note section = %q, want %q", score.structuralNotes[0].section, "Non Skeleton")
 	}
+}
+
+// --- AC68 tests (sync-review.md tightening: methodology extraction + CLEAN compaction + Summary collapse) ---
+
+// TestSyncReviewLinksMethodologyDoc (AC68 AT1) asserts the preamble carries
+// the load-bearing pointer to docs/sync-methodology.md on any sync run.
+func TestSyncReviewLinksMethodologyDoc(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical"},
+	}
+	out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	const wantPointer = "See `docs/sync-methodology.md` for the 7-step adoption methodology"
+	if !strings.Contains(out, wantPointer) {
+		t.Errorf("preamble must contain methodology pointer %q; got:\n%s", wantPointer, out)
+	}
+}
+
+// TestSyncReviewOmitsInlineMethodology (AC68 AT2) regression guard against
+// re-inlining the methodology block. None of the removed headings or step
+// phrases should appear in sync output.
+func TestSyncReviewOmitsInlineMethodology(t *testing.T) {
+	t.Parallel()
+	// Cover both CLEAN and adopt-needed paths to catch accidental inlining
+	// on either branch.
+	cleanOut := renderSyncReview("/tmp/repo",
+		[]collisionScore{{path: "/tmp/repo/keep.md", recommendation: "keep", reason: "identical"}},
+		nil, "", "")
+	adoptOut := renderSyncReview("/tmp/repo",
+		[]collisionScore{{path: "/tmp/repo/adopt.md", recommendation: "adopt", reason: "x"}},
+		nil, "", "")
+
+	// Note: the adopt-path output legitimately mentions "Adoption Items" and the
+	// per-section methodology pointer. The phrases below appeared verbatim ONLY
+	// inside the deleted methodology block, so their absence is a safe regression
+	// signal.
+	removedPhrases := []string{
+		"## Evaluation Methodology",
+		"1. **Structure pass",
+		"2. **Content pass",
+		"3. **Residual check",
+		"4. **Role files pass",
+		"5. **Manifest pass",
+		"6. **Report",
+		"7. **Feedback",
+	}
+	for _, phrase := range removedPhrases {
+		if strings.Contains(cleanOut, phrase) {
+			t.Errorf("CLEAN output should not contain removed methodology phrase %q", phrase)
+		}
+		if strings.Contains(adoptOut, phrase) {
+			t.Errorf("adopt output should not contain removed methodology phrase %q", phrase)
+		}
+	}
+}
+
+// TestSyncReviewCompactCleanMode (AC68 AT3) asserts CLEAN runs emit the
+// compact Recommendations line and the collapsed Summary, including the
+// acknowledged-drift conditional on both presence and absence.
+func TestSyncReviewCompactCleanMode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no-acknowledged", func(t *testing.T) {
+		t.Parallel()
+		scores := []collisionScore{
+			{path: "/tmp/repo/a.md", recommendation: "keep", reason: "identical"},
+			{path: "/tmp/repo/b.md", recommendation: "keep", reason: "identical"},
+			{path: "/tmp/repo/c.md", recommendation: "keep", reason: "identical"},
+		}
+		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		// (a) compact Recommendations line with N count
+		wantCompact := "3 files reviewed, all aligned with template."
+		if !strings.Contains(out, wantCompact) {
+			t.Errorf("CLEAN output should contain compact line %q; got:\n%s", wantCompact, out)
+		}
+		// (b) no markdown table rows in Recommendations section
+		_, afterHeading, ok := strings.Cut(out, "## Recommendations")
+		if !ok {
+			t.Fatalf("could not locate Recommendations section")
+		}
+		recBody, _, _ := strings.Cut(afterHeading, "\n## ")
+		if strings.Contains(recBody, "|") {
+			t.Errorf("CLEAN Recommendations body should not contain | (markdown table); got:\n%s", recBody)
+		}
+		// (c) Summary contains Status:CLEAN
+		if !strings.Contains(out, "## Summary") {
+			t.Errorf("output should contain ## Summary section")
+		}
+		if !strings.Contains(out, "**Status:** `CLEAN`") {
+			t.Errorf("Summary should contain **Status:** `CLEAN`")
+		}
+		// (d) no ## Next Steps heading
+		if strings.Contains(out, "## Next Steps") {
+			t.Errorf("output should not contain standalone ## Next Steps heading")
+		}
+		// (e) no standalone ## Status heading — substring targets the heading
+		// form (two hashes + space + `Status`), which disappears after
+		// Summary collapse; the `**Status:**` bold label inside Summary is
+		// a different string and survives.
+		if strings.Contains(out, "## Status\n") || strings.HasSuffix(out, "## Status") {
+			t.Errorf("output should not contain standalone ## Status heading")
+		}
+		// No acknowledged-drift line when M == 0.
+		if strings.Contains(out, "Acknowledged drift:") {
+			t.Errorf("Summary should not contain Acknowledged drift line when M == 0; got:\n%s", out)
+		}
+	})
+
+	t.Run("with-acknowledged", func(t *testing.T) {
+		t.Parallel()
+		scores := []collisionScore{
+			{path: "/tmp/repo/keep.md", recommendation: "keep", reason: "identical"},
+			{path: "/tmp/repo/ack1.md", recommendation: "acknowledged", acknowledgedReason: "stable carve-out"},
+			{path: "/tmp/repo/ack2.md", recommendation: "acknowledged", acknowledgedReason: "stable carve-out"},
+		}
+		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		// Acknowledged drift line should appear when M > 0.
+		wantAck := "**Acknowledged drift:** 2 file(s)"
+		if !strings.Contains(out, wantAck) {
+			t.Errorf("Summary should contain %q when acknowledged > 0; got:\n%s", wantAck, out)
+		}
+	})
+}
+
+// TestSyncReviewFullTableWhenAdoptsPresent (AC68 AT4) asserts that the full
+// Recommendations table renders when adopt items exist, and the Adoption
+// Items section body begins with the load-bearing methodology pointer.
+func TestSyncReviewFullTableWhenAdoptsPresent(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{path: "/tmp/repo/adopt.md", recommendation: "adopt", reason: "template-driven change", existingLines: 10, proposedLines: 20},
+	}
+	out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+
+	// (a) full table present in Recommendations
+	if !strings.Contains(out, "| File | Recommendation | Reason | Existing Lines | Proposed Lines |") {
+		t.Errorf("adopt-path Recommendations should contain the markdown table header")
+	}
+	wantRow := "| `adopt.md` | adopt |"
+	if !strings.Contains(out, wantRow) {
+		t.Errorf("adopt-path Recommendations should contain the adopt row %q; got:\n%s", wantRow, out)
+	}
+
+	// (b) Adoption Items section body begins with the methodology pointer
+	_, aiBody, ok := strings.Cut(out, "## Adoption Items\n\n")
+	if !ok {
+		t.Fatalf("adopt-path output must contain ## Adoption Items section")
+	}
+	wantPointer := "Follow the methodology in `docs/sync-methodology.md` for every item below."
+	if !strings.HasPrefix(aiBody, wantPointer) {
+		t.Errorf("Adoption Items body must begin with methodology pointer %q; got prefix:\n%s", wantPointer, aiBody[:minInt(len(aiBody), 200)])
+	}
+
+	// (c) Summary has PENDING status
+	if !strings.Contains(out, "**Status:** `PENDING`") {
+		t.Errorf("adopt-path Summary should contain PENDING status field")
+	}
+}
+
+// TestSyncMethodologyDocPresent (AC68 AT5) asserts the new doc exists in
+// all three locations with the nine load-bearing substrings.
+func TestSyncMethodologyDocPresent(t *testing.T) {
+	t.Parallel()
+	requiredSubstrings := []string{
+		"Default to adopting template content",
+		"1. **Structure pass",
+		"2. **Content pass",
+		"3. **Residual check",
+		"4. **Role files pass",
+		"5. **Manifest pass",
+		"6. **Report",
+		"7. **Feedback",
+		"dispositions.md",
+		"Companion Artifacts",
+	}
+	sources := []struct {
+		label string
+		read  func() ([]byte, error)
+	}{
+		{"docs/sync-methodology.md", func() ([]byte, error) {
+			return os.ReadFile("../../docs/sync-methodology.md")
+		}},
+		{"examples/code/docs/sync-methodology.md", func() ([]byte, error) {
+			return os.ReadFile("../../examples/code/docs/sync-methodology.md")
+		}},
+		{"overlay sync-methodology.md.tmpl", func() ([]byte, error) {
+			return fs.ReadFile(templates.EmbeddedFS, "overlays/code/files/docs/sync-methodology.md.tmpl")
+		}},
+	}
+	for _, tc := range sources {
+		raw, err := tc.read()
+		if err != nil {
+			t.Errorf("%s: read: %v", tc.label, err)
+			continue
+		}
+		content := string(raw)
+		for _, sub := range requiredSubstrings {
+			if !strings.Contains(content, sub) {
+				t.Errorf("%s: missing required substring %q", tc.label, sub)
+			}
+		}
+	}
+}
+
+// minInt is a test-local helper (math.Min is float; min builtin requires Go 1.21+
+// ordered constraint which the rest of the codebase avoids; inline avoids churn).
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

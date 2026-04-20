@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.44.0 | AC68: tighten sync-review.md (methodology extract + CLEAN compact) |
 | 0.43.1 | AC67: plan.md skeleton policy end-to-end fix |
 | 0.43.0 | AC66: plan.md skeleton coverage + `## Local Rules` convention |
 | 0.42.0 | AC65: tighten AC/critique protocol for DEV/QA Phase 1 |
