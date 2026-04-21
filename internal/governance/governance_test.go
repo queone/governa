@@ -3066,10 +3066,10 @@ func TestPlanMdHasIdeasToExploreSection(t *testing.T) {
 		"## Product Direction",
 		"## Ideas To Explore",
 	)
-	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
+	if !strings.Contains(content, "Ideas captured for future reference") {
 		t.Fatal("plan.md: Ideas To Explore preamble missing")
 	}
-	if !strings.Contains(content, "pre-rubric staging, not a historical record") {
+	if !strings.Contains(content, "not a historical record") {
 		t.Fatal("plan.md: pruning guidance missing")
 	}
 }
@@ -3081,7 +3081,7 @@ func TestCodeOverlayPlanTemplateHasIdeasToExploreSection(t *testing.T) {
 		"## Product Direction",
 		"## Ideas To Explore",
 	)
-	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
+	if !strings.Contains(content, "Ideas captured for future reference") {
 		t.Fatal("CODE plan template: Ideas To Explore preamble missing")
 	}
 }
@@ -3093,7 +3093,7 @@ func TestCodeRenderedExamplePlanHasIdeasToExploreSection(t *testing.T) {
 		"## Product Direction",
 		"## Ideas To Explore",
 	)
-	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
+	if !strings.Contains(content, "Ideas captured for future reference") {
 		t.Fatal("CODE rendered example plan: Ideas To Explore preamble missing")
 	}
 }
@@ -3110,8 +3110,14 @@ func TestDevelopmentCycleMentionsIdeasToExplore(t *testing.T) {
 		if !strings.Contains(content, "`Ideas To Explore`") {
 			t.Errorf("%s: should reference `Ideas To Explore` to name the origination surface", path)
 		}
-		if !strings.Contains(content, "pre-rubric follow-on ideas") {
-			t.Errorf("%s: should direct pre-rubric follow-on ideas to Ideas To Explore", path)
+		if !strings.Contains(content, "pre-rubric idea") {
+			t.Errorf("%s: Notes should name shape (a) pre-rubric idea (AC74)", path)
+		}
+		if !strings.Contains(content, "pointer to a drafted AC stub") {
+			t.Errorf("%s: Notes should name shape (b) pointer to a drafted AC stub (AC74)", path)
+		}
+		if !strings.Contains(content, "converts to shape (b)") {
+			t.Errorf("%s: promotion path should pin the shape-a → shape-b conversion (AC74)", path)
 		}
 		if !strings.Contains(content, "rubric-clears") {
 			t.Errorf("%s: step 1 should pin the director-rubric-clears origination phrasing (AC73)", path)
@@ -3224,7 +3230,8 @@ func TestIdeasToExploreIEPrefix(t *testing.T) {
 		}
 	}
 
-	// Development cycle docs must reference IE prefix and cleanup rule
+	// Development cycle docs must reference IE prefix, the AC74 shape-a → shape-b
+	// transition, and the AC74 cleanup rule.
 	for _, path := range []string{
 		"docs/development-cycle.md",
 		"internal/templates/overlays/code/files/docs/development-cycle.md.tmpl",
@@ -3234,11 +3241,11 @@ func TestIdeasToExploreIEPrefix(t *testing.T) {
 		if !strings.Contains(c, "`IE<N>:`") {
 			t.Errorf("%s: should reference `IE<N>:` prefix for Ideas To Explore entries", path)
 		}
-		if !strings.Contains(c, "IE entry") {
-			t.Errorf("%s: promotion path should reference IE entries", path)
+		if !strings.Contains(c, "IE converts") {
+			t.Errorf("%s: promotion path should pin the shape-a → shape-b conversion (AC74)", path)
 		}
-		if !strings.Contains(c, "remove IE entries when promoted") {
-			t.Errorf("%s: should state the IE cleanup rule (remove when promoted or completed)", path)
+		if !strings.Contains(c, "remove IE entries when the underlying idea is closed") {
+			t.Errorf("%s: should state the AC74 cleanup rule (remove when underlying idea is closed)", path)
 		}
 	}
 
@@ -3249,8 +3256,8 @@ func TestIdeasToExploreIEPrefix(t *testing.T) {
 		"examples/code/plan.md",
 	} {
 		c := readRepoFile(t, path)
-		if !strings.Contains(c, "pre-rubric staging, not a historical record") {
-			t.Errorf("%s: Ideas To Explore preamble should state that the list is staging, not history", path)
+		if !strings.Contains(c, "not a historical record") {
+			t.Errorf("%s: Ideas To Explore preamble should state that the list is not a historical record", path)
 		}
 	}
 
@@ -10459,7 +10466,7 @@ func buildPlanMd(productDirection, ideas string) string {
 		productDirection = "Placeholder product direction."
 	}
 	if ideas == "" {
-		ideas = "Pre-rubric ideas captured for future discussion."
+		ideas = "Ideas captured for future reference."
 	}
 	s := planMdTemplateShell
 	s = strings.Replace(s, "{{PRODUCT_DIRECTION}}", productDirection, 1)
@@ -11551,6 +11558,33 @@ func TestArchMdCarriesGovernaInternalInvariants(t *testing.T) {
 	for _, want := range wantSubstrings {
 		if !strings.Contains(content, want) {
 			t.Errorf("arch.md: missing required architecture note %q (AC73)", want)
+		}
+	}
+}
+
+// --- AC74 tests (Ideas To Explore dual-use semantics) ---
+
+// TestPlanMdIEPreambleNamesBothShapes (AC74 AT1) asserts the IE preamble
+// across all 3 plan.md locations names both entry shapes and the shape-a →
+// shape-b transition invariant.
+func TestPlanMdIEPreambleNamesBothShapes(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"plan.md",
+		"examples/code/plan.md",
+		"internal/templates/overlays/code/files/plan.md.tmpl",
+	}
+	wantSubstrings := []string{
+		"pre-rubric idea",
+		"pointer to a drafted AC stub",
+		"converts to shape (b)",
+	}
+	for _, path := range paths {
+		content := readRepoFile(t, path)
+		for _, want := range wantSubstrings {
+			if !strings.Contains(content, want) {
+				t.Errorf("%s: missing required IE preamble substring %q (AC74)", path, want)
+			}
 		}
 	}
 }

@@ -25,10 +25,10 @@ This repo uses an acceptance-criteria-first workflow.
 - keep roadmap decisions in `plan.md`
 - keep architecture changes in `arch.md`
 - keep repo-level governance in `AGENTS.md`
-- record loose, pre-rubric follow-on ideas in `plan.md` under `Ideas To Explore` with an `IE<N>:` prefix
-- remove IE entries when promoted to an AC or completed; the list is staging, not history
+- record follow-on ideas in `plan.md` under `Ideas To Explore` with an `IE<N>:` prefix (pre-rubric idea or pointer to a drafted AC stub)
+- remove IE entries when the underlying idea is closed — rejected, retired, or (for AC pointers) the pointed-to AC has shipped
 - write AC docs to file (`docs/ac<N>-<slug>.md`); summarize in the response but do not dump full AC content into conversation
-- promotion path: IE entry → discussion → objective-fit rubric (see `AGENTS.md` Approval Boundaries) → AC
+- promotion path: shape (a) IE → discussion → objective-fit rubric (see `AGENTS.md` Approval Boundaries) → AC drafted (IE converts to shape (b) pointer, same `IE<N>` number) → AC ships (IE removed)
 
 ## Local Rules
 
