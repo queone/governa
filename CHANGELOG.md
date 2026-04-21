@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.45.2 | AC71: ack+advisor+verbosity fixes (addresses utils feedback from v0.45.1 syncs) |
 | 0.45.1 | AC70: Feedback Credits enforcement (addresses utils feedback from v0.42.0 syncs) |
 | 0.45.0 | AC69: enhance feedback loop + utils feedback + integrated critique default (addresses utils feedback from v0.42.0 syncs) |
 | 0.44.0 | AC68: tighten sync-review.md (methodology extract + CLEAN compact) |

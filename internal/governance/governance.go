@@ -516,6 +516,21 @@ func validateConfig(cfg Config) error {
 	case ModeEnhance:
 		// -r is optional: empty means self-review mode
 	case ModeAck:
+		// AC71 Part A: --review is read-only with no path required. Short-circuit
+		// the path-required + reason-required checks when AckReview is set, and
+		// reject any flag that would change its read-only semantics.
+		if cfg.AckReview {
+			if cfg.AckPath != "" {
+				return errors.New("`--review` is read-only and cannot be combined with a path argument")
+			}
+			if cfg.AckReason != "" {
+				return errors.New("`--review` is read-only and cannot be combined with `--reason`")
+			}
+			if cfg.AckRemove {
+				return errors.New("`--review` is read-only and cannot be combined with `--remove`")
+			}
+			return nil
+		}
 		if cfg.AckPath == "" {
 			return errors.New("path is required: use `governa ack <path>`")
 		}
@@ -826,7 +841,7 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	// closure-detection logic. DryRun emits would-remove lines; otherwise
 	// actually deletes. No-op when no flagged files.
 	if cfg.PruneFeedback {
-		closures := buildFeedbackClosures(targetAbs, oldManifest.TemplateVersion, templateVersion)
+		closures := buildFeedbackClosures(targetAbs, templateVersion)
 		if err := pruneClosedFeedback(closures, cfg.DryRun, os.Stdout); err != nil {
 			return err
 		}
@@ -4058,7 +4073,7 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	// include them in the section-open decision. AC63 also computes
 	// feedback-file closures from CHANGELOG credits.
 	ieAdvisories := buildIEResolutionAdvisories(targetDir, oldVersion, newVersion)
-	feedbackClosures := buildFeedbackClosures(targetDir, oldVersion, newVersion)
+	feedbackClosures := buildFeedbackClosures(targetDir, newVersion)
 	hasAdvisory := len(ieAdvisories) > 0 || len(feedbackClosures) > 0
 	if !hasAdvisory {
 		for _, s := range scores {
@@ -5198,8 +5213,11 @@ func semverInRange(ver, start, end string) bool {
 // buildFeedbackClosuresFromRows matches .governa/feedback/ files against
 // consumer-credit references in CHANGELOG rows. Returns one feedbackCloser
 // per matched file, sorted by filename. Test seam — the production entry
-// point reads embedded CHANGELOG and delegates here. (AC63)
-func buildFeedbackClosuresFromRows(targetDir string, rows []changelogRow, oldVersion, newVersion string) []feedbackCloser {
+// point reads embedded CHANGELOG and delegates here. Level-triggered since
+// AC71 Part B: the scan considers every row ≤ newVersion regardless of any
+// consumer baseline, so closures stay visible across multiple sync cycles
+// until the feedback file is pruned. (AC63; level-triggered per AC71)
+func buildFeedbackClosuresFromRows(targetDir string, rows []changelogRow, newVersion string) []feedbackCloser {
 	if targetDir == "" || newVersion == "" {
 		return nil
 	}
@@ -5213,9 +5231,14 @@ func buildFeedbackClosuresFromRows(targetDir string, rows []changelogRow, oldVer
 		return nil
 	}
 
-	// Bound: only consider CHANGELOG rows for governa versions newer than
-	// the consumer's prior TEMPLATE_VERSION and ≤ current embedded version.
-	oldV, hasOld := parseSemver(oldVersion)
+	// AC71 Part B: level-triggered. Only upper-bound the scan at the current
+	// embedded version (newVersion). The lower-bound oldVersion filter was
+	// dropped because it made the advisor edge-triggered — once a sync
+	// advanced the baseline past the credit row, subsequent syncs lost the
+	// closure signal even though the feedback file still sat on disk. The
+	// per-file semverInRange match below already constrains a row→file pair
+	// to credits whose declared range contains the file's version, so
+	// widening the row window doesn't widen what counts as a "close."
 	newV, hasNew := parseSemver(newVersion)
 	if !hasNew {
 		return nil
@@ -5231,12 +5254,8 @@ func buildFeedbackClosuresFromRows(targetDir string, rows []changelogRow, oldVer
 			continue
 		}
 		for _, row := range rows {
-			// Scope rows to the sync's version window.
 			rowV, hasRow := parseSemver(row.version)
 			if !hasRow {
-				continue
-			}
-			if hasOld && !rowV.newerThan(oldV) {
 				continue
 			}
 			if rowV.newerThan(newV) {
@@ -5265,9 +5284,9 @@ func buildFeedbackClosuresFromRows(targetDir string, rows []changelogRow, oldVer
 
 // buildFeedbackClosures is the production entry point that reads governa's
 // embedded CHANGELOG and delegates to the seam above. (AC63)
-func buildFeedbackClosures(targetDir, oldVersion, newVersion string) []feedbackCloser {
+func buildFeedbackClosures(targetDir, newVersion string) []feedbackCloser {
 	rows := parseChangelogRows(templates.Changelog())
-	return buildFeedbackClosuresFromRows(targetDir, rows, oldVersion, newVersion)
+	return buildFeedbackClosuresFromRows(targetDir, rows, newVersion)
 }
 
 // pruneClosedFeedback deletes the feedback files in closures. Respects

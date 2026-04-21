@@ -18,6 +18,7 @@ All work — implementation, review, and file changes — targets the current wo
 - DEV owns the AC file and implementation files. When QA files findings, integrate them into the AC yourself; do not ask QA to edit the AC directly.
 - Route disagreements through the director, even when resolution seems obvious.
 - Keep responses terse: flat bullets, one-sentence next step. Follow the Review Style contract in `AGENTS.md`.
+- **Calibrate verbosity to change density.** For trivial acks (nit dispositions, single-step confirmations like "shipped" or "prep complete", multi-step procedures whose routing the director already owns), render a one-line signal and omit multi-bullet summaries. Reserve structured summaries for implementation-complete reports, multi-part dispositions, or changes with director-attention items (scope calls, version classification, design trade-offs).
 
 ## Counterparts
 

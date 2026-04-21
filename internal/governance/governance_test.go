@@ -1146,6 +1146,76 @@ func TestValidateConfigAckRemoveRejectsReason(t *testing.T) {
 	}
 }
 
+// AT1 (AC71 Part A): `--review` reaches the runtime with no path required.
+// ParseModeArgs(ModeAck, []string{"--review"}) must return AckReview=true,
+// AckPath="", and no validation error. Short-form `-r` also covered.
+func TestAckReviewWithoutPath(t *testing.T) {
+	t.Parallel()
+	cases := []string{"--review", "-r"}
+	for _, flag := range cases {
+		cfg, help, err := ParseModeArgs(ModeAck, []string{flag})
+		if err != nil {
+			t.Errorf("%s: unexpected error = %v", flag, err)
+			continue
+		}
+		if help {
+			t.Errorf("%s: help should be false", flag)
+		}
+		if !cfg.AckReview {
+			t.Errorf("%s: AckReview should be true", flag)
+		}
+		if cfg.AckPath != "" {
+			t.Errorf("%s: AckPath should be empty, got %q", flag, cfg.AckPath)
+		}
+		// validateConfig must return nil (no path required).
+		if err := validateConfig(cfg); err != nil {
+			t.Errorf("%s: validateConfig returned error: %v", flag, err)
+		}
+	}
+}
+
+// AT2 (AC71 Part A): `--review` combined with path, reason, or remove is
+// rejected with an actionable error naming both `--review` and the
+// conflicting flag.
+func TestAckReviewRejectsConflictingFlags(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		cfg     Config
+		wantSub string
+	}{
+		{
+			name:    "path",
+			cfg:     Config{Mode: ModeAck, AckReview: true, AckPath: "some/path"},
+			wantSub: "path argument",
+		},
+		{
+			name:    "reason",
+			cfg:     Config{Mode: ModeAck, AckReview: true, AckReason: "why"},
+			wantSub: "`--reason`",
+		},
+		{
+			name:    "remove",
+			cfg:     Config{Mode: ModeAck, AckReview: true, AckRemove: true},
+			wantSub: "`--remove`",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateConfig(tc.cfg)
+			if err == nil {
+				t.Fatalf("expected error for --review + %s, got nil", tc.name)
+			}
+			if !strings.Contains(err.Error(), "`--review`") {
+				t.Errorf("%s: error missing `--review` mention; got: %v", tc.name, err)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("%s: error missing %q; got: %v", tc.name, tc.wantSub, err)
+			}
+		})
+	}
+}
+
 func TestValidateConfigNoMode(t *testing.T) {
 	t.Parallel()
 	err := validateConfig(Config{})
@@ -7399,6 +7469,69 @@ func TestQaRoleCounterparts(t *testing.T) {
 	}
 }
 
+// AT5 (AC71 Part C): QA verbosity-calibration rule present in all 5 qa.md
+// locations. Asserts the rule sits inside the `## Rules` section (above
+// `## Counterparts`) and appears exactly once per file.
+func TestQARoleCarriesVerbosityCalibrationRule(t *testing.T) {
+	t.Parallel()
+	const rule = "**Calibrate verbosity to findings density.**"
+	paths := []string{
+		"docs/roles/qa.md",
+		"internal/templates/overlays/code/files/docs/roles/qa.md.tmpl",
+		"examples/code/docs/roles/qa.md",
+		"internal/templates/overlays/doc/files/docs/roles/qa.md.tmpl",
+		"examples/doc/docs/roles/qa.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if got := strings.Count(c, rule); got != 1 {
+				t.Fatalf("%s: rule count = %d, want 1", rel, got)
+			}
+			rulesIdx := strings.Index(c, "\n## Rules\n")
+			ruleIdx := strings.Index(c, rule)
+			counterpartsIdx := strings.Index(c, "\n## Counterparts\n")
+			if rulesIdx < 0 || ruleIdx < 0 || counterpartsIdx < 0 {
+				t.Fatalf("%s: missing expected section/rule anchors (rules=%d rule=%d counterparts=%d)", rel, rulesIdx, ruleIdx, counterpartsIdx)
+			}
+			if !(rulesIdx < ruleIdx && ruleIdx < counterpartsIdx) {
+				t.Errorf("%s: rule must sit inside ## Rules (between rules=%d and counterparts=%d), got rule=%d", rel, rulesIdx, counterpartsIdx, ruleIdx)
+			}
+		})
+	}
+}
+
+// AT6 (AC71 Part C): DEV verbosity-calibration rule present in all 5 dev.md
+// locations, inside the `## Rules` section, exactly once.
+func TestDEVRoleCarriesVerbosityCalibrationRule(t *testing.T) {
+	t.Parallel()
+	const rule = "**Calibrate verbosity to change density.**"
+	paths := []string{
+		"docs/roles/dev.md",
+		"internal/templates/overlays/code/files/docs/roles/dev.md.tmpl",
+		"examples/code/docs/roles/dev.md",
+		"internal/templates/overlays/doc/files/docs/roles/dev.md.tmpl",
+		"examples/doc/docs/roles/dev.md",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if got := strings.Count(c, rule); got != 1 {
+				t.Fatalf("%s: rule count = %d, want 1", rel, got)
+			}
+			rulesIdx := strings.Index(c, "\n## Rules\n")
+			ruleIdx := strings.Index(c, rule)
+			counterpartsIdx := strings.Index(c, "\n## Counterparts\n")
+			if rulesIdx < 0 || ruleIdx < 0 || counterpartsIdx < 0 {
+				t.Fatalf("%s: missing expected section/rule anchors (rules=%d rule=%d counterparts=%d)", rel, rulesIdx, ruleIdx, counterpartsIdx)
+			}
+			if !(rulesIdx < ruleIdx && ruleIdx < counterpartsIdx) {
+				t.Errorf("%s: rule must sit inside ## Rules (between rules=%d and counterparts=%d), got rule=%d", rel, rulesIdx, counterpartsIdx, ruleIdx)
+			}
+		})
+	}
+}
+
 // AT3: maintainer.md Counterparts section present in all 5 locations, names Director,
 // mentions conflict of interest + self-review.
 func TestMaintainerRoleCounterparts(t *testing.T) {
@@ -9394,7 +9527,7 @@ func TestFeedbackAdvisoryFiresOnMatchingCredit(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62: bundle (addresses skout feedback from v0.36.0 sync)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	if len(closures) != 1 {
 		t.Fatalf("expected 1 closure, got %v", closures)
 	}
@@ -9410,7 +9543,7 @@ func TestFeedbackAdvisorySkipsWhenNoCreditMatch(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62: bundle (unrelated changelog text)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	if len(closures) != 0 {
 		t.Errorf("expected no closures, got %v", closures)
 	}
@@ -9423,7 +9556,7 @@ func TestFeedbackAdvisorySkipsWhenConsumerNameMismatch(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62: ... (addresses utils feedback from v0.36.0 sync)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	if len(closures) != 0 {
 		t.Errorf("expected no closures (consumer mismatch), got %v", closures)
 	}
@@ -9442,7 +9575,7 @@ func TestFeedbackAdvisoryHandlesVersionRange(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62: bundle (addresses skout feedback from v0.36.0–v0.38.0 syncs)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	if len(closures) != 3 {
 		t.Fatalf("expected 3 closures (v0.36.0/0.37.0/0.38.0), got %d: %v", len(closures), closures)
 	}
@@ -9463,7 +9596,7 @@ func TestFeedbackAdvisorySkipsPreConventionFilenames(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62 (addresses skout feedback from v0.36.0 sync)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	if len(closures) != 1 {
 		t.Fatalf("expected 1 closure (versioned file only), got %v", closures)
 	}
@@ -9545,7 +9678,7 @@ func TestPruneFeedbackSkipsPreConventionFile(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62 (addresses skout feedback from v0.36.0 sync)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	if len(closures) != 0 {
 		t.Fatalf("expected no closures for pre-convention file, got %v", closures)
 	}
@@ -9569,7 +9702,7 @@ func TestPruneFeedbackNoMatchesEmitsNoDeletion(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62 (unrelated)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	var buf bytes.Buffer
 	if err := pruneClosedFeedback(closures, false, &buf); err != nil {
 		t.Fatalf("pruneClosedFeedback: %v", err)
@@ -9690,27 +9823,75 @@ func TestSemverInRangeRejectsUnparseable(t *testing.T) {
 	}
 }
 
+// AT3 (AC71 Part B): closure advisor is level-triggered. It flags a feedback
+// file whenever a CHANGELOG row credits its version, regardless of how far
+// past the credit the current baseline is. Pre-AC71 the advisor was
+// edge-triggered (only fired on the sync that first crossed the credit),
+// which left feedback files unpruned on subsequent syncs.
+func TestFeedbackAdvisorLevelTriggered(t *testing.T) {
+	t.Parallel()
+	credit := "AC62: bundle (addresses skout feedback from v0.36.0 syncs)"
+	cases := []struct {
+		name       string
+		newVersion string
+	}{
+		// Same-version sync immediately after the credit shipped.
+		{name: "immediate-post-credit", newVersion: "0.40.0"},
+		// Far-forward same-version sync (many syncs past the credit row).
+		{name: "far-forward-same-version", newVersion: "0.50.0"},
+		// Far-forward with progress (baseline already past the credit; newer version still within reach).
+		{name: "far-forward-with-progress", newVersion: "0.50.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := ac63Fixture(t, "github.com/example/skout", "ac60-governa-sync-0.36.0.md")
+			rows := []changelogRow{
+				{version: "0.40.0", summary: credit},
+			}
+			closures := buildFeedbackClosuresFromRows(dir, rows, tc.newVersion)
+			if len(closures) != 1 {
+				t.Fatalf("%s: expected 1 closure, got %v", tc.name, closures)
+			}
+			if closures[0].governaVersion != "0.40.0" {
+				t.Errorf("%s: governaVersion = %q, want 0.40.0", tc.name, closures[0].governaVersion)
+			}
+		})
+	}
+
+	t.Run("no-credit-no-closure", func(t *testing.T) {
+		t.Parallel()
+		dir := ac63Fixture(t, "github.com/example/skout", "ac60-governa-sync-0.36.0.md")
+		rows := []changelogRow{
+			{version: "0.40.0", summary: "AC62: bundle (no credit here)"},
+		}
+		if got := buildFeedbackClosuresFromRows(dir, rows, "0.50.0"); len(got) != 0 {
+			t.Errorf("expected 0 closures without a credit, got %v", got)
+		}
+	})
+}
+
 // AC63 additional coverage: buildFeedbackClosuresFromRows handles missing
 // target, missing feedback directory, and unparseable new version.
 func TestBuildFeedbackClosuresEdgeCases(t *testing.T) {
 	t.Parallel()
 	// Empty targetDir.
-	if got := buildFeedbackClosuresFromRows("", nil, "0.35.0", "0.40.0"); len(got) != 0 {
+	if got := buildFeedbackClosuresFromRows("", nil, "0.40.0"); len(got) != 0 {
 		t.Errorf("empty targetDir: expected nil, got %v", got)
 	}
 	// Missing newVersion.
 	dir := ac63Fixture(t, "github.com/example/skout", "ac60-governa-sync-0.36.0.md")
-	if got := buildFeedbackClosuresFromRows(dir, nil, "0.35.0", ""); len(got) != 0 {
+	if got := buildFeedbackClosuresFromRows(dir, nil, ""); len(got) != 0 {
 		t.Errorf("empty newVersion: expected nil, got %v", got)
 	}
 	// Unparseable newVersion.
-	if got := buildFeedbackClosuresFromRows(dir, nil, "0.35.0", "not-semver"); len(got) != 0 {
+	if got := buildFeedbackClosuresFromRows(dir, nil, "not-semver"); len(got) != 0 {
 		t.Errorf("unparseable newVersion: expected nil, got %v", got)
 	}
 	// No feedback directory.
 	empty := t.TempDir()
 	mustWrite(t, filepath.Join(empty, "go.mod"), "module x\n")
-	if got := buildFeedbackClosuresFromRows(empty, nil, "0.35.0", "0.40.0"); len(got) != 0 {
+	if got := buildFeedbackClosuresFromRows(empty, nil, "0.40.0"); len(got) != 0 {
 		t.Errorf("no feedback dir: expected nil, got %v", got)
 	}
 }
@@ -9727,7 +9908,7 @@ func TestFeedbackAdvisoryUsesExistingHasAdvisoryGate(t *testing.T) {
 	rows := []changelogRow{
 		{version: "0.40.0", summary: "AC62: bundle (addresses skout feedback from v0.36.0 sync)"},
 	}
-	closures := buildFeedbackClosuresFromRows(dir, rows, "0.35.0", "0.40.0")
+	closures := buildFeedbackClosuresFromRows(dir, rows, "0.40.0")
 	if len(closures) == 0 {
 		t.Skip("fixture produced no closures; skipping gate test")
 	}

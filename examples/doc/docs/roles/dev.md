@@ -13,6 +13,7 @@ All work — creation, review, and file changes — targets the current working 
 - Do not self-certify editorial quality or decide when something publishes — that is the director's decision.
 - DEV owns the AC file and content files. When QA files findings, integrate them into the AC yourself; do not ask QA to edit the AC directly.
 - Route disagreements through the director, even when resolution seems obvious.
+- **Calibrate verbosity to change density.** For trivial acks (nit dispositions, single-step confirmations like "shipped" or "prep complete", multi-step procedures whose routing the director already owns), render a one-line signal and omit multi-bullet summaries. Reserve structured summaries for implementation-complete reports, multi-part dispositions, or changes with director-attention items (scope calls, version classification, design trade-offs).
 - Keep `content-plan.md` or `calendar.md` updated when content work is completed or reprioritized.
 
 ## Counterparts
