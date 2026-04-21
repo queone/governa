@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.46.0 | AC73: simplify plan.md to Product Direction + Ideas To Explore |
 | 0.45.3 | AC72: integrated-critique doc sweep (qa.md + ac-template.md) |
 | 0.45.2 | AC71: ack+advisor+verbosity fixes (addresses utils feedback from v0.45.1 syncs) |
 | 0.45.1 | AC70: Feedback Credits enforcement (addresses utils feedback from v0.42.0 syncs) |

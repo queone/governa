@@ -3063,8 +3063,7 @@ func TestPlanMdHasIdeasToExploreSection(t *testing.T) {
 	t.Parallel()
 	content := readRepoFile(t, "plan.md")
 	assertSectionOrdering(t, content, "plan.md",
-		"## Priorities",
-		"## Deferred",
+		"## Product Direction",
 		"## Ideas To Explore",
 	)
 	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
@@ -3079,8 +3078,7 @@ func TestCodeOverlayPlanTemplateHasIdeasToExploreSection(t *testing.T) {
 	t.Parallel()
 	content := readRepoFile(t, "internal/templates/overlays/code/files/plan.md.tmpl")
 	assertSectionOrdering(t, content, "overlays/code/files/plan.md.tmpl",
-		"## Priorities",
-		"## Deferred",
+		"## Product Direction",
 		"## Ideas To Explore",
 	)
 	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
@@ -3092,8 +3090,7 @@ func TestCodeRenderedExamplePlanHasIdeasToExploreSection(t *testing.T) {
 	t.Parallel()
 	content := readRepoFile(t, "examples/code/plan.md")
 	assertSectionOrdering(t, content, "examples/code/plan.md",
-		"## Priorities",
-		"## Deferred",
+		"## Product Direction",
 		"## Ideas To Explore",
 	)
 	if !strings.Contains(content, "Pre-rubric ideas captured for future discussion") {
@@ -3101,7 +3098,7 @@ func TestCodeRenderedExamplePlanHasIdeasToExploreSection(t *testing.T) {
 	}
 }
 
-func TestDevelopmentCycleMentionsPriorities(t *testing.T) {
+func TestDevelopmentCycleMentionsIdeasToExplore(t *testing.T) {
 	t.Parallel()
 	paths := []string{
 		"docs/development-cycle.md",
@@ -3110,14 +3107,17 @@ func TestDevelopmentCycleMentionsPriorities(t *testing.T) {
 	}
 	for _, path := range paths {
 		content := readRepoFile(t, path)
-		if !strings.Contains(content, "`Priorities`") {
-			t.Errorf("%s: should reference `Priorities` to make the source of approved items explicit", path)
-		}
 		if !strings.Contains(content, "`Ideas To Explore`") {
-			t.Errorf("%s: should reference `Ideas To Explore` to name the boundary in the workflow doc", path)
+			t.Errorf("%s: should reference `Ideas To Explore` to name the origination surface", path)
 		}
 		if !strings.Contains(content, "pre-rubric follow-on ideas") {
 			t.Errorf("%s: should direct pre-rubric follow-on ideas to Ideas To Explore", path)
+		}
+		if !strings.Contains(content, "rubric-clears") {
+			t.Errorf("%s: step 1 should pin the director-rubric-clears origination phrasing (AC73)", path)
+		}
+		if !strings.Contains(content, "director-originated") {
+			t.Errorf("%s: step 1 should pin the director-originated origination phrasing (AC73)", path)
 		}
 	}
 }
@@ -7907,15 +7907,17 @@ func TestBulletRemovalAdvisoryRendersOnAdopt(t *testing.T) {
 	}
 }
 
-// AT1 (AC53 IE6): plan.md with all skeleton headings present but skeleton-section
-// content differing from template produces "keep" recommendation.
+// AT1 (AC53 IE6, reshaped by AC73): plan.md with all skeleton headings
+// present but skeleton-section content differing from template produces
+// "keep" recommendation. AC73 trimmed the skeleton to Product Direction
+// + Ideas To Explore.
 func TestPlanMdSkeletonPolicyDowngradesAdopt(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	existing := "# Plan\n\n## Product Direction\n\nrepo-specific direction\n\n## Priorities\n\nrepo priorities\n\n## Ideas To Explore\n\n- IE1: something\n\n## Constraints\n\nshared constraints\n"
+	existing := "# Plan\n\n## Product Direction\n\nrepo-specific direction\n\n## Ideas To Explore\n\n- IE1: something\n"
 	mustWrite(t, planPath, existing)
-	proposed := "# Plan\n\n## Product Direction\n\ntemplate placeholder\n\n## Priorities\n\n(no active items)\n\n## Ideas To Explore\n\n(none yet)\n\n## Constraints\n\nshared constraints\n"
+	proposed := "# Plan\n\n## Product Direction\n\ntemplate placeholder\n\n## Ideas To Explore\n\n(none yet)\n"
 	score := scoreOverlayCollision(planPath, proposed, "old", "new")
 	if score.recommendation != "keep" {
 		t.Fatalf("recommendation = %q, want keep (skeleton-only changes); reason = %q", score.recommendation, score.reason)
@@ -7925,15 +7927,16 @@ func TestPlanMdSkeletonPolicyDowngradesAdopt(t *testing.T) {
 	}
 }
 
-// AT2 (AC53 IE6): plan.md with a missing skeleton heading remains "adopt".
+// AT2 (AC53 IE6, reshaped by AC73): plan.md with a missing skeleton heading
+// remains "adopt".
 func TestPlanMdSkeletonPolicyEscalatesOnMissingSection(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	existing := "# Plan\n\n## Product Direction\n\nrepo direction\n\n## Constraints\n\nrepo constraints\n"
+	existing := "# Plan\n\n## Product Direction\n\nrepo direction\n"
 	mustWrite(t, planPath, existing)
-	// Proposed has all three skeleton sections; existing is missing Priorities and Ideas To Explore.
-	proposed := "# Plan\n\n## Product Direction\n\ntemplate direction\n\n## Priorities\n\n(no items)\n\n## Ideas To Explore\n\n(none)\n\n## Constraints\n\nshared\n"
+	// Proposed has both skeleton sections; existing is missing Ideas To Explore.
+	proposed := "# Plan\n\n## Product Direction\n\ntemplate direction\n\n## Ideas To Explore\n\n(none)\n"
 	score := scoreOverlayCollision(planPath, proposed, "old", "new")
 	if score.recommendation != "adopt" {
 		t.Fatalf("recommendation = %q, want adopt (missing skeleton sections is structural drift); reason = %q", score.recommendation, score.reason)
@@ -8681,16 +8684,15 @@ func TestRunAckSurfacesTemplateChangedAcknowledgedDrift(t *testing.T) {
 	}
 }
 
-// AC58 AT1/AT2/AT3: plan.md files have canonical section order across the
-// root repo, the overlay template, and the rendered example.
+// AC58 AT1/AT2/AT3 (reshaped by AC73): plan.md files have canonical section
+// order across the root repo, the overlay template, and the rendered example.
+// AC73 trimmed the canonical order from 5 sections to 2 (Product Direction,
+// Ideas To Explore).
 func TestPlanMdCanonicalSectionOrder(t *testing.T) {
 	t.Parallel()
 	wantOrder := []string{
 		"Product Direction",
-		"Priorities",
-		"Deferred",
 		"Ideas To Explore",
-		"Constraints",
 	}
 	cases := []struct {
 		label string
@@ -9557,8 +9559,11 @@ func TestSyncReviewLabelsTemplateDrivenAndConsumerDrift(t *testing.T) {
 	}
 }
 
-// AC62 Leg 6 / AT14: development-cycle step 1 includes the governance-AC
-// carve-out note across root, overlay template, and example.
+// AC62 Leg 6 / AT14 (updated by AC73): development-cycle step 1 names the
+// director-originated AC origination path (governance, sync-adoption,
+// template-upgrade, hotfix, refinement) across root, overlay template, and
+// example. AC73 reworded the carve-out but preserves the invariant that
+// these AC origin types are explicit in step 1.
 func TestDevelopmentCycleStep1HasGovernanceACNote(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -9579,8 +9584,8 @@ func TestDevelopmentCycleStep1HasGovernanceACNote(t *testing.T) {
 			t.Errorf("%s: %v", tc.label, err)
 			continue
 		}
-		if !strings.Contains(string(content), "Governance, sync-adoption, and director-originated ACs may originate outside") {
-			t.Errorf("%s: step 1 missing governance-AC carve-out note", tc.label)
+		if !strings.Contains(string(content), "director-originated work (governance, sync-adoption, template-upgrade, hotfix, refinement)") {
+			t.Errorf("%s: step 1 missing director-originated-work carve-out", tc.label)
 		}
 	}
 }
@@ -10431,6 +10436,7 @@ Content.
 }
 
 // --- AC66 tests (plan.md skeleton policy coverage + Local Rules convention) ---
+// AC73 reshaped these to the 2-section skeleton (Product Direction + Ideas To Explore).
 
 // planMdTemplateShell is a minimal plan.md that matches the template's
 // section structure. Tests swap individual section bodies to simulate
@@ -10441,106 +10447,36 @@ const planMdTemplateShell = `# Plan
 
 {{PRODUCT_DIRECTION}}
 
-## Priorities
-
-{{PRIORITIES}}
-
-## Deferred
-
-{{DEFERRED}}
-
 ## Ideas To Explore
 
 {{IDEAS}}
-
-## Constraints
-
-{{CONSTRAINTS}}
 `
 
 // buildPlanMd renders a synthetic plan.md with caller-supplied section bodies.
 // Omitted fields render as the template's placeholder text.
-func buildPlanMd(productDirection, priorities, deferred, ideas, constraints string) string {
+func buildPlanMd(productDirection, ideas string) string {
 	if productDirection == "" {
 		productDirection = "Placeholder product direction."
-	}
-	if priorities == "" {
-		priorities = "(no active roadmap items)"
-	}
-	if deferred == "" {
-		deferred = "| ID | Description | Reason |\n|----|-------------|--------|"
 	}
 	if ideas == "" {
 		ideas = "Pre-rubric ideas captured for future discussion."
 	}
-	if constraints == "" {
-		constraints = "- Placeholder constraint."
-	}
 	s := planMdTemplateShell
 	s = strings.Replace(s, "{{PRODUCT_DIRECTION}}", productDirection, 1)
-	s = strings.Replace(s, "{{PRIORITIES}}", priorities, 1)
-	s = strings.Replace(s, "{{DEFERRED}}", deferred, 1)
 	s = strings.Replace(s, "{{IDEAS}}", ideas, 1)
-	s = strings.Replace(s, "{{CONSTRAINTS}}", constraints, 1)
 	return s
 }
 
-// TestPlanMdSkeletonPolicyCoversConstraints (AC66 AT1) asserts that repo
-// content in the Constraints section alone is classified as "keep", not
-// "adopt". Pre-AC66 this failed because Constraints was not in the
-// skeleton-sections registry.
-func TestPlanMdSkeletonPolicyCoversConstraints(t *testing.T) {
-	t.Parallel()
-
-	template := buildPlanMd("", "", "", "", "")
-	consumer := buildPlanMd("", "", "", "", "- Repo-specific constraint A.\n- Repo-specific constraint B.")
-
-	dir := t.TempDir()
-	planPath := filepath.Join(dir, "plan.md")
-	if err := os.WriteFile(planPath, []byte(consumer), 0o644); err != nil {
-		t.Fatalf("write plan.md: %v", err)
-	}
-
-	// Template is the "proposed" content; old == new checksum means template unchanged
-	// since last sync. Consumer differs only in the Constraints body.
-	score := scoreOverlayCollision(planPath, template, "checksum", "checksum")
-	if score.recommendation != "keep" {
-		t.Errorf("recommendation = %q, want keep (Constraints is a skeleton section)", score.recommendation)
-	}
-}
-
-// TestPlanMdSkeletonPolicyCoversDeferred (AC66 AT2) asserts repo content in
-// the Deferred section alone classifies as "keep".
-func TestPlanMdSkeletonPolicyCoversDeferred(t *testing.T) {
-	t.Parallel()
-
-	template := buildPlanMd("", "", "", "", "")
-	consumer := buildPlanMd("", "", "| DEF1 | Deferred item | Blocked on X |", "", "")
-
-	dir := t.TempDir()
-	planPath := filepath.Join(dir, "plan.md")
-	if err := os.WriteFile(planPath, []byte(consumer), 0o644); err != nil {
-		t.Fatalf("write plan.md: %v", err)
-	}
-
-	score := scoreOverlayCollision(planPath, template, "checksum", "checksum")
-	if score.recommendation != "keep" {
-		t.Errorf("recommendation = %q, want keep (Deferred is a skeleton section)", score.recommendation)
-	}
-}
-
-// TestPlanMdSkeletonPolicyCoversAllSkeletonSections (AC66 AT3) asserts repo
-// content in all five skeleton sections classifies as "keep".
+// TestPlanMdSkeletonPolicyCoversAllSkeletonSections (AC66 AT3, reshaped by
+// AC73) asserts repo content in all skeleton sections classifies as "keep".
+// AC73 trimmed the skeleton to Product Direction + Ideas To Explore.
 func TestPlanMdSkeletonPolicyCoversAllSkeletonSections(t *testing.T) {
 	t.Parallel()
 
-	template := buildPlanMd("", "", "", "", "")
+	template := buildPlanMd("", "")
 	consumer := buildPlanMd(
 		"Real product direction.",
-		"- Priority 1\n- Priority 2",
-		"| DEF1 | Item | Reason |",
 		"- IE1: idea A\n- IE2: idea B",
-		"- Real constraint A\n- Real constraint B",
 	)
 
 	dir := t.TempDir()
@@ -10689,16 +10625,12 @@ func TestLocalRulesGuidanceInDevelopmentCycle(t *testing.T) {
 func TestPlanMdSkeletonPolicyClearsStandingDriftEndToEnd(t *testing.T) {
 	t.Parallel()
 
-	// Consumer plan.md has repo content in three skeleton sections;
-	// Deferred and Ideas To Explore match template placeholders.
+	// Consumer plan.md has repo content in both skeleton sections.
 	consumer := buildPlanMd(
 		"Repo-specific product direction.",
-		"- Priority 1\n- Priority 2",
-		"",
-		"",
-		"- Repo constraint A\n- Repo constraint B",
+		"- IE1: idea A\n- IE2: idea B",
 	)
-	template := buildPlanMd("", "", "", "", "")
+	template := buildPlanMd("", "")
 
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
@@ -10768,22 +10700,9 @@ func TestPlanMdSkeletonPolicyPreservesMissingSectionDrift(t *testing.T) {
 ## Product Direction
 
 Repo-specific direction.
-
-## Priorities
-
-- Priority 1
-
-## Deferred
-
-| ID | Description | Reason |
-|----|-------------|--------|
-
-## Constraints
-
-- Repo constraint.
 `
-	// Template has all five sections including the one consumer is missing.
-	template := buildPlanMd("", "", "", "", "")
+	// Template has both skeleton sections including the one consumer is missing.
+	template := buildPlanMd("", "")
 
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
@@ -10813,9 +10732,9 @@ func TestPlanMdSkeletonPolicyFiltersStructuralNotes(t *testing.T) {
 		path:           "/some/dir/plan.md",
 		recommendation: "keep",
 		structuralNotes: []structuralNote{
-			{section: "Priorities", observation: "fake skeleton note"},   // skeleton — should be filtered
-			{section: "Constraints", observation: "fake skeleton note"},  // skeleton — should be filtered
-			{section: "Non Skeleton", observation: "fake non-skel note"}, // not skeleton — should be kept
+			{section: "Product Direction", observation: "fake skeleton note"}, // skeleton — should be filtered
+			{section: "Ideas To Explore", observation: "fake skeleton note"},  // skeleton — should be filtered
+			{section: "Non Skeleton", observation: "fake non-skel note"},      // not skeleton — should be kept
 		},
 	}
 	applyPlanMdSkeletonPolicy(&score)
@@ -11563,6 +11482,75 @@ func TestNotAgentsMdCarveoutInGovernedSections(t *testing.T) {
 		carveIdx := strings.Index(gsBlock, carveoutSubstring)
 		if prIdx < 0 || carveIdx < prIdx {
 			t.Errorf("%s: carve-out bullet should appear after the Project Rules list item", tc.label)
+		}
+	}
+}
+
+// --- AC73 tests (plan.md simplified to Product Direction + Ideas To Explore) ---
+
+// TestPlanMdSkeletonIsTwoSections (AC73 AT1) asserts the live skeleton
+// registry contains exactly the two sections AC73 preserved.
+func TestPlanMdSkeletonIsTwoSections(t *testing.T) {
+	t.Parallel()
+	want := map[string]bool{
+		"Product Direction": true,
+		"Ideas To Explore":  true,
+	}
+	if len(planMdSkeletonSections) != len(want) {
+		t.Fatalf("planMdSkeletonSections size = %d, want %d; got %+v", len(planMdSkeletonSections), len(want), planMdSkeletonSections)
+	}
+	for k := range want {
+		if !planMdSkeletonSections[k] {
+			t.Errorf("planMdSkeletonSections missing required key %q", k)
+		}
+	}
+	for k := range planMdSkeletonSections {
+		if !want[k] {
+			t.Errorf("planMdSkeletonSections has unexpected key %q (AC73 simplified to 2 sections)", k)
+		}
+	}
+}
+
+// TestPlanMdTemplateShapeIsSimplified (AC73 AT2) asserts all 3 plan.md
+// locations contain the 2 retained sections and none of the 3 removed ones.
+func TestPlanMdTemplateShapeIsSimplified(t *testing.T) {
+	t.Parallel()
+	paths := []string{
+		"plan.md",
+		"examples/code/plan.md",
+		"internal/templates/overlays/code/files/plan.md.tmpl",
+	}
+	wantPresent := []string{"## Product Direction", "## Ideas To Explore"}
+	wantAbsent := []string{"## Priorities", "## Deferred", "## Constraints"}
+	for _, path := range paths {
+		content := readRepoFile(t, path)
+		for _, section := range wantPresent {
+			if !strings.Contains(content, section) {
+				t.Errorf("%s: missing required section %q", path, section)
+			}
+		}
+		for _, section := range wantAbsent {
+			if strings.Contains(content, section) {
+				t.Errorf("%s: still contains removed section %q (AC73)", path, section)
+			}
+		}
+	}
+}
+
+// TestArchMdCarriesGovernaInternalInvariants (AC73 AT3) asserts arch.md §
+// Architecture Notes carries the 3 governa-internal invariants that AC73
+// moved out of plan.md's Constraints section.
+func TestArchMdCarriesGovernaInternalInvariants(t *testing.T) {
+	t.Parallel()
+	content := readRepoFile(t, "arch.md")
+	wantSubstrings := []string{
+		"pure stdlib; no external Go dependencies",
+		"templates use `{{PLACEHOLDER}}` substitution",
+		"overlays are additive",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(content, want) {
+			t.Errorf("arch.md: missing required architecture note %q (AC73)", want)
 		}
 	}
 }

@@ -42,6 +42,9 @@ For `enhance`, a maintainer runs from inside this repo, points at another govern
 - shell wrappers are conveniences only; the canonical implementation lives in Go
 - `docs/roles/` provides role-specific behavior docs (director reference, DEV, QA, maintainer) that supplement the shared governance contract; role selection is instruction-driven and defined in `Interaction Mode`
 - governa-managed metadata in consumer repos lives under a single `.governa/` directory: `manifest` (committed), `proposed/` (ephemeral), `sync-review.md` (working artifact), `feedback/` (persistent consumer feedback). Legacy flat paths (`.governa-manifest`, `.governa-proposed/`, `governa-sync-review.md`) are auto-migrated at sync start.
+- pure stdlib; no external Go dependencies (verified via `go.mod`)
+- templates use `{{PLACEHOLDER}}` substitution, not a templating engine (text/template intentionally not used)
+- overlays are additive; they must not conflict with the base governance contract
 
 ## Conventions
 

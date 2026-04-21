@@ -4924,14 +4924,12 @@ func computeBulletRemovals(existingContent, proposedContent string) []bulletRemo
 // planMdSkeletonSections lists plan.md sections whose content the template
 // only seeds with placeholder prose. Repos are expected to fill these with
 // project-specific content; sync should not flag content differences as
-// "adopt" for these sections alone. (AC53 IE6; AC66 added Constraints and
-// Deferred to cover the full set of consumer-fillable plan.md sections.)
+// "adopt" for these sections alone. (AC53 IE6 introduced the mechanism;
+// AC73 simplified plan.md to Product Direction + Ideas To Explore only,
+// superseding AC66's Priorities/Deferred/Constraints additions.)
 var planMdSkeletonSections = map[string]bool{
 	"Product Direction": true,
-	"Priorities":        true,
 	"Ideas To Explore":  true,
-	"Constraints":       true, // AC66
-	"Deferred":          true, // AC66
 }
 
 // repoOwnedConsumerOnlySections lists section names the scorer treats as
