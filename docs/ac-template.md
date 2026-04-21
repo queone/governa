@@ -87,7 +87,7 @@ List the docs that must be updated as part of this AC. If a change touches code 
 
 List every scope or wording trade-off chosen between two or more viable options during the DEV/QA cycle. Each entry names the option taken and a one-line why. Empty is allowed — write `None` when the AC has no judgment calls worth surfacing.
 
-QA's final-round terminator cross-checks that this list is exhaustive (not just the calls DEV feels uncertain about). Omissions surfaced by QA land in the critique file's `Director attention` field.
+QA's final-round terminator cross-checks that this list is exhaustive (not just the calls DEV feels uncertain about). Omissions surfaced by QA land in the round's `Director attention` field inside the AC's `## Critique` section.
 
 - Decision X: option taken (alternatives considered: A, B). Why: <one-line>.
 

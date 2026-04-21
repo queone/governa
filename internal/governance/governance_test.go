@@ -7469,6 +7469,85 @@ func TestQaRoleCounterparts(t *testing.T) {
 	}
 }
 
+// AT1 (AC72 Part A): qa.md write-surface rule reflects integrated-mode
+// reality (chat only, DEV transcribes) across all 5 locations, and the
+// stale `-critique.md` reference is gone. Verifies the CODE/DOC variant
+// preserves "implementation code" vs "implementation content" respectively.
+func TestQARoleWriteSurfaceMatchesIntegratedMode(t *testing.T) {
+	t.Parallel()
+	const (
+		chatOnly   = "QA's write surface is **chat only**"
+		transcribe = "DEV transcribes QA's findings into the AC's `## Critique` section"
+		stale      = "docs/ac<N>-<slug>-critique.md"
+	)
+	codeVariants := []string{
+		"docs/roles/qa.md",
+		"examples/code/docs/roles/qa.md",
+		"internal/templates/overlays/code/files/docs/roles/qa.md.tmpl",
+	}
+	docVariants := []string{
+		"examples/doc/docs/roles/qa.md",
+		"internal/templates/overlays/doc/files/docs/roles/qa.md.tmpl",
+	}
+	for _, rel := range append(append([]string{}, codeVariants...), docVariants...) {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, chatOnly) {
+				t.Errorf("%s: missing integrated-mode write-surface marker %q", rel, chatOnly)
+			}
+			if !strings.Contains(c, transcribe) {
+				t.Errorf("%s: missing DEV-transcription clause %q", rel, transcribe)
+			}
+			if strings.Contains(c, stale) {
+				t.Errorf("%s: stale -critique.md reference still present; AC72 should have removed it", rel)
+			}
+		})
+	}
+	for _, rel := range codeVariants {
+		t.Run(rel+"/code-variant", func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "implementation code") {
+				t.Errorf("%s: CODE variant should preserve 'implementation code' phrasing", rel)
+			}
+		})
+	}
+	for _, rel := range docVariants {
+		t.Run(rel+"/doc-variant", func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, "implementation content") {
+				t.Errorf("%s: DOC variant should preserve 'implementation content' phrasing", rel)
+			}
+		})
+	}
+}
+
+// AT2 (AC72 Part B): ac-template.md Director Review paragraph names the AC's
+// `## Critique` section (not a separate "critique file") across all 3
+// locations. Stale "critique file's" phrasing absent.
+func TestACTemplateDirectorReviewTerminologyUpdated(t *testing.T) {
+	t.Parallel()
+	const (
+		want  = "the round's `Director attention` field inside the AC's `## Critique` section"
+		stale = "critique file's `Director attention` field"
+	)
+	paths := []string{
+		"docs/ac-template.md",
+		"examples/code/docs/ac-template.md",
+		"internal/templates/overlays/code/files/docs/ac-template.md.tmpl",
+	}
+	for _, rel := range paths {
+		t.Run(rel, func(t *testing.T) {
+			c := readRepoFile(t, rel)
+			if !strings.Contains(c, want) {
+				t.Errorf("%s: missing integrated-mode Director-Review clause %q", rel, want)
+			}
+			if strings.Contains(c, stale) {
+				t.Errorf("%s: stale 'critique file's' phrasing still present; AC72 should have removed it", rel)
+			}
+		})
+	}
+}
+
 // AT5 (AC71 Part C): QA verbosity-calibration rule present in all 5 qa.md
 // locations. Asserts the rule sits inside the `## Rules` section (above
 // `## Counterparts`) and appears exactly once per file.
