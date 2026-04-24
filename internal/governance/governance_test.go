@@ -11801,3 +11801,157 @@ func TestExtractFeedbackMetadataVersion(t *testing.T) {
 		t.Errorf("nonexistent file: got %q, want %q", got, "unknown")
 	}
 }
+
+// --- AC76 tests (sync-review quality) ---
+
+// AC76 AT1: demoteSubsectionCoverage demotes adopt → keep when consumer has
+// sub-subsections the template doesn't.
+func TestDemoteSubsectionCoverage(t *testing.T) {
+	t.Parallel()
+	score := collisionScore{
+		recommendation: "adopt",
+		reason:         "structural alignment needed in: Project Rules",
+		structuralNotes: []structuralNote{
+			{
+				section:      "Project Rules",
+				existingBody: "### Build\n\n- use ./build.sh\n\n### Versioning\n\n- follow semver\n",
+				templateBody: "- Always use the repo's canonical build command\n- Follow semver\n",
+				observation:  "template uses flat bullets; consumer uses sub-subsections — review individually",
+			},
+		},
+	}
+	demoteSubsectionCoverage(&score)
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep", score.recommendation)
+	}
+	if !strings.Contains(score.reason, "domain-specific sub-subsections") {
+		t.Fatalf("reason = %q, want mention of sub-subsections", score.reason)
+	}
+}
+
+// AC76 AT2: demoteSubsectionCoverage does NOT demote when neither side has
+// sub-subsections (no false positive).
+func TestDemoteSubsectionCoverageNoFalsePositive(t *testing.T) {
+	t.Parallel()
+	score := collisionScore{
+		recommendation: "adopt",
+		reason:         "template sections changed: Project Rules (cosmetic)",
+	}
+	demoteSubsectionCoverage(&score)
+	if score.recommendation != "adopt" {
+		t.Fatalf("recommendation = %q, want adopt (no structural notes)", score.recommendation)
+	}
+}
+
+// AC76 AT2 supplement: demoteSubsectionCoverage does NOT demote when the
+// recommendation is already "keep".
+func TestDemoteSubsectionCoverageSkipsKeep(t *testing.T) {
+	t.Parallel()
+	score := collisionScore{
+		recommendation: "keep",
+		reason:         "un-adopted template differences",
+		structuralNotes: []structuralNote{
+			{
+				section:      "Project Rules",
+				existingBody: "### Build\n\n- use ./build.sh\n",
+				templateBody: "- Always use build command\n",
+			},
+		},
+	}
+	demoteSubsectionCoverage(&score)
+	if score.recommendation != "keep" {
+		t.Fatalf("recommendation = %q, want keep (was already keep)", score.recommendation)
+	}
+}
+
+// AC76 AT3: detectCrossFileRefs finds removed backtick-quoted references
+// that correspond to ## headings in downstream files.
+func TestDetectCrossFileRefs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// plan.md has a ## Priorities section
+	os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# Plan\n\n## Priorities\n\n- item 1\n\n## Ideas To Explore\n\nPre-rubric ideas.\n"), 0o644)
+
+	// development-cycle.md exists on disk (the "existing" version references Priorities)
+	devCyclePath := filepath.Join(dir, "docs", "development-cycle.md")
+	os.MkdirAll(filepath.Join(dir, "docs"), 0o755)
+	os.WriteFile(devCyclePath, []byte("# Cycle\n\n1. Pull from the `Priorities` section of `plan.md`.\n\n## Notes\n\n- record under `Priorities`\n"), 0o644)
+
+	scores := []collisionScore{
+		{
+			path:            devCyclePath,
+			recommendation:  "adopt",
+			proposedContent: "# Cycle\n\n1. Choose the next approved item from `Ideas To Explore`.\n\n## Notes\n\n- record under `Ideas To Explore`\n",
+		},
+	}
+
+	refs := detectCrossFileRefs(dir, scores)
+
+	found := false
+	for _, ref := range refs {
+		if ref.removedRef == "Priorities" && ref.downstreamFile == "plan.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected cross-file ref advisory for Priorities → plan.md, got %v", refs)
+	}
+}
+
+// AC76 AT4: detectCrossFileRefs emits nothing when the referenced section
+// does not exist in downstream files (no false positive).
+func TestDetectCrossFileRefsNoFalsePositive(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// plan.md does NOT have a ## Priorities section
+	os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# Plan\n\n## Ideas To Explore\n\nIdeas here.\n"), 0o644)
+
+	devCyclePath := filepath.Join(dir, "docs", "development-cycle.md")
+	os.MkdirAll(filepath.Join(dir, "docs"), 0o755)
+	os.WriteFile(devCyclePath, []byte("# Cycle\n\n1. Pull from `Priorities`.\n"), 0o644)
+
+	scores := []collisionScore{
+		{
+			path:            devCyclePath,
+			recommendation:  "adopt",
+			proposedContent: "# Cycle\n\n1. Choose from `Ideas To Explore`.\n",
+		},
+	}
+
+	refs := detectCrossFileRefs(dir, scores)
+	if len(refs) != 0 {
+		t.Fatalf("expected no cross-file refs, got %v", refs)
+	}
+}
+
+// AC76: structural note observation wording is neutral (not "consider adopting").
+func TestStructuralNoteObservationWording(t *testing.T) {
+	t.Parallel()
+	existing := "## Project Rules\n\n### Build\n\n- use build.sh\n"
+	proposed := "## Project Rules\n\n- Always use build command\n"
+	notes := compareStructure(existing, proposed)
+	if len(notes) == 0 {
+		t.Fatal("expected structural note")
+	}
+	if strings.Contains(notes[0].observation, "consider adopting") {
+		t.Fatalf("observation should use neutral wording, got %q", notes[0].observation)
+	}
+	if !strings.Contains(notes[0].observation, "review individually") {
+		t.Fatalf("observation should say 'review individually', got %q", notes[0].observation)
+	}
+}
+
+// AC76: extractBacktickNames extracts backtick-quoted strings.
+func TestExtractBacktickNames(t *testing.T) {
+	t.Parallel()
+	content := "Pull from the `Priorities` section of `plan.md`. Record under `Ideas To Explore`."
+	names := extractBacktickNames(content)
+	want := map[string]bool{"Priorities": true, "plan.md": true, "Ideas To Explore": true}
+	for k := range want {
+		if !names[k] {
+			t.Errorf("missing expected name %q", k)
+		}
+	}
+}

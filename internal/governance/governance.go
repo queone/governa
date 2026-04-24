@@ -1998,6 +1998,7 @@ func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry,
 			promoteStructuralNotes(&score)
 			demoteScaffold(&score)
 			demoteExtractedPackage(&score, modulePath)
+			demoteSubsectionCoverage(&score)
 			if score.recommendation == "accept" {
 				out[i] = op // file doesn't exist, write directly
 			} else {
@@ -3905,6 +3906,108 @@ func demoteExtractedPackage(score *collisionScore, modulePath string) {
 	}
 }
 
+// demoteSubsectionCoverage downgrades adopt → keep when the consumer has ###
+// sub-subsections that the template doesn't. This overrides promoteStructuralNotes
+// which pushes in the opposite direction on the same signal.
+func demoteSubsectionCoverage(score *collisionScore) {
+	if score.recommendation != "adopt" {
+		return
+	}
+	for _, n := range score.structuralNotes {
+		existingHasSub := strings.Contains(n.existingBody, "\n### ") || strings.HasPrefix(n.existingBody, "### ")
+		templateHasSub := strings.Contains(n.templateBody, "\n### ") || strings.HasPrefix(n.templateBody, "### ")
+		if existingHasSub && !templateHasSub {
+			score.recommendation = "keep"
+			score.reason = fmt.Sprintf("consumer has domain-specific sub-subsections in %s that may already cover the template's generic bullets — review individually rather than bulk-adopting", n.section)
+			return
+		}
+	}
+}
+
+// crossFileRefAdvisory detects backtick-quoted references removed by an
+// adopted change and checks whether the referenced name corresponds to a
+// ## heading in a downstream file. Returns advisory lines for the sync-review.
+type crossFileRef struct {
+	sourceFile     string
+	removedRef     string
+	downstreamFile string
+}
+
+func detectCrossFileRefs(targetDir string, scores []collisionScore) []crossFileRef {
+	downstreamFiles := []string{"plan.md", "arch.md", "AGENTS.md"}
+	var refs []crossFileRef
+	for _, s := range scores {
+		if s.recommendation != "adopt" {
+			continue
+		}
+		existing, err := os.ReadFile(s.path)
+		if err != nil {
+			continue
+		}
+		oldRefs := extractBacktickNames(string(existing))
+		newRefs := extractBacktickNames(s.proposedContent)
+		removed := setDiff(oldRefs, newRefs)
+		if len(removed) == 0 {
+			continue
+		}
+		rel := s.path
+		if r, err := filepath.Rel(targetDir, s.path); err == nil {
+			rel = filepath.ToSlash(r)
+		}
+		for _, name := range removed {
+			for _, df := range downstreamFiles {
+				if filepath.ToSlash(rel) == df {
+					continue
+				}
+				dfPath := filepath.Join(targetDir, df)
+				content, err := os.ReadFile(dfPath)
+				if err != nil {
+					continue
+				}
+				heading := "## " + name
+				if strings.Contains(string(content), heading+"\n") || strings.HasSuffix(string(content), heading) {
+					refs = append(refs, crossFileRef{
+						sourceFile:     rel,
+						removedRef:     name,
+						downstreamFile: df,
+					})
+				}
+			}
+		}
+	}
+	return refs
+}
+
+func extractBacktickNames(content string) map[string]bool {
+	names := make(map[string]bool)
+	for {
+		_, after, ok := strings.Cut(content, "`")
+		if !ok {
+			break
+		}
+		name, rest, ok := strings.Cut(after, "`")
+		if !ok {
+			break
+		}
+		if len(name) > 0 && !strings.ContainsAny(name, "\n\r") {
+			names[name] = true
+		}
+		content = rest
+	}
+	return names
+}
+
+func setDiff(a, b map[string]bool) []string {
+	var diff []string
+	for k := range a {
+		if !b[k] {
+			diff = append(diff, k)
+		}
+	}
+	slices.Sort(diff)
+	return diff
+}
+
 func scoreGovernanceCollision(op operation, oldSourceChecksum string, newSourceChecksum string) collisionScore {
 	existingContent, err := os.ReadFile(op.path)
 	if err != nil {
@@ -4142,13 +4245,14 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	}
 
 	// Advisory notes: keep files with missing sections, section renames,
-	// IE-resolution matches (AC53 IE8), and per-section bullet removals on
-	// adopt (AC53 IE7). IE advisories are computed once upfront so we can
-	// include them in the section-open decision. AC63 also computes
-	// feedback-file closures from CHANGELOG credits.
+	// IE-resolution matches (AC53 IE8), per-section bullet removals on
+	// adopt (AC53 IE7), cross-file reference removals (AC76 Part B).
+	// IE advisories are computed once upfront so we can include them in the
+	// section-open decision. AC63 also computes feedback-file closures.
 	ieAdvisories := buildIEResolutionAdvisories(targetDir, oldVersion, newVersion)
 	feedbackClosures := buildFeedbackClosures(targetDir, newVersion)
-	hasAdvisory := len(ieAdvisories) > 0 || len(feedbackClosures) > 0
+	crossFileRefs := detectCrossFileRefs(targetDir, scores)
+	hasAdvisory := len(ieAdvisories) > 0 || len(feedbackClosures) > 0 || len(crossFileRefs) > 0
 	if !hasAdvisory {
 		for _, s := range scores {
 			if s.recommendation == "keep" && len(s.missingSections) > 0 {
@@ -4230,6 +4334,10 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 		for _, line := range ieAdvisories {
 			fmt.Fprintln(&b, line)
 		}
+		for _, ref := range crossFileRefs {
+			fmt.Fprintf(&b, "- `%s`: adopted change removes reference to `%s` — verify whether `%s` `## %s` section is still needed\n",
+				ref.sourceFile, ref.removedRef, ref.downstreamFile, ref.removedRef)
+		}
 		// AC63: feedback-file closure advisories. Each line names the
 		// feedback file closed by a specific governa release and points the
 		// operator at `governa sync -f` for automated cleanup.
@@ -4306,7 +4414,7 @@ func compareStructure(existingContent, proposedContent string) []structuralNote 
 				section:      es.Name,
 				existingBody: es.Body,
 				templateBody: proposedBody,
-				observation:  "template uses simpler structure (flat bullets) — consider adopting the format while preserving project-specific rules",
+				observation:  "template uses flat bullets; consumer uses sub-subsections — review individually",
 			})
 		}
 	}
