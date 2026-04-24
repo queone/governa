@@ -2,7 +2,7 @@
 
 ## Product Direction
 
-Provide a narrow, usable governance template that can bootstrap new repos, adopt existing repos safely, and improve itself through a controlled enhancement path.
+Provide a narrow, usable governance template that bootstraps new repos and adopts existing ones safely. Template improvements are proposed out-of-band by agents reviewing consumer repos directly — not through a CLI subcommand.
 
 ## Ideas To Explore
 
@@ -10,3 +10,4 @@ Ideas captured for future reference. Prefix each with `IE<N>:` (sequential N) fo
 
 - IE4: LLM-assisted sync review — add an optional LLM call to governa sync that evaluates diffs and generates concrete summaries of what changed and why it matters, draft dispositions for each item, and a recommended action list. Addresses the observed pattern where agents summarize standing drift as "nothing to do" despite detailed advisory notes. Requires: API key management, provider abstraction, cost/latency tradeoffs, opt-in flag
 - IE5: DEV/QA automation — reduce the manual cross-terminal copy-paste of the DEV/QA critique loop without losing the fresh-context isolation that makes critique valuable. Phase 1 (tighten the AC/critique protocol) shipped in AC65; the live spec is `docs/critique-protocol.md` plus the `## Director Review` section in `docs/ac-template.md`. Remaining scope: (a) pilot 2–3 ACs under the shipped Phase 1 protocol to collect evidence on critique quality, then (b) choose the Phase 2 mechanism among a mechanical bridge script, same-session role-switching, or subagent-based QA based on pilot data. Phase 3 specialist fan-out deferred. Forward-looking design context (Phase-0.5 bridge, Option 2, Option 3, open questions) preserved in `docs/knowledge/dev-qa-automation-exploration.md`.
+- IE6: Post-minimal-governa trim follow-ups — second trim pass after the minimal-governa AC ships. Open items surfaced during the direction shift: (a) whether `governa sync` needs an explicit non-interactive flag set for CI after collision handling becomes interactive-prompt by default; (b) whether the trimmed template still needs an embedded CHANGELOG (historically consumed by sync-review's Template Changes card, gone with that); (c) how the new out-of-band LLM-evaluation workflow (DEV/QA agents reviewing consumer repos, proposing template PRs directly) should be documented — pure convention vs a `docs/enhance-protocol.md` successor; (d) simplification of `prep.sh` / `preptool` for smaller overlay footprint; (e) making `mdcheck` simpler and faster.

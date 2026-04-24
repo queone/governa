@@ -18,7 +18,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.49.0"
+const programVersion = "0.50.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -35,13 +35,16 @@ func main() {
 	case "version", "ver":
 		fmt.Printf("governa v%s (template %s)\nsource: %s\n", programVersion, templates.TemplateVersion, sourceRepo)
 		return
-	case "sync", "enhance", "ack":
+	case "sync":
 		// handled below
 	case "new":
 		fmt.Fprintf(os.Stderr, "unknown command: new (use \"governa sync\")\n")
 		os.Exit(2)
 	case "adopt":
 		fmt.Fprintf(os.Stderr, "unknown command: adopt (use \"governa sync\")\n")
+		os.Exit(2)
+	case "enhance", "ack":
+		fmt.Fprintf(os.Stderr, "command removed in v0.50.0: %q (see CHANGELOG)\n", subcmd)
 		os.Exit(2)
 	case "-h", "--help", "-?", "help", "h":
 		printUsage()
@@ -67,52 +70,24 @@ func main() {
 	versionNotice := make(chan string, 1)
 	go checkLatestVersion(versionNotice)
 
-	var tfs fs.FS
-	var repoRoot string
+	// Fail-safe: refuse to sync into the governa repo itself. The check looks at
+	// the target path (so syncing from inside the governa repo to an *external*
+	// dir via -t is fine — only writing the template onto the template source
+	// is the forbidden case).
+	if target, _ := filepath.Abs(cfg.Target); target != "" {
+		if _, err := detectGovernaCheckoutAt(target); err == nil {
+			fmt.Fprintln(os.Stderr, "error: cannot run sync against the governa repo itself — sync is for consumer repos")
+			os.Exit(1)
+		}
+	}
 
-	if mode == governance.ModeEnhance {
-		root, err := detectGovernaCheckout()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+	var tfs fs.FS = templates.EmbeddedFS
+	if err := governance.RunWithFS(tfs, "", cfg); err != nil {
+		if errors.Is(err, governance.ErrConflictsPresent) {
 			os.Exit(1)
 		}
-		repoRoot = root
-
-		if cfg.Reference == "" {
-			// Self-review: compare on-disk templates against embedded baseline.
-			deltas, err := governance.RunSelfReview(templates.EmbeddedFS, templates.DiskFS(root), templates.TemplateVersion)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-			governance.PrintSelfReview(deltas, templates.TemplateVersion)
-		} else {
-			tfs = templates.DiskFS(root)
-			if err := governance.RunWithFS(tfs, repoRoot, cfg); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-		}
-	} else {
-		// Fail-safe: refuse to run consumer-repo commands against the governa repo itself.
-		if _, err := detectGovernaCheckout(); err == nil {
-			if mode == governance.ModeAck {
-				fmt.Fprintln(os.Stderr, "error: cannot run ack inside the governa repo — ack is for consumer repos, use enhance for self-review")
-			} else {
-				fmt.Fprintln(os.Stderr, "error: cannot run sync inside the governa repo — sync is for consumer repos, use enhance for self-review")
-			}
-			os.Exit(1)
-		}
-		tfs = templates.EmbeddedFS
-		if err := governance.RunWithFS(tfs, repoRoot, cfg); err != nil {
-			// Conflicts have already been printed to stderr by runSync;
-			// exit non-zero so scripted callers can detect them.
-			if errors.Is(err, governance.ErrConflictsPresent) {
-				os.Exit(1)
-			}
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	// Wait for version check (bounded by the 2-second HTTP timeout).
@@ -126,31 +101,26 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, color.Gra(fmt.Sprintf("Repo governance templates — %s", sourceRepo)))
 	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
 		{Flag: "sync", Desc: "bootstrap or update governance in a repo"},
-		{Flag: "enhance", Desc: "review a reference repo for template improvements"},
-		{Flag: "ack", Desc: "record or remove acknowledged drift for a file"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help, h", Desc: "show this help"},
-	}, "Run 'governa <command> --help' for command-specific flags."))
+	}, "Run 'governa sync --help' for sync-specific flags."))
 }
 
-// detectGovernaCheckout verifies the working directory is a governa checkout.
-func detectGovernaCheckout() (string, error) {
-	cwd, err := os.Getwd()
+// detectGovernaCheckoutAt reports whether `dir` looks like a governa checkout.
+// Used by the sync fail-safe to refuse writing the template over its own
+// source.
+func detectGovernaCheckoutAt(dir string) (string, error) {
+	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
-		return "", fmt.Errorf("resolve working directory: %w", err)
-	}
-
-	gomod, err := os.ReadFile(filepath.Join(cwd, "go.mod"))
-	if err != nil {
-		return "", fmt.Errorf("enhance must be run from inside a governa checkout (no go.mod found)")
+		return "", fmt.Errorf("no go.mod found")
 	}
 	if !strings.Contains(string(gomod), "module github.com/queone/governa") {
-		return "", fmt.Errorf("enhance must be run from inside a governa checkout (go.mod module is not github.com/queone/governa)")
+		return "", fmt.Errorf("go.mod module is not github.com/queone/governa")
 	}
-	if _, err := os.Stat(filepath.Join(cwd, "internal", "templates", "base")); err != nil {
-		return "", fmt.Errorf("enhance must be run from inside a governa checkout (internal/templates/base not found)")
+	if _, err := os.Stat(filepath.Join(dir, "internal", "templates", "base")); err != nil {
+		return "", fmt.Errorf("internal/templates/base not found")
 	}
-	return cwd, nil
+	return dir, nil
 }
 
 var semverRe = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)

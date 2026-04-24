@@ -1,31 +1,25 @@
 package governance
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
 const manifestFormatVersion = "governa-manifest-v1"
 
 // governa-managed metadata lives under a single `.governa/` directory in
-// consumer repos (AC55). Primary paths:
+// consumer repos (AC55). Primary path:
 const (
 	governaDir       = ".governa"
 	manifestFileName = ".governa/manifest"
-	proposedDirName  = ".governa/proposed"
-	syncReviewFile   = ".governa/sync-review.md"
-	feedbackDirName  = ".governa/feedback"
 )
 
-// Legacy path names detected and migrated on sync. Kept as constants so the
-// migration helper and backward-compatible readers reference one source.
+// Legacy path names detected and migrated on sync. Kept for backward
+// compatibility so pre-AC55 repos still detect as re-sync before the migration
+// helper runs.
 const (
 	legacyManifestFileName      = ".repokit-manifest"
 	legacyPreAC55ManifestFile   = ".governa-manifest"
@@ -34,6 +28,16 @@ const (
 )
 
 const legacyManifestFormatVersion = "repokit-manifest-v1"
+
+// AC78 legacy artifacts. Consumer repos that synced under pre-AC78 governa
+// may carry these paths from earlier sync artifacts. migrateGovernaLegacyPaths
+// removes them transparently on the next sync.
+const (
+	legacyPreAC78ProposedDir    = ".governa/proposed"
+	legacyPreAC78SyncReviewFile = ".governa/sync-review.md"
+	legacyPreAC78FeedbackDir    = ".governa/feedback"
+	legacyPreAC78ConfigFile     = ".governa/config"
+)
 
 type ManifestParams struct {
 	RepoName           string
@@ -48,76 +52,18 @@ type Manifest struct {
 	FormatVersion   string
 	TemplateVersion string
 	Params          ManifestParams
-	Entries         []ManifestEntry
-	Acknowledged    []AcknowledgedEntry
 }
 
-type ManifestEntry struct {
-	Path           string
-	Checksum       string
-	SourcePath     string
-	SourceChecksum string
-	Kind           string // "file" or "symlink"
-	SymlinkTarget  string
-}
-
-type AcknowledgedEntry struct {
-	Path            string
-	ConsumerSHA     string
-	TemplateSHA     string
-	TemplateVersion string
-	Reason          string
-}
-
-func computeChecksum(content string) string {
-	h := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(h[:])
-}
-
-func buildManifest(ops []operation, templateVersion string, tfs fs.FS, repoRoot string, targetRoot string) Manifest {
-	m := Manifest{
+// buildManifest constructs the post-sync manifest. AC78 reduces it to template
+// bookkeeping: the format-version marker, the template version the consumer
+// now tracks, and the params used for rendering. Per-file checksums and the
+// acknowledged-drift ledger are retired.
+func buildManifest(templateVersion string, params ManifestParams) Manifest {
+	return Manifest{
 		FormatVersion:   manifestFormatVersion,
 		TemplateVersion: templateVersion,
+		Params:          params,
 	}
-
-	for _, op := range ops {
-		var repoRel string
-		if rel, err := filepath.Rel(targetRoot, op.path); err == nil {
-			repoRel = filepath.ToSlash(rel)
-		} else {
-			repoRel = filepath.ToSlash(op.path)
-		}
-
-		switch op.kind {
-		case "write":
-			entry := ManifestEntry{
-				Path:       repoRel,
-				Checksum:   computeChecksum(op.content),
-				SourcePath: filepath.ToSlash(op.source),
-				Kind:       "file",
-			}
-			if op.source != "" {
-				sourceContent, err := readTemplateOrRoot(tfs, repoRoot, op.source)
-				if err == nil {
-					entry.SourceChecksum = computeChecksum(string(sourceContent))
-				}
-			}
-			m.Entries = append(m.Entries, entry)
-		case "symlink":
-			entry := ManifestEntry{
-				Path:          repoRel,
-				Kind:          "symlink",
-				SymlinkTarget: op.linkTo,
-				SourcePath:    filepath.ToSlash(op.source),
-			}
-			m.Entries = append(m.Entries, entry)
-		}
-	}
-
-	sort.Slice(m.Entries, func(i, j int) bool {
-		return m.Entries[i].Path < m.Entries[j].Path
-	})
-	return m
 }
 
 func formatManifest(m Manifest) string {
@@ -142,39 +88,13 @@ func formatManifest(m Manifest) string {
 	if m.Params.Style != "" {
 		fmt.Fprintf(&b, "style: %s\n", m.Params.Style)
 	}
-	b.WriteString("\n")
-
-	for _, e := range m.Entries {
-		if e.Kind == "symlink" {
-			fmt.Fprintf(&b, "%s symlink:%s", e.Path, e.SymlinkTarget)
-			if e.SourcePath != "" {
-				fmt.Fprintf(&b, " source:%s", e.SourcePath)
-			}
-			b.WriteString("\n")
-			continue
-		}
-		fmt.Fprintf(&b, "%s sha256:%s", e.Path, e.Checksum)
-		if e.SourcePath != "" {
-			fmt.Fprintf(&b, " source:%s", e.SourcePath)
-		}
-		if e.SourceChecksum != "" {
-			fmt.Fprintf(&b, " source-sha256:%s", e.SourceChecksum)
-		}
-		b.WriteString("\n")
-	}
-	if len(m.Acknowledged) > 0 {
-		b.WriteString("\nacknowledged:\n")
-		for _, a := range m.Acknowledged {
-			fmt.Fprintf(&b, "  - path: %s\n", a.Path)
-			fmt.Fprintf(&b, "    consumer-sha: %s\n", a.ConsumerSHA)
-			fmt.Fprintf(&b, "    template-sha: %s\n", a.TemplateSHA)
-			fmt.Fprintf(&b, "    template-version: %s\n", a.TemplateVersion)
-			fmt.Fprintf(&b, "    reason: %s\n", a.Reason)
-		}
-	}
 	return b.String()
 }
 
+// parseManifest reads the minimal AC78 manifest shape plus tolerates legacy
+// fields (per-entry sha256, acknowledged blocks) left over from pre-AC78
+// repos by silently ignoring them — the file is rewritten on every sync, so
+// the stale data disappears on first AC78 sync.
 func parseManifest(content string) (Manifest, error) {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	if len(lines) == 0 {
@@ -186,10 +106,12 @@ func parseManifest(content string) (Manifest, error) {
 	}
 
 	m := Manifest{FormatVersion: formatLine}
-	i := 1
-	for i < len(lines) {
-		line := strings.TrimSpace(lines[i])
-		i++
+	// Only the header block (before the first blank line) carries the minimal
+	// AC78 fields. Anything past the first blank line is legacy content
+	// (per-file sha256 entries, acknowledged blocks) that this sync will
+	// overwrite when it rewrites the manifest.
+	for _, raw := range lines[1:] {
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			break
 		}
@@ -214,109 +136,11 @@ func parseManifest(content string) (Manifest, error) {
 			m.Params.Style = value
 		}
 	}
-
-	for i < len(lines) {
-		line := strings.TrimSpace(lines[i])
-		i++
-		if line == "" {
-			continue
-		}
-		if line == "acknowledged:" {
-			for i < len(lines) {
-				raw := lines[i]
-				line = strings.TrimSpace(raw)
-				if line == "" {
-					i++
-					continue
-				}
-				if !strings.HasPrefix(raw, "  - ") && !strings.HasPrefix(raw, "\t- ") {
-					break
-				}
-				entry := AcknowledgedEntry{}
-				fields := []string{strings.TrimSpace(strings.TrimPrefix(line, "- "))}
-				i++
-				for i < len(lines) {
-					nextRaw := lines[i]
-					next := strings.TrimSpace(nextRaw)
-					if next == "" {
-						i++
-						continue
-					}
-					if strings.HasPrefix(nextRaw, "  - ") || strings.HasPrefix(nextRaw, "\t- ") {
-						break
-					}
-					if strings.HasPrefix(nextRaw, "    ") || strings.HasPrefix(nextRaw, "\t\t") {
-						fields = append(fields, next)
-						i++
-						continue
-					}
-					break
-				}
-				for _, field := range fields {
-					key, value, ok := strings.Cut(field, ": ")
-					if !ok {
-						return Manifest{}, fmt.Errorf("malformed acknowledged field %q", field)
-					}
-					switch key {
-					case "path":
-						entry.Path = value
-					case "consumer-sha":
-						entry.ConsumerSHA = value
-					case "template-sha":
-						entry.TemplateSHA = value
-					case "template-version":
-						entry.TemplateVersion = value
-					case "reason":
-						entry.Reason = value
-					default:
-						return Manifest{}, fmt.Errorf("unknown acknowledged field %q", key)
-					}
-				}
-				if entry.Path == "" || entry.ConsumerSHA == "" || entry.TemplateSHA == "" || entry.TemplateVersion == "" || entry.Reason == "" {
-					return Manifest{}, fmt.Errorf("acknowledged entry %q missing required fields", entry.Path)
-				}
-				m.Acknowledged = append(m.Acknowledged, entry)
-			}
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			return Manifest{}, fmt.Errorf("malformed manifest entry: %q", line)
-		}
-
-		entry := ManifestEntry{Path: parts[0]}
-		for _, part := range parts[1:] {
-			key, value, ok := strings.Cut(part, ":")
-			if !ok {
-				return Manifest{}, fmt.Errorf("malformed manifest field %q in entry %q", part, entry.Path)
-			}
-			switch key {
-			case "sha256":
-				entry.Kind = "file"
-				entry.Checksum = value
-			case "symlink":
-				entry.Kind = "symlink"
-				entry.SymlinkTarget = value
-			case "source":
-				entry.SourcePath = value
-			case "source-sha256":
-				entry.SourceChecksum = value
-			}
-		}
-		if entry.Kind == "" {
-			return Manifest{}, fmt.Errorf("manifest entry %q has no type (sha256 or symlink)", entry.Path)
-		}
-		m.Entries = append(m.Entries, entry)
-	}
-
 	return m, nil
 }
 
 func readManifest(root string) (Manifest, bool, error) {
-	// Try current name first, then legacy fallbacks:
-	//   - .governa/manifest (current, AC55)
-	//   - .governa-manifest (pre-AC55 flat layout)
-	//   - .repokit-manifest (pre-governa rename)
+	// Try current name first, then legacy fallbacks.
 	for _, name := range []string{manifestFileName, legacyPreAC55ManifestFile, legacyManifestFileName} {
 		path := filepath.Join(root, name)
 		content, err := os.ReadFile(path)
@@ -336,36 +160,19 @@ func readManifest(root string) (Manifest, bool, error) {
 	return Manifest{}, false, nil
 }
 
-func manifestEntryMap(m Manifest) map[string]ManifestEntry {
-	out := make(map[string]ManifestEntry, len(m.Entries))
-	for _, e := range m.Entries {
-		out[e.Path] = e
-	}
-	return out
-}
-
-func acknowledgedEntryMap(m Manifest) map[string]AcknowledgedEntry {
-	out := make(map[string]AcknowledgedEntry, len(m.Acknowledged))
-	for _, e := range m.Acknowledged {
-		out[e.Path] = e
-	}
-	return out
-}
-
-// migrateGovernaLegacyPaths consolidates pre-AC55 metadata paths under the
-// `.governa/` directory. Runs at the top of `governa sync` so consumer repos
-// transition transparently on their next sync. Emits one stderr log line per
-// rename. The ephemeral `.governa-proposed/` tree is removed; sync regenerates
-// its replacement under `.governa/proposed/`.
+// migrateGovernaLegacyPaths cleans up pre-AC55 paths (moved under `.governa/`)
+// and pre-AC78 artifacts (sync-review.md, proposed/, feedback/, config). Runs
+// at the top of `governa sync` so consumer repos transition transparently on
+// their next sync. Emits one stderr log line per rename or removal.
 func migrateGovernaLegacyPaths(root string) error {
 	governaDirPath := filepath.Join(root, governaDir)
 
+	// Pre-AC55 manifest rename into .governa/.
 	renames := []struct {
 		legacy  string
 		current string
 	}{
 		{legacyPreAC55ManifestFile, manifestFileName},
-		{legacyPreAC55SyncReviewFile, syncReviewFile},
 	}
 	for _, r := range renames {
 		legacyAbs := filepath.Join(root, r.legacy)
@@ -381,7 +188,6 @@ func migrateGovernaLegacyPaths(root string) error {
 			continue
 		}
 		if _, err := os.Stat(currentAbs); err == nil {
-			// Current path already exists — prefer the current one and remove the legacy.
 			if err := os.Remove(legacyAbs); err != nil {
 				return fmt.Errorf("remove stale legacy %s: %w", r.legacy, err)
 			}
@@ -397,12 +203,60 @@ func migrateGovernaLegacyPaths(root string) error {
 		fmt.Fprintf(os.Stderr, "governa sync: migrated %s → %s\n", r.legacy, r.current)
 	}
 
+	// Pre-AC55 proposed/ directory removal.
 	legacyProposedAbs := filepath.Join(root, legacyPreAC55ProposedDir)
 	if info, err := os.Stat(legacyProposedAbs); err == nil && info.IsDir() {
 		if err := os.RemoveAll(legacyProposedAbs); err != nil {
 			return fmt.Errorf("remove legacy %s: %w", legacyPreAC55ProposedDir, err)
 		}
-		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s (regenerated under %s)\n", legacyPreAC55ProposedDir, proposedDirName)
+		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s\n", legacyPreAC55ProposedDir)
+	}
+	// Pre-AC55 sync-review.md removal (superseded by .governa/sync-review.md
+	// which itself is removed below as part of the AC78 migration).
+	legacyReviewAbs := filepath.Join(root, legacyPreAC55SyncReviewFile)
+	if info, err := os.Stat(legacyReviewAbs); err == nil && !info.IsDir() {
+		if err := os.Remove(legacyReviewAbs); err != nil {
+			return fmt.Errorf("remove legacy %s: %w", legacyPreAC55SyncReviewFile, err)
+		}
+		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s\n", legacyPreAC55SyncReviewFile)
+	}
+
+	// AC78 migration: drop the rich-sync artifacts from the `.governa/` dir.
+	// These lived at .governa/sync-review.md, .governa/proposed/, .governa/feedback/,
+	// .governa/config under pre-AC78 governa and are all retired.
+	for _, rel := range []string{legacyPreAC78ProposedDir, legacyPreAC78FeedbackDir} {
+		abs := filepath.Join(root, rel)
+		info, err := os.Stat(abs)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("stat legacy %s: %w", rel, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+		if err := os.RemoveAll(abs); err != nil {
+			return fmt.Errorf("remove legacy %s: %w", rel, err)
+		}
+		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s (AC78 migration)\n", rel)
+	}
+	for _, rel := range []string{legacyPreAC78SyncReviewFile, legacyPreAC78ConfigFile} {
+		abs := filepath.Join(root, rel)
+		info, err := os.Stat(abs)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("stat legacy %s: %w", rel, err)
+		}
+		if info.IsDir() {
+			continue
+		}
+		if err := os.Remove(abs); err != nil {
+			return fmt.Errorf("remove legacy %s: %w", rel, err)
+		}
+		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s (AC78 migration)\n", rel)
 	}
 
 	return nil

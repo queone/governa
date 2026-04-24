@@ -2,19 +2,6 @@
 
 Formalizes the AC/critique loop referenced in `AGENTS.md` Approval Boundaries → AC critique gate. QA findings live inside the AC file in a `## Critique` section — there is no separate companion file. This doc codifies what that section contains across rounds.
 
-## Configuration
-
-The critique mode is read from `.governa/config` key `critique-mode`. Valid values: `integrated` (default) or `external`. Absent file or missing key → `integrated`. Invalid values warn to stderr and fall back to the default.
-
-- `integrated` (default, post-AC63): QA findings land in the AC's `## Critique` section per the structure described in this doc. DEV transcribes verbatim from the critique channel.
-- `external`: QA findings land in `docs/ac<N>-<slug>-critique.md` companion files. Same round/finding structure; same terminator shape. DEV still transcribes, just into a sibling file instead of the AC body.
-
-The active mode surfaces in two places on every sync:
-- `governa sync` stdout — emits `critique mode: <mode>` when `.governa/config` is present (silent otherwise).
-- `.governa/sync-review.md` header — always includes a one-line `Critique mode: <mode>` advisory with the per-mode routing note so agents reading the review know where findings will land.
-
-The rest of this doc describes the `integrated` shape. The `external` shape reuses the same round/finding/terminator structure; only the location differs.
-
 ## Where findings live
 
 Every AC carries a `## Critique` section (typically the second-to-last top-level section, above `## Status`). QA-authored content lands there; DEV transcribes QA's findings verbatim from the critique channel into this section. DEV's response to each finding is visible as AC revisions (via `git log`/`git diff`) plus entries in the `### Disposition Log` subsection under `## Implementation Notes`.

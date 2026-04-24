@@ -1,9 +1,9 @@
 # governa
-Template repo that syncs governance into new and existing repositories, and maintains itself through enhance mode. Built from:
+Template repo that bootstraps governance into new repositories and helps existing ones adopt it with minimal disruption. Built from:
 
 - a common base contract in `internal/templates/base/`
 - a repo-type overlay in `internal/templates/overlays/code/` or `internal/templates/overlays/doc/`
-- a deterministic Go CLI that renders and reviews governed repo structure
+- a deterministic Go CLI that renders templates into target repos
 
 ## Why
 
@@ -31,7 +31,7 @@ go install github.com/queone/governa/cmd/governa@latest
 ```
 
 ### `sync`
-Consumer mode, run from a target repo or empty directory. Governa is read-only source — templates are embedded in the binary.
+The one mode. Run from a target repo or empty directory. Governa is read-only source — templates are embedded in the binary.
 
 `sync` detects whether the target is a new or existing repo and prompts interactively for any missing parameters. All flags still work for fully non-interactive use.
 
@@ -44,10 +44,10 @@ governa sync
 Or with flags to skip prompts:
 
 ```bash
-governa sync -y CODE -n my-service -p "API gateway for internal services" -s "Go CLI"
+governa sync -y CODE -n my-service -p "API gateway for internal services" -s "Go"
 ```
 
-**Existing repo** (governance artifacts or manifest found): applies governance with conservative behavior — fit assessment, content-aware collision scoring, and a single `.governa/sync-review.md` at the repo root. New files are written directly; collisions are scored as `keep` (no adoption work needed) or `adopt` (template has improvements — compare `.governa/proposed/<path>` and adopt). Scoring includes file preamble content, section rename detection, structural observation promotion, and advisory notes for template sections missing from developed files.
+**Existing repo** (governance artifacts or manifest found): for every template file that would differ from what the repo already has, sync prompts interactively with `k` (keep existing), `o` (overwrite with template), or `s` (skip for now). Add `--yes` to overwrite everything, or `--no` to keep everything — useful in CI where stdin is not a TTY.
 
 ```bash
 governa sync
@@ -55,37 +55,10 @@ governa sync
 
 Repo name, purpose, type, and stack are inferred from the target directory (directory basename, `README.md` first paragraph, manifest files). Explicit flags override inference: `-n`, `-p`, `-y`, `-s`. On re-sync, stored parameters from the `.governa/manifest` are reused automatically.
 
-### `ack`
-Consumer-repo follow-up command for stable carve-outs. Use it after reviewing `.governa/sync-review.md` and deciding a file should remain repo-specific for now, so future syncs stop re-flagging the same drift until either the repo file or the template version changes.
+Run `governa help` for available commands, or `governa sync --help` for sync-specific flags.
 
-```bash
-governa ack docs/roles/dev.md --reason "Repo keeps an extra sync policy note"
-```
-
-To return a file to normal adopt-flow treatment without changing its contents:
-
-```bash
-governa ack --remove docs/roles/dev.md
-```
-
-### `enhance`
-Template-maintenance mode, run from inside this repo. The only mode that runs from governa itself and the only mode that can propose changes back into the template. Its purpose is to improve the entire templating set — base governance contract, overlays, and workflow patterns — that ships into all generated repos, as well as governa's own self-hosted governance.
-
-With `-r`, enhance inspects another governed repo for portable improvements: patterns that every governed repo should benefit from, not project-specific local choices. It compares at the constraint level for governance sections and per-section for structured markdown files. For governance sections classified as project-specific, enhance drills into `### Subsections` to identify portable content within otherwise deferred parents. When a `.governa/manifest` exists in the reference repo, enhance uses three-way comparison to distinguish user customizations from stale template content. The only output is an AC doc — no template files are overwritten automatically.
-
-```bash
-governa enhance \
-  -r <reference-root> \
-  -d
-```
-
-Without `-r`, enhance performs a self-review — comparing on-disk templates against the embedded versions to show what has changed since the last release. This is a pre-release audit tool.
-
-```bash
-governa enhance
-```
-
-Run `governa help` for all commands, or `governa <command> --help` for command-specific flags.
+### Template improvements
+Template improvements happen out-of-band. DEV/QA agents working on the governa repo read consumer repos (their `AGENTS.md`, recent AC docs, and `.governa/manifest`) to identify portable improvements, then propose changes as regular template PRs through the normal AC workflow. There is no CLI subcommand for this — filesystem access plus the ordinary editor workflow is enough. See `docs/roles/dev.md` for the DEV-side shape.
 
 ## Design
 The target repo stays self-contained. The template repo is read-only at bootstrap time and is not imported as a submodule, package, or runtime dependency. The bootstrap tool is Go-based so the template works across macOS, Linux, and Windows without requiring a specific shell.

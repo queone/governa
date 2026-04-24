@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide a self-contained template repo for governed `CODE` and `DOC` repositories, plus deterministic tooling to sync and enhance that governance model.
+Provide a self-contained template repo for governed `CODE` and `DOC` repositories, plus a deterministic bootstrap/adopt tool (`governa sync`) that renders the template into target repos.
 
 ## System Summary
 
@@ -23,25 +23,24 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 
 - `internal/templates/base/`: cross-repo governance artifacts such as `AGENTS.md`
 - `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`
-- `cmd/governa`: installable CLI binary for `sync`, `enhance`, and self-review
+- `cmd/governa`: installable CLI binary. One mode: `sync`.
 - `cmd/build`, `cmd/prep`, and `cmd/rel`: Go entrypoints for local validation, release staging, and release orchestration
 - `internal/`: shared logic for governance, build, release, colorized CLI output, and template access
 - `examples/`: rendered sample repos used to verify that output is concrete and usable
 
 ## Data And Control Flow
 
-For `sync`, a user runs `governa sync` from inside a target repo. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output. For markdown governance files, sync analyzes sections (missing, renamed, content-drifted, bullet-reduced, reorder-drifted) and surfaces the results as per-file recommendations and Advisory Notes in `.governa/sync-review.md`.
+A user runs `governa sync` from inside a target repo. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output. For each rendered file that would differ from what already exists in the target, sync resolves the collision via an interactive `[k]eep / [o]verwrite / [s]kip` prompt; `--yes` and `--no` flags batch-apply for non-interactive use. After sync completes, the `.governa/manifest` records the template version and the rendering parameters; that's the only persistent bookkeeping governa writes.
 
-For `enhance`, a maintainer runs from inside this repo, points at another governed repo, and reviews governed sections and mapped overlay artifacts. Governance sections are compared at the constraint level (not just keyword signals), and structured markdown files are diffed per-section. When a `.governa/manifest` exists in the reference repo, enhance performs three-way comparison to distinguish user customizations from stale template content. Classification uses a data-driven rule table. If actionable improvements are found, enhance creates an AC doc under `docs/` for the highest-priority candidate. No template files are overwritten automatically.
+Template improvements flow in the opposite direction through an out-of-band workflow documented in `docs/roles/dev.md`: DEV/QA agents reviewing the governa repo read consumer repos' governance files and AC history directly, then propose template changes as regular PRs through the normal AC workflow. There is no CLI subcommand for this.
 
 ## Architecture Notes
 
 - generated repos must remain self-contained and must not depend on this repo at runtime
 - this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `sync`
-- `enhance` is report-first and intentionally conservative
 - shell wrappers are conveniences only; the canonical implementation lives in Go
 - `docs/roles/` provides role-specific behavior docs (director reference, DEV, QA, maintainer) that supplement the shared governance contract; role selection is instruction-driven and defined in `Interaction Mode`
-- governa-managed metadata in consumer repos lives under a single `.governa/` directory: `manifest` (committed), `proposed/` (ephemeral), `sync-review.md` (working artifact), `feedback/` (persistent consumer feedback). Legacy flat paths (`.governa-manifest`, `.governa-proposed/`, `governa-sync-review.md`) are auto-migrated at sync start.
+- governa-managed metadata in consumer repos lives at `.governa/manifest` (committed). Legacy paths (`.governa-manifest`, `.governa/sync-review.md`, `.governa/proposed/`, `.governa/feedback/`, `.governa/config`) from pre-AC78 governa are auto-removed at sync start.
 - pure stdlib; no external Go dependencies (verified via `go.mod`)
 - templates use `{{PLACEHOLDER}}` substitution, not a templating engine (text/template intentionally not used)
 - overlays are additive; they must not conflict with the base governance contract

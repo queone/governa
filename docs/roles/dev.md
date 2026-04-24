@@ -4,7 +4,7 @@
 
 Role-specific behavior for DEV. `AGENTS.md` is the enforceable shared contract; `docs/roles/README.md` is the multi-role delivery-model overview; this file adds DEV-specific rules. You work alongside QA (agent) and Director (human) — see `## Counterparts` below.
 
-All work — implementation, review, and file changes — targets the current working directory. External repos (e.g., enhance references) are read-only source material.
+All work — implementation, review, and file changes — targets the current working directory. External repos reviewed for template improvements are read-only source material.
 
 ## Rules
 
@@ -34,21 +34,20 @@ See `docs/roles/README.md` Critical Principle for the governance rationale on ro
 
 ## Governa Templating Maintenance
 
-Consumer repos run `governa sync` to pull governance template updates. The governa repo itself runs `governa enhance` to review other repos for portable improvements back into the template.
+Consumer repos run `governa sync` to pull governance template updates. The governa repo itself improves the template through an **out-of-band review workflow** — no CLI subcommand.
 
 ### Sync (consumer repos)
 
 - Run `governa sync` periodically to check if the governance template has evolved.
-- Review `.governa/sync-review.md` for per-file recommendations (`keep` or `adopt`). Missing files are written directly.
-- When review confirms a file is an intentional, stable carve-out, record it with `governa ack <path> --reason "..."` so future syncs list it under `## Acknowledged Drift` instead of re-raising it as an adopt item.
-- The summary shows how many files need no action vs need adoption.
-- Treat adoptions as non-trivial changes — draft an AC before applying them so the work gets scoped and reviewed through the normal development cycle.
-- When no adoptions are needed: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline. The review artifact (`.governa/sync-review.md`) is not intended to be committed — repo governance decides cleanup.
+- For each template file that differs from the consumer's copy, sync prompts interactively — `k` (keep existing), `o` (overwrite with template), `s` (skip for now). `--yes` and `--no` cover non-interactive use.
+- Treat non-trivial overwrites as real work — draft an AC before applying them so the change gets scoped and reviewed through the normal development cycle.
+- After sync completes: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.
 
-### Enhance (governa repo only)
+### Template Improvement (governa repo only)
 
-- Run `governa enhance -r <reference-repo>` to review another governed repo for portable improvements.
-- Interpret the output: accepted candidates are portable and worth upstreaming; deferred candidates are project-specific.
-- For each accepted candidate, assess whether the improvement belongs in the base template, an overlay, or a workflow doc.
-- Draft an AC for the improvements worth adopting.
-- Run `governa enhance` (no `-r`) for a pre-release self-review of template changes.
+Template improvements originate in the governa repo, not in consumer repos. DEV (or QA, when acting on the template) proposes them by reviewing consumer repos directly — reading the consumer's `AGENTS.md`, recent AC docs, and `.governa/manifest` — to identify patterns worth upstreaming. Each proposed change goes through the normal AC workflow (draft AC → critique → implement → release) as a regular template PR. There is no CLI subcommand for this; filesystem access plus the ordinary editor workflow is enough.
+
+- Read consumer governance files and recent AC history to find portable patterns (rules that every governed repo should benefit from, not project-specific local choices).
+- Draft an AC in `docs/` scoping the template edit.
+- Implement against `internal/templates/base/` or the appropriate overlay in `internal/templates/overlays/`.
+- Keep the root `AGENTS.md` in parity with `internal/templates/base/AGENTS.md` — the `TestGovernanceImprovementsFromSkout` test enforces this invariant.

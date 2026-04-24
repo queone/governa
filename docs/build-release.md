@@ -46,12 +46,6 @@ or:
 
 If you pass `build` or `rel` as targets, the command will validate those entrypoints but will not install binaries for them.
 
-## Drift Check
-
-After installing binaries, the build tool runs a passive governance drift check via `governa enhance -d` (self-review mode). If `governa` was installed by this build, it uses that exact binary; otherwise it falls back to any `governa` on `$PATH`. If neither is available the step is silently skipped.
-
-When drift is detected the build prints a `summary:` line (e.g. `summary: 1 changed, 0 added, 0 removed`). The check is advisory and never blocks the build.
-
 ## Sandboxed Execution
 
 Under sandboxed execution that blocks Go's build cache (look for `writing stat cache ... operation not permitted`), `staticcheck` may print a `matched no packages` warning even though it ran cleanly. Treat as advisory unless real findings appear; an unrestricted rerun confirms.
@@ -88,7 +82,7 @@ Do not start this checklist unless the user explicitly asks to prep for release 
 
 The operator flow is two steps:
 
-1. **Run `./prep.sh vX.Y.Z "message"`.** Stages version bumps, inserts the CHANGELOG row, deletes completed AC files (plus `-critique.md` and `-dispositions.md` companions), moves any `-feedback.md` companion to `.governa/feedback/`, runs validation builds before and after, and prints the canonical release command. The agent determines the version (semver classification from the AC's scope) and drafts the release message (≤ 80 characters) before invoking prep.
+1. **Run `./prep.sh vX.Y.Z "message"`.** Stages version bumps, inserts the CHANGELOG row, deletes completed AC files (plus `-critique.md` companions), runs validation builds before and after, and prints the canonical release command. The agent determines the version (semver classification from the AC's scope) and drafts the release message (≤ 80 characters) before invoking prep.
 2. **Run the printed release command (`./build.sh vX.Y.Z "message"`).** `cmd/rel` shows `git status --short`, lists every git step it will execute, and prompts for interactive confirmation. On approval it orchestrates `git add → commit → tag → push tag → push branch`. Optional: run `git diff` between the two steps if you want to inspect the CHANGELOG row wording and version-string values before committing — `cmd/rel`'s own status preview is sufficient to catch wrong-file inclusions or deletions.
 
 Present only the release command after prep; do not add trailing commentary about wrapper routing or prompts. The director already knows.
@@ -103,7 +97,7 @@ Present only the release command after prep; do not add trailing commentary abou
 4. **Detect version targets.** Scans `cmd/*/main.go` for `programVersion`, `TEMPLATE_VERSION` and `internal/templates/version.go` (each presence-gated). Multi-binary repos are picked up automatically.
 5. **Detect CHANGELOG targets + fail-fast idempotency guard.** Root `CHANGELOG.md` and `internal/templates/CHANGELOG.md` (template-repo case). If any target already contains a row for the target version, prep exits with a fatal error before any writes.
 6. **Parse AC refs.** `AC[0-9]+` scan on the release message; composites like `AC60+AC61` yield multiple refs.
-7. **Apply writes.** Version bumps (per-file idempotent no-op when the file already has the target value); CHANGELOG row insertion under `| Unreleased | |`; AC file deletions plus `-critique.md`/`-dispositions.md` companion deletions; `-feedback.md` moved to `.governa/feedback/ac<N>-<slug>.md`. Skipped when `--dry-run`.
+7. **Apply writes.** Version bumps (per-file idempotent no-op when the file already has the target value); CHANGELOG row insertion under `| Unreleased | |`; AC file deletions plus `-critique.md` companion deletions. Skipped when `--dry-run`.
 8. **Post-check build.** `./build.sh` run after writes; skipped with `--no-build` or `--dry-run`.
 9. **Print release command.** Exactly `./build.sh vX.Y.Z "message"` — nothing else.
 

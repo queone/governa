@@ -36,6 +36,6 @@ Repos may extend governance docs with rules specific to the project. Place these
 
 **Not AGENTS.md.** AGENTS.md's section set is fixed by its own `## Governed Sections` invariant — adding a non-governed `## Local Rules` section there would violate the governance contract. Keep repo-specific AGENTS.md additions inside an already-governed section (e.g., append a bullet to `## Project Rules`), and reserve `## Local Rules` for supplementary docs under `docs/`.
 
-Use Local Rules when a rule is genuinely repo-specific — it applies to this project only and doesn't warrant upstream adoption into the governa template. If a rule might benefit other consumer repos, also surface it via the per-sync `-feedback.md` artifact so governa can consider lifting it upstream.
+Use Local Rules when a rule is genuinely repo-specific — it applies to this project only and doesn't warrant upstream adoption into the governa template. If a rule might benefit other consumer repos, raise it with the governa maintainers directly so they can evaluate it for the template.
 
 The section name is exact: `## Local Rules` (title case, singular "Local" + plural "Rules"). The scorer matches on this canonical name; variants like "Local Rule" or "Local Guidance" are not recognized.

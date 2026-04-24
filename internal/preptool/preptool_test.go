@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -349,7 +348,7 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "docs", "ac-template.md"), "# template\n")
 
 	acNums := parseACRefs("AC60: prep tool")
-	acFiles, _, _, _, err := findACCompanions(dir, acNums)
+	acFiles, _, _, err := findACCompanions(dir, acNums)
 	if err != nil {
 		t.Fatalf("findACCompanions: %v", err)
 	}
@@ -359,7 +358,7 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 
 	// Composite message.
 	acNums = parseACRefs("AC60+AC61: bundle")
-	acFiles, _, _, _, err = findACCompanions(dir, acNums)
+	acFiles, _, _, err = findACCompanions(dir, acNums)
 	if err != nil {
 		t.Fatalf("findACCompanions composite: %v", err)
 	}
@@ -381,7 +380,7 @@ func TestPrepDeletesCritiqueAndDispositionsCompanions(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "docs", "ac60-prep-tool-dispositions.md"), "disp\n")
 
 	acNums := parseACRefs("AC60: prep")
-	ac, crit, disp, feedback, err := findACCompanions(dir, acNums)
+	ac, crit, disp, err := findACCompanions(dir, acNums)
 	if err != nil {
 		t.Fatalf("findACCompanions: %v", err)
 	}
@@ -393,31 +392,6 @@ func TestPrepDeletesCritiqueAndDispositionsCompanions(t *testing.T) {
 	}
 	if len(disp) != 1 {
 		t.Fatalf("dispositions files = %v", disp)
-	}
-	if len(feedback) != 0 {
-		t.Fatalf("feedback files should be empty = %v", feedback)
-	}
-}
-
-// AT10: -feedback.md moves to .governa/feedback/ac<N>-<slug>.md.
-func TestPrepMovesFeedbackCompanions(t *testing.T) {
-	dir := t.TempDir()
-	feedbackPath := filepath.Join(dir, "docs", "ac60-prep-tool-feedback.md")
-	mustWrite(t, feedbackPath, "feedback\n")
-
-	dest, err := moveFeedbackCompanion(dir, feedbackPath)
-	if err != nil {
-		t.Fatalf("moveFeedbackCompanion: %v", err)
-	}
-	wantDest := filepath.Join(dir, ".governa", "feedback", "ac60-prep-tool.md")
-	if dest != wantDest {
-		t.Fatalf("dest = %s, want %s", dest, wantDest)
-	}
-	if _, err := os.Stat(feedbackPath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists")
-	}
-	if _, err := os.Stat(wantDest); err != nil {
-		t.Fatalf("dest missing: %v", err)
 	}
 }
 
@@ -645,160 +619,5 @@ func TestUsage(t *testing.T) {
 		if !strings.Contains(u, want) {
 			t.Errorf("Usage() missing %q. got:\n%s", want, u)
 		}
-	}
-}
-
-// moveFeedbackCompanion errors when the source path doesn't exist.
-func TestMoveFeedbackCompanionMissingSource(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	_, err := moveFeedbackCompanion(dir, filepath.Join(dir, "docs", "nope-feedback.md"))
-	if err == nil {
-		t.Error("expected error on missing source, got nil")
-	}
-}
-
-// writeACWithFeedbackCredits is a helper that seeds an AC file carrying a
-// populated `## Feedback Credits` section with a single entry.
-func writeACWithFeedbackCredits(t *testing.T, dir string, acNum int, slug, consumer, version string) string {
-	t.Helper()
-	ac := strconv.Itoa(acNum)
-	path := filepath.Join(dir, "docs", "ac"+ac+"-"+slug+".md")
-	content := "# AC" + ac + " " + slug + "\n\n" +
-		"## Objective Fit\n\n- something\n\n" +
-		"## Feedback Credits\n\n" +
-		"- " + consumer + " v" + version + " — addresses smoke-test clause\n\n" +
-		"## In Scope\n\n- change\n"
-	mustWrite(t, path, content)
-	return path
-}
-
-// AT2 (AC70 Part B): Phase 6a passes when the release message contains the
-// expected `(addresses <consumer> feedback from v<X.Y.Z> syncs)` substring
-// for every declared entry.
-func TestPrepValidatesFeedbackCredits(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	writeACWithFeedbackCredits(t, dir, 99, "example", "utils", "0.42.0")
-
-	acNums := parseACRefs("AC99: x")
-	acFiles, _, _, _, err := findACCompanions(dir, acNums)
-	if err != nil {
-		t.Fatalf("findACCompanions: %v", err)
-	}
-	goodMsg := "AC99: x (addresses utils feedback from v0.42.0 syncs)"
-	if err := validateFeedbackCredits(acFiles, goodMsg); err != nil {
-		t.Fatalf("validateFeedbackCredits(%q) unexpected error: %v", goodMsg, err)
-	}
-}
-
-// AT3 (AC70 Part B): Phase 6a fails fast when a declared credit is missing
-// from the release message. Error names the missing substring, the AC file,
-// and references build-release.md for the convention.
-func TestPrepFailsOnMissingFeedbackCredit(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	acPath := writeACWithFeedbackCredits(t, dir, 99, "example", "utils", "0.42.0")
-
-	acNums := parseACRefs("AC99: x")
-	acFiles, _, _, _, err := findACCompanions(dir, acNums)
-	if err != nil {
-		t.Fatalf("findACCompanions: %v", err)
-	}
-
-	badMsg := "AC99: x" // no credit substring
-	err = validateFeedbackCredits(acFiles, badMsg)
-	if err == nil {
-		t.Fatal("expected error for missing credit, got nil")
-	}
-	msg := err.Error()
-	for _, want := range []string{
-		"(addresses utils feedback from v0.42.0 syncs)",
-		filepath.Base(acPath),
-		"docs/build-release.md",
-	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("error missing %q; got: %s", want, msg)
-		}
-	}
-
-	// Full Run() must abort before writes when Phase 6a trips. Seed a minimal
-	// repo so earlier phases pass and the validation failure is the one
-	// observable effect.
-	gitInitFixture(t, dir)
-	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
-		"# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
-	tvPath := filepath.Join(dir, "TEMPLATE_VERSION")
-	mustWrite(t, tvPath, "0.1.0\n")
-
-	stubNoopBuild(t)
-	var buf bytes.Buffer
-	cfg := Config{Version: "v0.2.0", Message: "AC99: x", RepoRoot: dir, Out: &buf}
-	if err := Run(cfg); err == nil {
-		t.Fatal("Run: expected error on missing feedback credit, got nil")
-	}
-	// TEMPLATE_VERSION untouched (Phase 7a did not run).
-	if got := strings.TrimSpace(string(mustRead(t, tvPath))); got != "0.1.0" {
-		t.Errorf("writes occurred despite Phase 6a failure: TEMPLATE_VERSION = %q", got)
-	}
-	// AC file still present.
-	if _, err := os.Stat(acPath); err != nil {
-		t.Errorf("AC file should still exist after Phase 6a failure: %v", err)
-	}
-}
-
-// AT4 (AC70 Part B): Phase 6a is a no-op when the AC carries no `## Feedback
-// Credits` section (the common case). Existing prep runs for non-feedback
-// ACs must not grow a new failure mode.
-func TestPrepSkipsValidationWhenNoFeedbackCredits(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	acPath := filepath.Join(dir, "docs", "ac99-example.md")
-	// AC file with no `## Feedback Credits` section.
-	mustWrite(t, acPath, "# AC99 Example\n\n## Objective Fit\n\n- x\n\n## In Scope\n\n- y\n")
-
-	acNums := parseACRefs("AC99: x")
-	acFiles, _, _, _, err := findACCompanions(dir, acNums)
-	if err != nil {
-		t.Fatalf("findACCompanions: %v", err)
-	}
-	if err := validateFeedbackCredits(acFiles, "AC99: x"); err != nil {
-		t.Fatalf("validateFeedbackCredits: unexpected error when no credits declared: %v", err)
-	}
-}
-
-// Unit test for the section-scoped parser: scaffolding bullets (angle-bracket
-// placeholders) must be ignored; only alphanumeric consumer names match.
-func TestExtractFeedbackCreditsFromContent(t *testing.T) {
-	t.Parallel()
-	content := `# AC99
-
-## Feedback Credits
-
-*(Optional — ...)*
-
-- <consumer> v<X.Y.Z> — scaffolding placeholder, must be ignored
-- utils v0.42.0 — real entry
-- widgets v1.2.3 — another real entry
-
-## In Scope
-
-- not a feedback-credit bullet
-- also-not v9.9.9 — this bullet lives in a different section and must be ignored
-`
-	got := extractFeedbackCreditsFromContent(content)
-	if len(got) != 2 {
-		t.Fatalf("credit count = %d, want 2; got %+v", len(got), got)
-	}
-	if got[0].Consumer != "utils" || got[0].Version != "0.42.0" {
-		t.Errorf("credit[0] = %+v", got[0])
-	}
-	if got[1].Consumer != "widgets" || got[1].Version != "1.2.3" {
-		t.Errorf("credit[1] = %+v", got[1])
-	}
-
-	// Absent section returns empty.
-	if got := extractFeedbackCreditsFromContent("# AC99\n\n## In Scope\n\n- x\n"); len(got) != 0 {
-		t.Errorf("absent section: got %+v, want empty", got)
 	}
 }

@@ -6,11 +6,7 @@ The AC is the implementation contract for one approved roadmap item. The full de
 
 ## Companion Artifacts
 
-ACs produce three optional companion files that live alongside the AC doc in `docs/`. All are instructional scaffolding — delete this `## Companion Artifacts` section when copying the template into a real AC.
-
-- **Critique lives inside the AC**, not in a companion file. The AC carries a `## Critique` section (typically above `## Status`); QA findings per round land there. DEV transcribes QA's findings verbatim; DEV's responses land as AC revisions + `### Disposition Log` entries under `## Implementation Notes`. See `docs/critique-protocol.md` for round-append structure (`### Round N` / `#### F<N>`), `F-new-N` monotonic numbering across subsequent rounds, and the five-field terminator shape.
-- **`docs/ac<N>-<slug>-feedback.md`** — per-sync feedback artifact produced by `governa sync` ACs. Captures genuine observations about the sync output (template defaults that fight the repo, scoring gaps, methodology issues, things that landed well). At release prep, moved to `.governa/feedback/ac<N>-<slug>.md` instead of deleted, so the consumer's feedback persists for governa's future `enhance -r` runs.
-- **`docs/ac<N>-<slug>-dispositions.md`** — companion artifact for partial-adopt files. When an AC performs partial adoption — adopts some template content while preserving some existing content — list every preserved difference with: (1) content kept, (2) template content rejected, (3) repo-specific reason. Deleted at release prep alongside the AC. Before deletion, consolidate any long-term WHY-reasons into inline comments or durable docs. This records what was preserved during one AC; use `governa ack <path> --reason "..."` separately when a stable file-level carve-out should stop reappearing in future sync reviews.
+Critique lives inside the AC itself, not in a companion file. The AC carries a `## Critique` section (typically above `## Status`); QA findings per round land there. DEV transcribes QA's findings verbatim; DEV's responses land as AC revisions + `### Disposition Log` entries under `## Implementation Notes`. See `docs/critique-protocol.md` for round-append structure (`### Round N` / `#### F<N>`), `F-new-N` monotonic numbering across subsequent rounds, and the five-field terminator shape. Delete this `## Companion Artifacts` section when copying the template into a real AC.
 
 # AC<N> Title
 
@@ -26,14 +22,6 @@ Describe the change in one short paragraph.
 2. **Why not advance a higher-priority task instead?** Either name the higher-priority blocker that this unblocks, or label the work as an intentional pivot and explain the trade-off.
 3. **What existing decision does it depend on or risk contradicting?** Reference the prior AC, architectural decision, or shipped feature that this builds on. If it contradicts a prior decision, say so explicitly and explain why the contradiction is intentional.
 4. **Intentional pivot?** If yes, state that here and reaffirm point 2.
-
-## Feedback Credits
-
-*(Optional — include only when this AC addresses consumer sync feedback. Omit the section entirely otherwise.)*
-
-List every consumer feedback source this AC addresses. Each bullet names the consumer and the source version (the governa version the consumer synced against when they produced the feedback). Format is load-bearing: `prep.sh` reads this section at release prep and requires the release message to contain a matching `(addresses <consumer> feedback from v<X.Y.Z> syncs)` string per entry.
-
-- <consumer> v<X.Y.Z> — one-line description of what part of the feedback this AC addresses.
 
 ## In Scope
 
