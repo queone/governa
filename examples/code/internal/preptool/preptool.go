@@ -154,15 +154,20 @@ func Run(cfg Config) error {
 
 	// Phase 6: parse AC refs from message and locate files.
 	acNums := parseACRefs(cfg.Message)
-	acFiles, critiqueFiles, dispFiles, feedbackFiles, err := findACCompanions(cfg.RepoRoot, acNums)
+	acFiles, critiqueFiles, dispFiles, err := findACCompanions(cfg.RepoRoot, acNums)
 	if err != nil {
 		return fmt.Errorf("prep: find AC companions: %w", err)
 	}
 
+	// AC78: feedback-credit validation retired along with the `.governa/feedback/`
+	// convention. Release messages no longer carry `(addresses <consumer>
+	// feedback from v<X.Y.Z> syncs)` markers; any such text in historical AC
+	// files (AC74-AC77) is ignored by prep.
+
 	versionStripped := strings.TrimPrefix(cfg.Version, "v")
 
 	if cfg.DryRun {
-		printDryRun(cfg.Out, versionTargets, changelogTargets, versionStripped, cfg.Message, acFiles, critiqueFiles, dispFiles, feedbackFiles)
+		printDryRun(cfg.Out, versionTargets, changelogTargets, versionStripped, cfg.Message, acFiles, critiqueFiles, dispFiles)
 		emitReleaseCommand(cfg.Out, cfg.Version, cfg.Message)
 		return nil
 	}
@@ -199,13 +204,6 @@ func Run(cfg Config) error {
 			return fmt.Errorf("prep: delete %s: %w", path, err)
 		}
 		fmt.Fprintf(cfg.Out, "prep: deleted %s\n", path)
-	}
-	for _, path := range feedbackFiles {
-		dest, err := moveFeedbackCompanion(cfg.RepoRoot, path)
-		if err != nil {
-			return fmt.Errorf("prep: move feedback %s: %w", path, err)
-		}
-		fmt.Fprintf(cfg.Out, "prep: moved %s → %s\n", path, dest)
 	}
 
 	// Phase 8: post-check build.
@@ -426,18 +424,19 @@ func parseACRefs(message string) []int {
 
 // findACCompanions locates per-AC files to act on. For each AC number,
 // finds the main AC file (docs/ac<N>-<slug>.md excluding companion suffixes),
-// its -critique.md, -dispositions.md, and -feedback.md companions.
-func findACCompanions(repoRoot string, acNums []int) (acFiles, critiqueFiles, dispFiles, feedbackFiles []string, err error) {
+// its -critique.md and -dispositions.md companions. -feedback.md companions
+// are no longer a convention post-AC78 and are not enumerated.
+func findACCompanions(repoRoot string, acNums []int) (acFiles, critiqueFiles, dispFiles []string, err error) {
 	if len(acNums) == 0 {
-		return nil, nil, nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	docsDir := filepath.Join(repoRoot, "docs")
 	entries, readErr := os.ReadDir(docsDir)
 	if readErr != nil {
 		if os.IsNotExist(readErr) {
-			return nil, nil, nil, nil, nil
+			return nil, nil, nil, nil
 		}
-		return nil, nil, nil, nil, readErr
+		return nil, nil, nil, readErr
 	}
 	wanted := make(map[int]bool, len(acNums))
 	for _, n := range acNums {
@@ -469,7 +468,8 @@ func findACCompanions(repoRoot string, acNums []int) (acFiles, critiqueFiles, di
 		case strings.HasSuffix(name, "-dispositions.md"):
 			dispFiles = append(dispFiles, full)
 		case strings.HasSuffix(name, "-feedback.md"):
-			feedbackFiles = append(feedbackFiles, full)
+			// AC78: retired convention. Ignore silently.
+			continue
 		default:
 			acFiles = append(acFiles, full)
 		}
@@ -477,8 +477,7 @@ func findACCompanions(repoRoot string, acNums []int) (acFiles, critiqueFiles, di
 	sort.Strings(acFiles)
 	sort.Strings(critiqueFiles)
 	sort.Strings(dispFiles)
-	sort.Strings(feedbackFiles)
-	return acFiles, critiqueFiles, dispFiles, feedbackFiles, nil
+	return acFiles, critiqueFiles, dispFiles, nil
 }
 
 func applyVersionBump(t versionTarget, versionStripped string) error {
@@ -544,27 +543,11 @@ func applyChangelogInsert(path, versionStripped, message string) error {
 	return os.WriteFile(path, []byte(strings.Join(updated, "\n")), 0o644)
 }
 
-// moveFeedbackCompanion moves docs/ac<N>-<slug>-feedback.md to
-// .governa/feedback/ac<N>-<slug>.md per AC55. Returns the destination path.
-func moveFeedbackCompanion(repoRoot, feedbackPath string) (string, error) {
-	name := filepath.Base(feedbackPath)
-	destName := strings.TrimSuffix(name, "-feedback.md") + ".md"
-	destDir := filepath.Join(repoRoot, ".governa", "feedback")
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return "", err
-	}
-	destPath := filepath.Join(destDir, destName)
-	if err := os.Rename(feedbackPath, destPath); err != nil {
-		return "", err
-	}
-	return destPath, nil
-}
-
 func emitReleaseCommand(out io.Writer, version, message string) {
 	fmt.Fprintf(out, "\nrelease command:\n  ./build.sh %s %q\n", version, message)
 }
 
-func printDryRun(out io.Writer, versionTargets []versionTarget, changelogTargets []string, versionStripped, message string, acFiles, critiqueFiles, dispFiles, feedbackFiles []string) {
+func printDryRun(out io.Writer, versionTargets []versionTarget, changelogTargets []string, versionStripped, message string, acFiles, critiqueFiles, dispFiles []string) {
 	fmt.Fprintln(out, "\n--- dry run (no writes) ---")
 	fmt.Fprintln(out, "version bumps:")
 	for _, t := range versionTargets {
@@ -583,10 +566,6 @@ func printDryRun(out io.Writer, versionTargets []versionTarget, changelogTargets
 	}
 	for _, p := range dispFiles {
 		fmt.Fprintf(out, "  delete %s (-dispositions companion)\n", p)
-	}
-	fmt.Fprintln(out, "feedback moves:")
-	for _, p := range feedbackFiles {
-		fmt.Fprintf(out, "  %s → .governa/feedback/\n", p)
 	}
 	fmt.Fprintln(out, "--- end dry run ---")
 }

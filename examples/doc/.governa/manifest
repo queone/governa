@@ -1,0 +1,7 @@
+governa-manifest-v1
+template-version: 0.51.0
+repo-name: example-doc
+purpose: Example governed documentation repository rendered from the template.
+type: DOC
+publishing-platform: Hugo
+style: house voice

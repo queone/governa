@@ -6,7 +6,7 @@ Example governed documentation repository rendered from the template.
 
 ## Publishing Platform
 
-- Static site generator
+- Hugo
 
 ## Current Priorities
 

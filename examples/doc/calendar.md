@@ -8,7 +8,7 @@ This is an alternate to `content-plan.md`. Keep whichever fits your editorial mo
 
 ## Publishing Platform
 
-- Static site generator
+- Hugo
 
 ## Cadence
 

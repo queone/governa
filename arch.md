@@ -40,7 +40,7 @@ Template improvements flow in the opposite direction through an out-of-band work
 - this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `sync`
 - shell wrappers are conveniences only; the canonical implementation lives in Go
 - `docs/roles/` provides role-specific behavior docs (director reference, DEV, QA, maintainer) that supplement the shared governance contract; role selection is instruction-driven and defined in `Interaction Mode`
-- governa-managed metadata in consumer repos lives at `.governa/manifest` (committed). Legacy paths (`.governa-manifest`, `.governa/sync-review.md`, `.governa/proposed/`, `.governa/feedback/`, `.governa/config`) from pre-AC78 governa are auto-removed at sync start.
+- governa-managed metadata in consumer repos lives at `.governa/manifest` (committed) and `.governa/sync-review.md` (the per-sync review artifact, not committed — rewritten on every sync that doesn't use `--yes`). Legacy paths (`.governa-manifest`, `.governa/proposed/`, `.governa/feedback/`, `.governa/config`) from pre-AC78 governa are auto-removed at sync start.
 - pure stdlib; no external Go dependencies (verified via `go.mod`)
 - templates use `{{PLACEHOLDER}}` substitution, not a templating engine (text/template intentionally not used)
 - overlays are additive; they must not conflict with the base governance contract

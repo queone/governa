@@ -1,4 +1,4 @@
-# example-code-repo
+# example-code
 
 Example governed code repository rendered from the template.
 

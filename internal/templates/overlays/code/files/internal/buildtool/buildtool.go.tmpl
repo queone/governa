@@ -183,7 +183,6 @@ func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 			return err
 		}
 	}
-	installedGoverna := ""
 	for _, target := range targets {
 		outputPath := filepath.Join(binDir, target+ext)
 		fmt.Fprintf(out, "\n%s %s\n", color.Yel("==> Building and installing"), color.Grn(target))
@@ -191,12 +190,7 @@ func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(out, "    installed: %s\n", color.Cya(outputPath))
-		if target == "governa" {
-			installedGoverna = outputPath
-		}
 	}
-
-	checkDrift(out, installedGoverna)
 
 	if nextTag, ok, err := nextPatchTag(); err != nil {
 		return err
@@ -452,73 +446,6 @@ func nextPatchTagFromOutput(output string) (string, bool, error) {
 	return fmt.Sprintf("v%d.%d.%d", last.major, last.minor, last.patch+1), true, nil
 }
 
-// resolveGoverna returns the path to the governa binary. It prefers
-// the path installed by this build run (installedPath). If that is
-// empty it falls back to exec.LookPath. Returns "" if unavailable.
-func resolveGoverna(installedPath string) string {
-	if installedPath != "" {
-		return installedPath
-	}
-	if p, err := exec.LookPath("governa"); err == nil {
-		return p
-	}
-	return ""
-}
-
-// checkDrift runs `governa enhance -d` (self-review mode) and relays
-// the summary line. It is advisory — failures are silently ignored.
-// Self-review outputs either "no changes since embedded version" (clean)
-// or "summary: N changed, N added, N removed" (drift detected).
-func checkDrift(out io.Writer, installedPath string) {
-	bin := resolveGoverna(installedPath)
-	if bin == "" {
-		return
-	}
-	cmd := exec.Command(bin, "enhance", "-d")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return
-	}
-	relayDriftSummary(out, string(output))
-}
-
-// relayDriftSummary scans enhance self-review output for the summary:
-// line and prints a banner if drift is detected. Exported for testing.
-func relayDriftSummary(out io.Writer, output string) {
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		stripped := stripAnsi(line)
-		if strings.HasPrefix(stripped, "summary:") {
-			fmt.Fprintf(out, "\n%s\n", color.Yel("==> Governance drift check"))
-			fmt.Fprintf(out, "    %s\n", line)
-			return
-		}
-	}
-}
-
-// stripAnsi removes ANSI escape sequences for prefix matching.
-func stripAnsi(s string) string {
-	var buf strings.Builder
-	i := 0
-	for i < len(s) {
-		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
-			j := i + 2
-			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
-				j++
-			}
-			if j < len(s) {
-				j++ // skip the final letter
-			}
-			i = j
-			continue
-		}
-		buf.WriteByte(s[i])
-		i++
-	}
-	return buf.String()
-}
-
 func extractProgramVersion(path string) (string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -695,7 +622,8 @@ func parseFenceLine(line string) (byte, int, bool, bool) {
 
 // listMarkdownFiles returns absolute-or-relative paths to tracked .md files
 // under dir. Prefers git ls-files for accuracy; falls back to filesystem walk
-// skipping .git/, node_modules/, vendor/.
+// skipping .git/, node_modules/, vendor/. Filters out tracked files that no
+// longer exist on disk (e.g., unstaged deletions).
 func listMarkdownFiles(dir string) ([]string, error) {
 	cmd := exec.Command("git", "-C", dir, "ls-files", "*.md")
 	output, err := cmd.Output()
@@ -707,7 +635,12 @@ func listMarkdownFiles(dir string) ([]string, error) {
 			if rel == "" {
 				continue
 			}
-			files = append(files, filepath.Join(dir, rel))
+			full := filepath.Join(dir, rel)
+			if _, statErr := os.Stat(full); statErr != nil {
+				fmt.Fprintf(os.Stderr, "mdcheck: skipping tracked but missing file: %s\n", rel)
+				continue
+			}
+			files = append(files, full)
 		}
 		if scanErr := scanner.Err(); scanErr != nil {
 			return nil, fmt.Errorf("scan git ls-files: %w", scanErr)

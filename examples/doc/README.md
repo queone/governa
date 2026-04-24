@@ -1,4 +1,4 @@
-# example-doc-repo
+# example-doc
 
 Example governed documentation repository rendered from the template.
 
@@ -12,11 +12,11 @@ This is a governed `DOC` repo bootstrapped from `governa`.
 
 Publishing platform:
 
-- Static site generator
+- Hugo
 
 Editorial style reference:
 
-- Clear, factual, concise
+- house voice
 
 ## Working Agreement
 

@@ -185,19 +185,16 @@ func TestBuildManifestMinimalShape(t *testing.T) {
 	}
 }
 
-// AC79 Part B AT10: removed-symbol grep. Asserted at build time — if any of
-// these compile, the build fails — so this test just has to reference them
-// in documentation form.
+// AC79 Part B AT10: removed-symbol trip-wire. Absence is asserted at
+// compile time — if the deleted surfaces come back, other tests stop
+// compiling. AC80 AT13's `TestRetiredSymbolsNotPresent` is the active
+// regression guard; this test is retained as a named anchor for the
+// AC79 retirement set.
 func TestAC79RemovedSymbols(t *testing.T) {
 	t.Parallel()
-	// Symbols removed by AC79 Part B, confirmed absent by the fact that this
-	// test file (and the production code) compile:
-	//   - resolveCollision
-	//   - readExistingForCollision
-	//   - parseCollisionReply
-	//   - isTTY
-	//   - collisionChoice, choiceKeep, choiceOverwrite, choiceSkip
-	//   - Config.AssumeNo, Config.Input, Config.DryRun
+	// Symbols removed by AC79 Part B (enumerated in AT13's retiredSymbols
+	// list). If any return, AT13 fails before tests even compile in most
+	// cases.
 	// If any of those return, this test file will need references updated
 	// before re-passing — serves as a trip-wire, not a live assertion.
 }

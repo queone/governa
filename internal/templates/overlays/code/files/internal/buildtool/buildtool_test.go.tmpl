@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -487,140 +488,6 @@ func TestScriptOnlyCommandsExemptFromVersionCheck(t *testing.T) {
 	}
 }
 
-// --- resolveGoverna tests ---
-
-func TestResolveGovernaPrefsInstalledPath(t *testing.T) {
-	t.Parallel()
-	got := resolveGoverna("/some/bin/governa")
-	if got != "/some/bin/governa" {
-		t.Fatalf("expected installed path, got %q", got)
-	}
-}
-
-func TestResolveGovernaFallsBackToLookPath(t *testing.T) {
-	t.Parallel()
-	// With empty installed path, it should fall back to LookPath.
-	// We can't guarantee governa is on PATH in CI, so just verify
-	// the function returns without panic.
-	_ = resolveGoverna("")
-}
-
-func TestResolveGovernaReturnsEmptyWhenUnavailable(t *testing.T) {
-	// Set PATH to empty so LookPath fails
-	t.Setenv("PATH", "")
-
-	got := resolveGoverna("")
-	if got != "" {
-		t.Fatalf("expected empty, got %q", got)
-	}
-}
-
-// --- checkDrift tests ---
-
-func TestCheckDriftSkipsWhenBinaryUnavailable(t *testing.T) {
-	var buf bytes.Buffer
-	// Empty installed path and no governa on PATH should produce no output
-	t.Setenv("PATH", "")
-
-	checkDrift(&buf, "")
-	if buf.Len() != 0 {
-		t.Fatalf("expected no output when governa unavailable, got %q", buf.String())
-	}
-}
-
-func TestCheckDriftSubprocessFailureSilent(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	// Point to a binary that will exit non-zero
-	checkDrift(&buf, "/usr/bin/false")
-	if buf.Len() != 0 {
-		t.Fatalf("expected no output on subprocess failure, got %q", buf.String())
-	}
-}
-
-func TestCheckDriftNoDriftLineInOutputSilent(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	// Use "echo" which produces output but no "drift:" line
-	echoPath, err := exec.LookPath("echo")
-	if err != nil {
-		t.Skip("echo not found")
-	}
-	checkDrift(&buf, echoPath)
-	if buf.Len() != 0 {
-		t.Fatalf("expected no output when no drift line, got %q", buf.String())
-	}
-}
-
-// --- relayDriftSummary tests ---
-
-func TestRelayDriftSummaryWithDrift(t *testing.T) {
-	t.Parallel()
-	output := "mode: self-review (comparing local templates against embedded v0.7.0)\n" +
-		"  changed: base/AGENTS.md (sections: Purpose)\n" +
-		"summary: 1 changed, 0 added, 0 removed\n"
-	var buf bytes.Buffer
-	relayDriftSummary(&buf, output)
-	got := buf.String()
-	if !strings.Contains(got, "Governance drift check") {
-		t.Fatalf("expected drift check banner, got %q", got)
-	}
-	if !strings.Contains(got, "summary: 1 changed, 0 added, 0 removed") {
-		t.Fatalf("expected summary line relayed, got %q", got)
-	}
-}
-
-func TestRelayDriftSummaryClean(t *testing.T) {
-	t.Parallel()
-	output := "mode: self-review (comparing local templates against embedded v0.7.0)\n" +
-		"no changes since embedded version\n"
-	var buf bytes.Buffer
-	relayDriftSummary(&buf, output)
-	if buf.Len() != 0 {
-		t.Fatalf("expected no output for clean self-review, got %q", buf.String())
-	}
-}
-
-func TestRelayDriftSummaryEmpty(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	relayDriftSummary(&buf, "")
-	if buf.Len() != 0 {
-		t.Fatalf("expected no output for empty input, got %q", buf.String())
-	}
-}
-
-func TestRelayDriftSummaryWithAnsiCodes(t *testing.T) {
-	t.Parallel()
-	output := "\x1b[33msummary:\x1b[0m 2 changed, 1 added, 0 removed\n"
-	var buf bytes.Buffer
-	relayDriftSummary(&buf, output)
-	got := buf.String()
-	if !strings.Contains(got, "Governance drift check") {
-		t.Fatalf("expected drift check banner with ANSI input, got %q", got)
-	}
-}
-
-// --- stripAnsi tests ---
-
-func TestStripAnsiRemovesEscapes(t *testing.T) {
-	t.Parallel()
-	input := "\x1b[33mdrift:\x1b[0m none detected"
-	got := stripAnsi(input)
-	if got != "drift: none detected" {
-		t.Fatalf("got %q, want %q", got, "drift: none detected")
-	}
-}
-
-func TestStripAnsiPassthroughPlainText(t *testing.T) {
-	t.Parallel()
-	input := "drift: none detected"
-	got := stripAnsi(input)
-	if got != input {
-		t.Fatalf("got %q, want %q", got, input)
-	}
-}
-
 // --- CheckNestedFences / scanNestedFences tests (AC64 AT4, AT5) ---
 
 // AT4(i) Clean markdown with no fences produces no findings.
@@ -869,5 +736,38 @@ func TestGoFmtNonEmptyOutputFailsBuild(t *testing.T) {
 	// condition checked in Run() to make go fmt build-breaking
 	if strings.TrimSpace(string(output)) == "" {
 		t.Fatal("expected go fmt to report reformatted files")
+	}
+}
+
+// AC75 AT5: listMarkdownFiles skips tracked files that no longer exist on disk.
+func TestListMarkdownFilesSkipsMissing(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	exec.Command("git", "-C", dir, "init").Run()
+	exec.Command("git", "-C", dir, "config", "user.email", "test@test.com").Run()
+	exec.Command("git", "-C", dir, "config", "user.name", "Test").Run()
+
+	os.WriteFile(filepath.Join(dir, "keep.md"), []byte("# Keep\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "remove.md"), []byte("# Remove\n"), 0o644)
+
+	exec.Command("git", "-C", dir, "add", "keep.md", "remove.md").Run()
+	exec.Command("git", "-C", dir, "commit", "-m", "init").Run()
+
+	os.Remove(filepath.Join(dir, "remove.md"))
+
+	files, err := listMarkdownFiles(dir)
+	if err != nil {
+		t.Fatalf("listMarkdownFiles: %v", err)
+	}
+
+	var names []string
+	for _, f := range files {
+		names = append(names, filepath.Base(f))
+	}
+	sort.Strings(names)
+
+	if len(names) != 1 || names[0] != "keep.md" {
+		t.Errorf("expected [keep.md], got %v", names)
 	}
 }

@@ -1,4 +1,4 @@
-# example-code-repo Architecture
+# example-code Architecture
 
 ## Purpose
 
@@ -10,7 +10,7 @@ Document the system's major components, boundaries, runtime flow, storage model,
 
 ## Current Platform
 
-- Go service
+- Go
 
 ## Major Components
 

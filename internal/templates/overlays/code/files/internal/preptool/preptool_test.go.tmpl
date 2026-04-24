@@ -348,7 +348,7 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "docs", "ac-template.md"), "# template\n")
 
 	acNums := parseACRefs("AC60: prep tool")
-	acFiles, _, _, _, err := findACCompanions(dir, acNums)
+	acFiles, _, _, err := findACCompanions(dir, acNums)
 	if err != nil {
 		t.Fatalf("findACCompanions: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 
 	// Composite message.
 	acNums = parseACRefs("AC60+AC61: bundle")
-	acFiles, _, _, _, err = findACCompanions(dir, acNums)
+	acFiles, _, _, err = findACCompanions(dir, acNums)
 	if err != nil {
 		t.Fatalf("findACCompanions composite: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestPrepDeletesCritiqueAndDispositionsCompanions(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "docs", "ac60-prep-tool-dispositions.md"), "disp\n")
 
 	acNums := parseACRefs("AC60: prep")
-	ac, crit, disp, feedback, err := findACCompanions(dir, acNums)
+	ac, crit, disp, err := findACCompanions(dir, acNums)
 	if err != nil {
 		t.Fatalf("findACCompanions: %v", err)
 	}
@@ -392,31 +392,6 @@ func TestPrepDeletesCritiqueAndDispositionsCompanions(t *testing.T) {
 	}
 	if len(disp) != 1 {
 		t.Fatalf("dispositions files = %v", disp)
-	}
-	if len(feedback) != 0 {
-		t.Fatalf("feedback files should be empty = %v", feedback)
-	}
-}
-
-// AT10: -feedback.md moves to .governa/feedback/ac<N>-<slug>.md.
-func TestPrepMovesFeedbackCompanions(t *testing.T) {
-	dir := t.TempDir()
-	feedbackPath := filepath.Join(dir, "docs", "ac60-prep-tool-feedback.md")
-	mustWrite(t, feedbackPath, "feedback\n")
-
-	dest, err := moveFeedbackCompanion(dir, feedbackPath)
-	if err != nil {
-		t.Fatalf("moveFeedbackCompanion: %v", err)
-	}
-	wantDest := filepath.Join(dir, ".governa", "feedback", "ac60-prep-tool.md")
-	if dest != wantDest {
-		t.Fatalf("dest = %s, want %s", dest, wantDest)
-	}
-	if _, err := os.Stat(feedbackPath); !os.IsNotExist(err) {
-		t.Fatalf("source still exists")
-	}
-	if _, err := os.Stat(wantDest); err != nil {
-		t.Fatalf("dest missing: %v", err)
 	}
 }
 
@@ -644,15 +619,5 @@ func TestUsage(t *testing.T) {
 		if !strings.Contains(u, want) {
 			t.Errorf("Usage() missing %q. got:\n%s", want, u)
 		}
-	}
-}
-
-// moveFeedbackCompanion errors when the source path doesn't exist.
-func TestMoveFeedbackCompanionMissingSource(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	_, err := moveFeedbackCompanion(dir, filepath.Join(dir, "docs", "nope-feedback.md"))
-	if err == nil {
-		t.Error("expected error on missing source, got nil")
 	}
 }

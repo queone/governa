@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This file defines how `example-doc-repo` content moves from draft to published output.
+This file defines how `example-doc` content moves from draft to published output.
 
 ## Platform
 
-- Static site generator
+- Hugo
 
 ## Workflow
 

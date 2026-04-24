@@ -1,4 +1,4 @@
-# example-code-repo Plan
+# example-code Plan
 
 ## Product Direction
 

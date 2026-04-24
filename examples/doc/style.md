@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This file defines the editorial style for `example-doc-repo`.
+This file defines the editorial style for `example-doc`.
 
 ## Voice Or Style
 
-- Clear, factual, concise
+- house voice
 
 ## Standards
 

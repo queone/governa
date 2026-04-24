@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This file defines the voice and persona for `example-doc-repo`.
+This file defines the voice and persona for `example-doc`.
 
 This is an alternate to `style.md`. Keep whichever fits your editorial model and delete the other.
 
 ## Voice
 
-- Clear, factual, concise
+- house voice
 
 ## Audience
 
