@@ -11588,3 +11588,216 @@ func TestPlanMdIEPreambleNamesBothShapes(t *testing.T) {
 		}
 	}
 }
+
+// --- AC75 tests (enhance feedback parsing fixes) ---
+
+// AC75 AT1: feedbackFilenameRe matches both versioned and unversioned filenames.
+func TestFeedbackFilenameReMatchesBothFormats(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		wantMatch   bool
+		wantAC      string
+		wantSlug    string
+		wantVersion string
+	}{
+		{"ac9-governa-sync-0.45.3.md", true, "9", "governa-sync", "0.45.3"},
+		{"ac19-governa-sync-adoption.md", true, "19", "governa-sync-adoption", ""},
+		{"ac60-governa-sync-0.36.0.md", true, "60", "governa-sync", "0.36.0"},
+		{"not-an-ac.md", false, "", "", ""},
+		{"ac-missing-number.md", false, "", "", ""},
+	}
+	for _, tc := range cases {
+		m := feedbackFilenameRe.FindStringSubmatch(tc.name)
+		if tc.wantMatch {
+			if m == nil {
+				t.Errorf("%s: expected match, got nil", tc.name)
+				continue
+			}
+			if m[1] != tc.wantAC {
+				t.Errorf("%s: AC number = %q, want %q", tc.name, m[1], tc.wantAC)
+			}
+			if m[2] != tc.wantSlug {
+				t.Errorf("%s: slug = %q, want %q", tc.name, m[2], tc.wantSlug)
+			}
+			if m[3] != tc.wantVersion {
+				t.Errorf("%s: version = %q, want %q", tc.name, m[3], tc.wantVersion)
+			}
+		} else if m != nil {
+			t.Errorf("%s: expected no match, got %v", tc.name, m)
+		}
+	}
+}
+
+// AC75 AT2: parseFeedbackObservations returns candidates from flat H2 headings.
+func TestParseFeedbackObservationsFlatH2(t *testing.T) {
+	t.Parallel()
+	content := `# AC19 feedback
+
+## Landed well
+
+- **Feature X works great.** No issues observed.
+- **Feature Y also good.** Smooth adoption.
+
+## Observations
+
+- **mdcheck interacts with unstaged deletions.** When a tracked file is deleted but not staged, mdcheck fails.
+
+## Metadata
+
+- Sync range: governa 0.46.0 → 0.47.0
+`
+	blocks := parseFeedbackObservations(content)
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks, got %d", len(blocks))
+	}
+
+	var landedWell, observation *feedbackObservationBlock
+	for i := range blocks {
+		switch blocks[i].category {
+		case "landed well":
+			landedWell = &blocks[i]
+		case "observation":
+			observation = &blocks[i]
+		}
+	}
+
+	if landedWell == nil {
+		t.Fatal("missing 'landed well' block")
+	}
+	if len(landedWell.bullets) != 2 {
+		t.Errorf("landed well: expected 2 bullets, got %d", len(landedWell.bullets))
+	}
+
+	if observation == nil {
+		t.Fatal("missing 'observation' block")
+	}
+	if len(observation.bullets) != 1 {
+		t.Errorf("observation: expected 1 bullet, got %d", len(observation.bullets))
+	}
+}
+
+// AC75 AT3: parseFeedbackObservations still works with canonical H3 layout.
+func TestParseFeedbackObservationsCanonicalH3(t *testing.T) {
+	t.Parallel()
+	content := `# AC9 feedback
+
+## Observations about the sync itself
+
+### Landed well
+
+- **Round-trip worked.** Feedback surfaced and addressed.
+
+### Friction surfaced during adoption
+
+- **Reason phrasing understates scope.** Bullet added but also reworded.
+
+## Metadata
+
+- version: 0.45.3
+`
+	blocks := parseFeedbackObservations(content)
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(blocks))
+	}
+
+	var landedWell, friction bool
+	for _, b := range blocks {
+		switch b.category {
+		case "landed well":
+			landedWell = true
+			if len(b.bullets) != 1 {
+				t.Errorf("landed well: expected 1 bullet, got %d", len(b.bullets))
+			}
+		case "friction":
+			friction = true
+			if len(b.bullets) != 1 {
+				t.Errorf("friction: expected 1 bullet, got %d", len(b.bullets))
+			}
+		}
+	}
+	if !landedWell {
+		t.Error("missing 'landed well' block")
+	}
+	if !friction {
+		t.Error("missing 'friction' block")
+	}
+}
+
+// AC75 AT4: summarizeChange detects concurrent wording changes.
+func TestSummarizeChangeWordingChanged(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		existing string
+		proposed string
+		want     string
+	}{
+		{
+			"bullet-added-only",
+			"- alpha\n- beta\n",
+			"- alpha\n- beta\n- gamma\n",
+			"bullet added",
+		},
+		{
+			"bullet-added-plus-reword",
+			"- alpha original\n- beta\n",
+			"- alpha reworded\n- beta\n- gamma\n",
+			"bullet added + wording changed",
+		},
+		{
+			"bullet-removed-plus-reword",
+			"- alpha original\n- beta\n- gamma\n",
+			"- alpha reworded\n- beta\n",
+			"bullet removed + wording changed",
+		},
+		{
+			"multi-bullet-added-plus-reword",
+			"- alpha original\n",
+			"- alpha reworded\n- beta\n- gamma\n",
+			"2 bullets added + wording changed",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := summarizeChange(tc.existing, tc.proposed)
+			if got != tc.want {
+				t.Errorf("summarizeChange = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// AC75: extractFeedbackMetadataVersion extracts version from ## Metadata.
+func TestExtractFeedbackMetadataVersion(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	withMeta := `# Feedback
+
+## Metadata
+
+- Sync range: governa 0.46.0 → 0.47.0
+- Consumer repo: utils
+`
+	os.WriteFile(filepath.Join(dir, "with-meta.md"), []byte(withMeta), 0o644)
+
+	noMeta := "# Feedback\n\nSome content.\n"
+	os.WriteFile(filepath.Join(dir, "no-meta.md"), []byte(noMeta), 0o644)
+
+	got := extractFeedbackMetadataVersion(dir, "with-meta.md")
+	if got != "0.47.0" {
+		t.Errorf("with metadata: got %q, want %q", got, "0.47.0")
+	}
+
+	got = extractFeedbackMetadataVersion(dir, "no-meta.md")
+	if got != "unknown" {
+		t.Errorf("without metadata: got %q, want %q", got, "unknown")
+	}
+
+	got = extractFeedbackMetadataVersion(dir, "nonexistent.md")
+	if got != "unknown" {
+		t.Errorf("nonexistent file: got %q, want %q", got, "unknown")
+	}
+}

@@ -695,7 +695,8 @@ func parseFenceLine(line string) (byte, int, bool, bool) {
 
 // listMarkdownFiles returns absolute-or-relative paths to tracked .md files
 // under dir. Prefers git ls-files for accuracy; falls back to filesystem walk
-// skipping .git/, node_modules/, vendor/.
+// skipping .git/, node_modules/, vendor/. Filters out tracked files that no
+// longer exist on disk (e.g., unstaged deletions).
 func listMarkdownFiles(dir string) ([]string, error) {
 	cmd := exec.Command("git", "-C", dir, "ls-files", "*.md")
 	output, err := cmd.Output()
@@ -707,7 +708,12 @@ func listMarkdownFiles(dir string) ([]string, error) {
 			if rel == "" {
 				continue
 			}
-			files = append(files, filepath.Join(dir, rel))
+			full := filepath.Join(dir, rel)
+			if _, statErr := os.Stat(full); statErr != nil {
+				fmt.Fprintf(os.Stderr, "mdcheck: skipping tracked but missing file: %s\n", rel)
+				continue
+			}
+			files = append(files, full)
 		}
 		if scanErr := scanner.Err(); scanErr != nil {
 			return nil, fmt.Errorf("scan git ls-files: %w", scanErr)

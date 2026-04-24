@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.47.1 | AC75: feedback-loop fixes (addresses utils feedback from v0.47.0 syncs) |
 | 0.47.0 | AC74: IE dual-use semantics (addresses utils feedback from v0.46.0 syncs) |
 | 0.46.0 | AC73: simplify plan.md to Product Direction + Ideas To Explore |
 | 0.45.3 | AC72: integrated-critique doc sweep (qa.md + ac-template.md) |

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -869,5 +870,38 @@ func TestGoFmtNonEmptyOutputFailsBuild(t *testing.T) {
 	// condition checked in Run() to make go fmt build-breaking
 	if strings.TrimSpace(string(output)) == "" {
 		t.Fatal("expected go fmt to report reformatted files")
+	}
+}
+
+// AC75 AT5: listMarkdownFiles skips tracked files that no longer exist on disk.
+func TestListMarkdownFilesSkipsMissing(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	exec.Command("git", "-C", dir, "init").Run()
+	exec.Command("git", "-C", dir, "config", "user.email", "test@test.com").Run()
+	exec.Command("git", "-C", dir, "config", "user.name", "Test").Run()
+
+	os.WriteFile(filepath.Join(dir, "keep.md"), []byte("# Keep\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "remove.md"), []byte("# Remove\n"), 0o644)
+
+	exec.Command("git", "-C", dir, "add", "keep.md", "remove.md").Run()
+	exec.Command("git", "-C", dir, "commit", "-m", "init").Run()
+
+	os.Remove(filepath.Join(dir, "remove.md"))
+
+	files, err := listMarkdownFiles(dir)
+	if err != nil {
+		t.Fatalf("listMarkdownFiles: %v", err)
+	}
+
+	var names []string
+	for _, f := range files {
+		names = append(names, filepath.Base(f))
+	}
+	sort.Strings(names)
+
+	if len(names) != 1 || names[0] != "keep.md" {
+		t.Errorf("expected [keep.md], got %v", names)
 	}
 }

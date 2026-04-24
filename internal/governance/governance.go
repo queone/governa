@@ -2242,17 +2242,17 @@ func formatCandidateLine(c EnhancementCandidate, referenceRoot string) string {
 }
 
 // feedbackFilenameRe matches the persisted feedback-file filename convention:
-// ac<N>-<slug>-<version>.md where <version> is a dotted semver. Per AC63's
-// filename convention (docs/build-release.md Template Upgrade step 5).
-var feedbackFilenameRe = regexp.MustCompile(`^ac(\d+)-(.+)-(\d+\.\d+\.\d+)\.md$`)
+// ac<N>-<slug>.md with an optional trailing semver (ac<N>-<slug>-<version>.md).
+// The version group is optional because prep moves feedback files as
+// ac<N>-<slug>.md where the slug comes from the AC filename — not all slugs
+// contain a version suffix.
+var feedbackFilenameRe = regexp.MustCompile(`^ac(\d+)-(.+?)(?:-(\d+\.\d+\.\d+))?\.md$`)
 
 // reviewFeedbackFiles scans <referenceRoot>/.governa/feedback/*.md, parses
-// each file's ## Upstream suggestions section (entries are ### subheadings)
-// and ## Observations about the sync itself section (entries are top-level
-// `- ` bullets under two category H3s: `### Landed well` / `### Friction
-// surfaced during adoption`), and returns one EnhancementCandidate per entry.
-// Labels carry the source + category via the Summary field. Malformed files
-// are skipped silently. (AC69 Part A)
+// each file's ## Upstream suggestions section and observation sections
+// (canonical H3 layout or flat H2 variants), and returns one
+// EnhancementCandidate per entry. Filename version suffix is optional;
+// when absent, version is extracted from ## Metadata. (AC69 Part A, AC75)
 func reviewFeedbackFiles(referenceRoot string) ([]EnhancementCandidate, error) {
 	feedbackDir := filepath.Join(referenceRoot, ".governa", "feedback")
 	entries, err := os.ReadDir(feedbackDir)
@@ -2278,6 +2278,9 @@ func reviewFeedbackFiles(referenceRoot string) ([]EnhancementCandidate, error) {
 		}
 		slug := match[2]
 		version := match[3]
+		if version == "" {
+			version = extractFeedbackMetadataVersion(feedbackDir, name)
+		}
 		relPath := filepath.Join(".governa", "feedback", name)
 		fullPath := filepath.Join(feedbackDir, name)
 		raw, readErr := os.ReadFile(fullPath)
@@ -2370,17 +2373,20 @@ func parseFeedbackSection(content, sectionHeading, subheadingMarker string) []fe
 }
 
 // parseFeedbackObservations extracts observation bullets grouped by category.
-// Reads the body of ## Observations about the sync itself, then walks its
-// ### subheadings (### Landed well / ### Friction surfaced during adoption
-// — other categories are tolerated for forward-compatibility). Within each
-// category, top-level `- ` bullets become entries. A bullet's bolded first
-// phrase (between ** markers, up to sentence-ending period) is the title;
-// remainder is the body.
+// First tries the canonical heading (## Observations about the sync itself)
+// with ### subheadings. If absent, falls back to flat H2 variants:
+// ## Landed well, ## Observations, ## Friction (surfaced during adoption).
+// Within each category, top-level `- ` bullets become entries. A bullet's
+// bolded first phrase (between ** markers) is the title; remainder is the body.
 func parseFeedbackObservations(content string) []feedbackObservationBlock {
 	body := extractSectionBody(content, "## Observations about the sync itself")
-	if body == "" {
-		return nil
+	if body != "" {
+		return parseObservationBulletsFromH3(body)
 	}
+	return parseObservationBulletsFromFlatH2(content)
+}
+
+func parseObservationBulletsFromH3(body string) []feedbackObservationBlock {
 	var blocks []feedbackObservationBlock
 	lines := strings.Split(body, "\n")
 	var currentBlock *feedbackObservationBlock
@@ -2400,7 +2406,6 @@ func parseFeedbackObservations(content string) []feedbackObservationBlock {
 		}
 	}
 	for _, line := range lines {
-		// New category heading.
 		if strings.HasPrefix(line, "### ") {
 			flushBlock()
 			categoryRaw := strings.ToLower(strings.TrimPrefix(line, "### "))
@@ -2411,17 +2416,14 @@ func parseFeedbackObservations(content string) []feedbackObservationBlock {
 			case strings.Contains(categoryRaw, "friction"):
 				category = "friction"
 			default:
-				// Tolerate unknown category — label with raw title for forward-compat.
 				category = strings.TrimSpace(categoryRaw)
 			}
 			currentBlock = &feedbackObservationBlock{category: category}
 			continue
 		}
 		if currentBlock == nil {
-			// Skip content before the first category heading.
 			continue
 		}
-		// Top-level bullet: `- **<title>.** <body...>`.
 		if strings.HasPrefix(line, "- ") {
 			flushBullet()
 			rest := strings.TrimPrefix(line, "- ")
@@ -2429,12 +2431,60 @@ func parseFeedbackObservations(content string) []feedbackObservationBlock {
 			currentBullet = &feedbackEntry{title: title, body: body + "\n"}
 			continue
 		}
-		// Continuation of current bullet (indented wrap).
 		if currentBullet != nil && (strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") || strings.TrimSpace(line) == "") {
 			currentBullet.body += line + "\n"
 		}
 	}
 	flushBlock()
+	return blocks
+}
+
+// parseObservationBulletsFromFlatH2 scans for known H2 headings that serve as
+// observation categories when the canonical wrapper heading is absent.
+func parseObservationBulletsFromFlatH2(content string) []feedbackObservationBlock {
+	type h2Category struct {
+		heading  string
+		category string
+	}
+	known := []h2Category{
+		{"## Landed well", "landed well"},
+		{"## Observations", "observation"},
+		{"## Friction surfaced during adoption", "friction"},
+		{"## Friction", "friction"},
+	}
+	var blocks []feedbackObservationBlock
+	for _, kc := range known {
+		body := extractSectionBody(content, kc.heading)
+		if body == "" {
+			continue
+		}
+		block := feedbackObservationBlock{category: kc.category}
+		lines := strings.Split(body, "\n")
+		var currentBullet *feedbackEntry
+		flushBullet := func() {
+			if currentBullet != nil {
+				currentBullet.body = strings.TrimSpace(currentBullet.body)
+				block.bullets = append(block.bullets, *currentBullet)
+				currentBullet = nil
+			}
+		}
+		for _, line := range lines {
+			if strings.HasPrefix(line, "- ") {
+				flushBullet()
+				rest := strings.TrimPrefix(line, "- ")
+				title, b := splitBoldedTitle(rest)
+				currentBullet = &feedbackEntry{title: title, body: b + "\n"}
+				continue
+			}
+			if currentBullet != nil && (strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") || strings.TrimSpace(line) == "") {
+				currentBullet.body += line + "\n"
+			}
+		}
+		flushBullet()
+		if len(block.bullets) > 0 {
+			blocks = append(blocks, block)
+		}
+	}
 	return blocks
 }
 
@@ -2491,6 +2541,30 @@ func truncateForReason(body string) string {
 		return trim
 	}
 	return ""
+}
+
+var semverOnlyRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// extractFeedbackMetadataVersion reads a feedback file and extracts the target
+// version from its ## Metadata section's "Sync range:" line. Returns "unknown"
+// if not found.
+func extractFeedbackMetadataVersion(dir, name string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return "unknown"
+	}
+	body := extractSectionBody(string(raw), "## Metadata")
+	for line := range strings.SplitSeq(body, "\n") {
+		if strings.Contains(line, "Sync range:") {
+			if _, after, ok := strings.Cut(line, "→"); ok {
+				after = strings.TrimSpace(after)
+				if semverOnlyRe.MatchString(after) {
+					return after
+				}
+			}
+		}
+	}
+	return "unknown"
 }
 
 func reviewGovernedSections(tfs fs.FS, referenceRoot string, mmap map[string]ManifestEntry) ([]EnhancementCandidate, error) {
@@ -4605,15 +4679,22 @@ func summarizeChange(existingBody, proposedBody string) string {
 	eBullets := countBullets(existingBody)
 	pBullets := countBullets(proposedBody)
 	bulletDelta := pBullets - eBullets
+	var base string
 	switch {
 	case bulletDelta == 1:
-		return "bullet added"
+		base = "bullet added"
 	case bulletDelta == -1:
-		return "bullet removed"
+		base = "bullet removed"
 	case bulletDelta > 1:
-		return fmt.Sprintf("%d bullets added", bulletDelta)
+		base = fmt.Sprintf("%d bullets added", bulletDelta)
 	case bulletDelta < -1:
-		return fmt.Sprintf("%d bullets removed", -bulletDelta)
+		base = fmt.Sprintf("%d bullets removed", -bulletDelta)
+	}
+	if base != "" {
+		if hasWordingChange(existingBody, proposedBody) {
+			return base + " + wording changed"
+		}
+		return base
 	}
 	eSub := countSubsectionHeadings(existingBody)
 	pSub := countSubsectionHeadings(proposedBody)
@@ -4624,6 +4705,40 @@ func summarizeChange(existingBody, proposedBody string) string {
 		return "subsection removed"
 	}
 	return ""
+}
+
+// hasWordingChange checks whether the shared (non-delta) bullet lines differ
+// between two section bodies. Used to distinguish "bullet added" from
+// "bullet added + wording changed".
+func hasWordingChange(existingBody, proposedBody string) bool {
+	eBullets := extractBulletTexts(existingBody)
+	pBullets := extractBulletTexts(proposedBody)
+	shorter, longer := eBullets, pBullets
+	if len(shorter) > len(longer) {
+		shorter, longer = longer, shorter
+	}
+	longerSet := make(map[string]bool, len(longer))
+	for _, b := range longer {
+		longerSet[b] = true
+	}
+	matched := 0
+	for _, b := range shorter {
+		if longerSet[b] {
+			matched++
+		}
+	}
+	return matched < len(shorter)
+}
+
+func extractBulletTexts(body string) []string {
+	var bullets []string
+	for line := range strings.SplitSeq(body, "\n") {
+		trim := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trim, "- ") {
+			bullets = append(bullets, trim)
+		}
+	}
+	return bullets
 }
 
 // countBullets returns the number of top-level bullet list items (lines
