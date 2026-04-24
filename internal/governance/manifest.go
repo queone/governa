@@ -29,15 +29,17 @@ const (
 
 const legacyManifestFormatVersion = "repokit-manifest-v1"
 
-// AC78 legacy artifacts. Consumer repos that synced under pre-AC78 governa
-// may carry these paths from earlier sync artifacts. migrateGovernaLegacyPaths
-// removes them transparently on the next sync.
+// AC79 reinstates .governa/sync-review.md as a current artifact, so it is not
+// in the AC78 legacy-cleanup list. The three below remain retired.
 const (
-	legacyPreAC78ProposedDir    = ".governa/proposed"
-	legacyPreAC78SyncReviewFile = ".governa/sync-review.md"
-	legacyPreAC78FeedbackDir    = ".governa/feedback"
-	legacyPreAC78ConfigFile     = ".governa/config"
+	legacyPreAC78ProposedDir = ".governa/proposed"
+	legacyPreAC78FeedbackDir = ".governa/feedback"
+	legacyPreAC78ConfigFile  = ".governa/config"
 )
+
+// syncReviewFile is the path (repo-relative) of the DEV/QA/Director review
+// artifact produced by runSync. Rewritten on every sync that doesn't use --yes.
+const syncReviewFile = ".governa/sync-review.md"
 
 type ManifestParams struct {
 	RepoName           string
@@ -241,7 +243,7 @@ func migrateGovernaLegacyPaths(root string) error {
 		}
 		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s (AC78 migration)\n", rel)
 	}
-	for _, rel := range []string{legacyPreAC78SyncReviewFile, legacyPreAC78ConfigFile} {
+	for _, rel := range []string{legacyPreAC78ConfigFile} {
 		abs := filepath.Join(root, rel)
 		info, err := os.Stat(abs)
 		if errors.Is(err, os.ErrNotExist) {

@@ -39,13 +39,13 @@ Single entry point for both new and existing repos. Detection order:
 
 - inspect current files before writing anything
 - resolve metadata via priority: (1) explicit flag, (2) stored manifest params, (3) inference from target directory, (4) interactive prompt
-- create missing governed files from the template
-- for each file that already exists and would differ from the template, prompt the operator (`k` keep / `o` overwrite / `s` skip)
-- `--yes` / `--no` batch-apply one choice to every collision for non-interactive use; stdin-not-a-TTY without either flag exits non-zero
-- write `TEMPLATE_VERSION`
+- create missing governed files from the template (no collision, written automatically)
+- for each file that already exists and would differ from the template, **do not touch the file** — record the collision in `.governa/sync-review.md` with a diff preview
+- `--yes` is the escape hatch: batch-overwrite every colliding file directly, skip the review-doc workflow
+- always write `TEMPLATE_VERSION` and `.governa/manifest` (bookkeeping bypasses the collision path)
 - create `CLAUDE.md → AGENTS.md` symlink if missing
 
-Before writing files, sync prints an assessment of how well the template fits the target repo.
+The review-doc workflow: DEV runs sync, shares the summary + `.governa/sync-review.md` with the Director, Director routes to QA, the three iterate until decisions are clear, DEV drafts an AC implementing the adopts (manual edits against the review, or re-run `governa sync --yes` after AC ships). Before writing files, sync prints an assessment of how well the template fits the target repo.
 
 ## Implementation Constraints
 
@@ -73,9 +73,7 @@ Flag mapping (mode is determined by the `sync` subcommand):
 -u, --publishing-platform
 -v, --style
 -g, --init-git
--d, --dry-run
     --yes
-    --no
 ```
 
 ## Agent Agnosticism

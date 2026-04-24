@@ -5,13 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/queone/governa/internal/color"
@@ -49,10 +49,7 @@ type Config struct {
 	PublishingPlatform string
 	Style              string
 	InitGit            bool
-	DryRun             bool
-	AssumeYes          bool      // AC78 Part C: --yes — apply overwrite to every collision.
-	AssumeNo           bool      // AC78 Part C: --no  — apply keep to every collision.
-	Input              io.Reader // interactive prompt source; nil defaults to os.Stdin
+	AssumeYes          bool // AC79 Part B: --yes — batch-overwrite all colliding files; skip the review-doc workflow.
 }
 
 type Assessment struct {
@@ -107,9 +104,7 @@ type flagValues struct {
 	publishingPlatform string
 	style              string
 	initGit            bool
-	dryRun             bool
 	assumeYes          bool
-	assumeNo           bool
 }
 
 // RunWithFS dispatches the one supported mode (sync) against the template FS.
@@ -148,10 +143,7 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.StringVar(&values.repoType, "type", "", "repo type: CODE|DOC")
 	fset.BoolVar(&values.initGit, "g", false, "initialize git if target is not already a repo")
 	fset.BoolVar(&values.initGit, "init-git", false, "initialize git if target is not already a repo")
-	fset.BoolVar(&values.dryRun, "d", false, "preview changes without writing")
-	fset.BoolVar(&values.dryRun, "dry-run", false, "preview changes without writing")
-	fset.BoolVar(&values.assumeYes, "yes", false, "overwrite all collisions without prompting")
-	fset.BoolVar(&values.assumeNo, "no", false, "keep all collisions (no overwrites) without prompting")
+	fset.BoolVar(&values.assumeYes, "yes", false, "batch-overwrite all colliding files; skip the review-doc workflow")
 	if slices.Contains(args, "-?") || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
 		printModeHelp(mode)
 		return Config{}, true, nil
@@ -173,10 +165,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		target = cwd
 	}
 
-	if values.assumeYes && values.assumeNo {
-		return Config{}, false, fmt.Errorf("flags --yes and --no are mutually exclusive")
-	}
-
 	cfg := Config{
 		Mode:               mode,
 		Target:             target,
@@ -187,9 +175,7 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		PublishingPlatform: strings.TrimSpace(values.publishingPlatform),
 		Style:              strings.TrimSpace(values.style),
 		InitGit:            values.initGit,
-		DryRun:             values.dryRun,
 		AssumeYes:          values.assumeYes,
-		AssumeNo:           values.assumeNo,
 	}
 	// Validation is deferred to runSync (after prompts) for ModeSync.
 	return cfg, false, nil
@@ -208,8 +194,8 @@ func ModeHelp(mode Mode) string {
 			{Flag: "-v, --style", Desc: "style or voice (DOC repos)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
 			{Flag: "-g, --init-git", Desc: "initialize git if target is not a repo"},
-			{Flag: "-d, --dry-run", Desc: "preview changes without writing"},
-		}, "Detects whether the target is a new or existing repo and prompts for missing parameters. On collisions, prompts interactively with 'k' keep / 'o' overwrite / 's' skip. --yes / --no batch-apply those choices for non-interactive runs.")
+			{Flag: "    --yes", Desc: "batch-overwrite all colliding files; skip the review-doc workflow"},
+		}, "Detects whether the target is a new or existing repo and prompts for missing parameters. Colliding files (existing content differs from template) are NOT touched — they're recorded in `.governa/sync-review.md` for DEV + QA + Director review. `--yes` batch-overwrites every collision directly (escape hatch, skips the review-doc loop).")
 	}
 	return ""
 }
@@ -440,11 +426,7 @@ func promptParam(prompt string, defaultVal string, sc *bufio.Scanner) string {
 // promptMissing fills in any missing Config fields by prompting interactively.
 // Fields already set (via flags, manifest, or inference) are not prompted.
 func promptMissing(cfg *Config, targetDir string) {
-	r := cfg.Input
-	if r == nil {
-		r = os.Stdin
-	}
-	sc := bufio.NewScanner(r)
+	sc := bufio.NewScanner(os.Stdin)
 
 	if cfg.RepoName == "" {
 		basename := inferRepoName(targetDir)
@@ -484,36 +466,32 @@ func promptMissing(cfg *Config, targetDir string) {
 	}
 }
 
-// runSync is the sync-mode entrypoint. Path constants used here and throughout
-// the file come from manifest.go: ".governa/manifest", ".governa/proposed",
-// ".governa/sync-review.md", ".governa/feedback" (AC55).
-// AC78 Part C: collision resolution verbs recognized by promptCollisionChoice.
-type collisionChoice int
-
-const (
-	choiceKeep collisionChoice = iota
-	choiceOverwrite
-	choiceSkip
-)
+// collisionRecord captures one file whose existing content differs from the
+// rendered template. Populated during runSync and rendered into
+// `.governa/sync-review.md` for DEV/Director/QA to review.
+type collisionRecord struct {
+	path     string // absolute path on disk
+	existing string // content currently on disk
+	proposed string // content the template would write
+}
 
 // runSync writes the base template + overlay files to the target directory.
-// For every write-op whose target exists and differs from the template, it
-// consults cfg (AssumeYes / AssumeNo / DryRun / interactive stdin) to decide
-// whether to keep, overwrite, or skip. No sync-review artifact, no proposed/
-// sidecar, no manifest checksum tracking.
+// Default behavior: new + identical files are written; colliding files are
+// NOT touched — they're recorded in `.governa/sync-review.md` for review.
+// `--yes` (AssumeYes) is the escape hatch: apply every colliding write
+// directly, skip the review-doc workflow. Bookkeeping writes (TEMPLATE_VERSION,
+// `.governa/manifest`) always apply regardless of collision state.
 func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	targetAbs, err := filepath.Abs(cfg.Target)
 	if err != nil {
 		return fmt.Errorf("resolve target path: %w", err)
 	}
-	if err := os.MkdirAll(targetAbs, 0o755); err != nil && !cfg.DryRun {
+	if err := os.MkdirAll(targetAbs, 0o755); err != nil {
 		return fmt.Errorf("create target directory: %w", err)
 	}
 
-	if !cfg.DryRun {
-		if err := migrateGovernaLegacyPaths(targetAbs); err != nil {
-			return fmt.Errorf("migrate legacy governa paths: %w", err)
-		}
+	if err := migrateGovernaLegacyPaths(targetAbs); err != nil {
+		return fmt.Errorf("migrate legacy governa paths: %w", err)
 	}
 
 	syncMode := detectSyncMode(targetAbs)
@@ -545,6 +523,9 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		fmt.Printf("type: %s (inferred)\n", cfg.Type)
 	}
 
+	oldManifest, _, _ := readManifest(targetAbs)
+	oldTemplateVersion := oldManifest.TemplateVersion
+
 	canonical, err := planCanonical(tfs, repoRoot, cfg, targetAbs)
 	if err != nil {
 		return err
@@ -567,37 +548,49 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		note:    "bootstrap manifest",
 	}
 
-	// Resolve collisions for every write op that targets an existing file.
-	// symlink ops fall through to applyOperations (symlinkConflict handles
-	// the regular-file-blocking-symlink case there).
+	// Classify each canonical op:
+	//   - bookkeeping write (template version marker): always apply
+	//   - symlink with regular-file collision: conflict, skip
+	//   - symlink otherwise: skipIfExists
+	//   - write-op where target doesn't exist: apply
+	//   - write-op where target exists + identical: apply (touchless)
+	//   - write-op where target exists + differs:
+	//       AssumeYes: apply (overwrite)
+	//       otherwise: record collision, skip the write
 	resolved := make([]operation, 0, len(canonical))
 	var syncConflicts []conflict
+	var collisions []collisionRecord
 	for _, op := range canonical {
 		if op.kind == "write" {
-			existing, differs, exists, readErr := readExistingForCollision(op.path, op.content)
-			_ = existing
-			if readErr != nil {
-				return fmt.Errorf("read %s: %w", op.path, readErr)
-			}
-			if exists && differs {
-				choice, err := resolveCollision(op.path, targetAbs, cfg)
-				if err != nil {
-					return err
-				}
-				switch choice {
-				case choiceKeep, choiceSkip:
-					resolved = append(resolved, operation{kind: "skip"})
-					continue
-				case choiceOverwrite:
-					// fall through to append the write op
+			isBookkeeping := op.note == "template version marker"
+			if !isBookkeeping {
+				existingBytes, readErr := os.ReadFile(op.path)
+				switch {
+				case errors.Is(readErr, os.ErrNotExist):
+					// file doesn't exist — fall through to append (new write)
+				case readErr != nil:
+					return fmt.Errorf("read %s: %w", op.path, readErr)
+				default:
+					existing := string(existingBytes)
+					if existing != op.content {
+						if cfg.AssumeYes {
+							// overwrite — fall through to append
+							fmt.Printf("overwrite (--yes): %s\n", displayPath(targetAbs, op.path))
+						} else {
+							collisions = append(collisions, collisionRecord{
+								path:     op.path,
+								existing: existing,
+								proposed: op.content,
+							})
+							resolved = append(resolved, operation{kind: "skip"})
+							continue
+						}
+					}
+					// existing == op.content: fall through — touchless write
 				}
 			}
 		}
 		if op.kind == "symlink" {
-			// Preserve the pre-AC78 symlink-vs-regular-file conflict detection:
-			// if an existing regular file blocks the symlink, emit a conflict
-			// and skip the op so applyOperations doesn't surface a lower-level
-			// error.
 			info, err := os.Lstat(op.path)
 			if err == nil && info.Mode()&os.ModeSymlink == 0 {
 				rel, _ := filepath.Rel(targetAbs, op.path)
@@ -613,12 +606,26 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 
 	ops := compactOperations(resolved)
 	ops = append(ops, manifestOp)
-	if err := applyOperations(ops, cfg.DryRun); err != nil {
+	if err := applyOperations(ops); err != nil {
 		return err
 	}
 
+	// Write `.governa/sync-review.md` unless --yes was used (escape hatch
+	// applies everything directly; no review loop needed).
+	if !cfg.AssumeYes {
+		reviewPath := filepath.Join(targetAbs, syncReviewFile)
+		reviewContent := renderSyncReview(targetAbs, oldTemplateVersion, templateVersion, collisions)
+		if err := os.MkdirAll(filepath.Dir(reviewPath), 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", governaDir, err)
+		}
+		if err := os.WriteFile(reviewPath, []byte(reviewContent), 0o644); err != nil {
+			return fmt.Errorf("write sync review: %w", err)
+		}
+		printReviewSummary(targetAbs, reviewPath, len(collisions))
+	}
+
 	if cfg.InitGit {
-		if err := maybeInitGit(targetAbs, cfg.DryRun); err != nil {
+		if err := maybeInitGit(targetAbs); err != nil {
 			return err
 		}
 	}
@@ -632,100 +639,103 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	return nil
 }
 
-// readExistingForCollision returns the on-disk content, whether it differs
-// from the proposed template content, and whether the file exists at all.
-func readExistingForCollision(path, proposed string) (existing string, differs bool, exists bool, err error) {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", false, false, nil
+// displayPath renders an absolute path as repo-relative when possible, for
+// human-readable sync output.
+func displayPath(targetAbs, absPath string) string {
+	if rel, err := filepath.Rel(targetAbs, absPath); err == nil {
+		return filepath.ToSlash(rel)
 	}
-	if err != nil {
-		return "", false, false, err
-	}
-	s := string(b)
-	return s, s != proposed, true, nil
+	return absPath
 }
 
-// resolveCollision decides keep / overwrite / skip for one collision based on
-// cfg (AssumeYes / AssumeNo / DryRun) and interactive stdin. AC78 Part C.
-func resolveCollision(absPath, targetAbs string, cfg Config) (collisionChoice, error) {
-	rel, err := filepath.Rel(targetAbs, absPath)
-	if err != nil {
-		rel = absPath
-	}
-	rel = filepath.ToSlash(rel)
-
-	if cfg.DryRun {
-		fmt.Printf("dry-run collision: %s (would prompt — auto-skipping)\n", rel)
-		return choiceSkip, nil
-	}
-	if cfg.AssumeYes {
-		fmt.Printf("collision: %s — overwrite (--yes)\n", rel)
-		return choiceOverwrite, nil
-	}
-	if cfg.AssumeNo {
-		fmt.Printf("collision: %s — keep (--no)\n", rel)
-		return choiceKeep, nil
+// renderSyncReview produces the `.governa/sync-review.md` content. Scope is
+// pending-decisions-only: colliding files each get a header + diff preview.
+// Zero-collision case writes a summary-only review. Non-colliding writes are
+// NOT listed here — `git diff` shows the rest.
+func renderSyncReview(targetAbs, oldVersion, newVersion string, collisions []collisionRecord) string {
+	var b strings.Builder
+	fmt.Fprintln(&b, "# Governa Sync Review")
+	fmt.Fprintln(&b)
+	if oldVersion != "" && newVersion != "" && oldVersion != newVersion {
+		fmt.Fprintf(&b, "Template version: %s → %s\n\n", oldVersion, newVersion)
+	} else if newVersion != "" {
+		fmt.Fprintf(&b, "Template version: %s\n\n", newVersion)
 	}
 
-	// Interactive prompt — require a TTY.
-	in := cfg.Input
-	if in == nil {
-		in = os.Stdin
-	}
-	if !isTTY(in) {
-		return choiceSkip, fmt.Errorf(
-			"collision detected for %s but stdin is not a TTY; pass --yes to overwrite all collisions or --no to keep all",
-			rel,
-		)
+	if len(collisions) == 0 {
+		fmt.Fprintln(&b, "0 files need review. Sync is clean — non-colliding writes were applied automatically; see `git diff` for the full set of changes.")
+		return b.String()
 	}
 
-	reader := bufio.NewReader(in)
-	for {
-		fmt.Printf("collision: %s — [k]eep / [o]verwrite / [s]kip: ", rel)
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) && strings.TrimSpace(line) == "" {
-				return choiceSkip, fmt.Errorf("collision prompt closed with no choice for %s", rel)
-			}
-			return choiceSkip, fmt.Errorf("read collision prompt response: %w", err)
+	fmt.Fprintf(&b, "%d file(s) need review. Each entry below lists a file whose existing content differs from the template. Sync did NOT touch these files on disk; they are pending DEV + QA + Director decisions before adoption.\n\n", len(collisions))
+	fmt.Fprintln(&b, "For each entry: review the diff, decide keep-as-is or adopt-template, and capture the decision in the next AC. Re-run `governa sync --yes` after the AC ships to apply all adopt decisions in a batch, or edit the files manually.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "## Collisions")
+	fmt.Fprintln(&b)
+
+	sorted := append([]collisionRecord(nil), collisions...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].path < sorted[j].path })
+	for _, c := range sorted {
+		rel := displayPath(targetAbs, c.path)
+		existingLines := strings.Count(c.existing, "\n")
+		proposedLines := strings.Count(c.proposed, "\n")
+		fmt.Fprintf(&b, "### `%s`\n\n", rel)
+		fmt.Fprintf(&b, "Existing: %d lines · Template: %d lines\n\n", existingLines, proposedLines)
+		fmt.Fprintln(&b, "```diff")
+		fmt.Fprint(&b, unifiedDiffPreview(c.existing, c.proposed, 50))
+		fmt.Fprintln(&b, "```")
+		fmt.Fprintln(&b)
+	}
+	return b.String()
+}
+
+// unifiedDiffPreview produces a minimal unified-diff-style rendering of two
+// strings, truncated to maxLines. No hunk headers or context calculation —
+// each line is labelled `-` (existing), `+` (proposed), or ` ` (unchanged).
+// Truncation is indicated with a trailing `... (N more lines)` marker.
+func unifiedDiffPreview(existing, proposed string, maxLines int) string {
+	eLines := strings.Split(existing, "\n")
+	pLines := strings.Split(proposed, "\n")
+
+	var out strings.Builder
+	i, j, emitted := 0, 0, 0
+	for i < len(eLines) || j < len(pLines) {
+		if emitted >= maxLines {
+			remaining := (len(eLines) - i) + (len(pLines) - j)
+			fmt.Fprintf(&out, "... (%d more lines; see full file on disk)\n", remaining)
+			return out.String()
 		}
-		if choice, ok := parseCollisionReply(line); ok {
-			return choice, nil
+		switch {
+		case i < len(eLines) && j < len(pLines) && eLines[i] == pLines[j]:
+			fmt.Fprintf(&out, " %s\n", eLines[i])
+			i++
+			j++
+		case j < len(pLines) && (i >= len(eLines) || eLines[i] != pLines[j]):
+			fmt.Fprintf(&out, "+%s\n", pLines[j])
+			j++
+		case i < len(eLines):
+			fmt.Fprintf(&out, "-%s\n", eLines[i])
+			i++
 		}
-		fmt.Printf("  expected k/o/s\n")
+		emitted++
 	}
+	return out.String()
 }
 
-// parseCollisionReply maps a user's interactive reply to a collisionChoice.
-// Returns (choice, true) on a recognized verb; (0, false) otherwise (so the
-// caller can reprompt). Exposed so tests can exercise every verb without
-// needing a TTY fixture.
-func parseCollisionReply(line string) (collisionChoice, bool) {
-	switch strings.TrimSpace(strings.ToLower(line)) {
-	case "k", "keep":
-		return choiceKeep, true
-	case "o", "overwrite":
-		return choiceOverwrite, true
-	case "s", "skip":
-		return choiceSkip, true
+// printReviewSummary emits a one-line stdout summary pointing the operator at
+// the review doc. Distinct counts for clean vs review-needed runs so the
+// summary is actionable.
+func printReviewSummary(targetAbs, reviewPath string, collisionCount int) {
+	rel := displayPath(targetAbs, reviewPath)
+	if collisionCount == 0 {
+		fmt.Printf("%s %s (0 collisions)\n", color.Yel("review:"), rel)
+		return
 	}
-	return 0, false
-}
-
-// isTTY reports whether the reader points at a terminal device. We treat any
-// non-*os.File reader (test fixtures, pipes) as non-TTY unless the file's
-// Stat reports a character-device mode.
-func isTTY(r io.Reader) bool {
-	f, ok := r.(*os.File)
-	if !ok {
-		return false
+	plural := "collision"
+	if collisionCount != 1 {
+		plural = "collisions"
 	}
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
+	fmt.Printf("%s %s (%d %s — review + decide)\n", color.Yel("review:"), rel, collisionCount, plural)
 }
 
 func AssessTarget(root string, repoType RepoType) (Assessment, error) {
@@ -903,7 +913,7 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 var governaOwnedPaths = map[string]bool{
 	// Bookkeeping
 	manifestFileName:            true, // .governa/manifest
-	legacyPreAC78SyncReviewFile: true, // pre-AC78 legacy (retired)
+	syncReviewFile:              true, // .governa/sync-review.md (AC79 Part B review artifact)
 	legacyPreAC55ManifestFile:   true, // pre-AC55 legacy
 	legacyPreAC55SyncReviewFile: true, // pre-AC55 legacy
 	legacyManifestFileName:      true, // pre-governa legacy
@@ -1163,22 +1173,16 @@ func compactOperations(ops []operation) []operation {
 	return out
 }
 
-func applyOperations(ops []operation, dryRun bool) error {
+func applyOperations(ops []operation) error {
 	for _, op := range ops {
 		switch op.kind {
 		case "mkdir":
-			fmt.Printf("%s %s (%s)\n", formatAction(dryRun, "mkdir"), op.path, op.note)
-			if dryRun {
-				continue
-			}
+			fmt.Printf("mkdir %s (%s)\n", op.path, op.note)
 			if err := os.MkdirAll(op.path, 0o755); err != nil {
 				return fmt.Errorf("create directory %s: %w", op.path, err)
 			}
 		case "write":
-			fmt.Printf("%s %s (%s)\n", formatAction(dryRun, "write"), op.path, op.note)
-			if dryRun {
-				continue
-			}
+			fmt.Printf("write %s (%s)\n", op.path, op.note)
 			if err := os.MkdirAll(filepath.Dir(op.path), 0o755); err != nil {
 				return fmt.Errorf("create parent directory for %s: %w", op.path, err)
 			}
@@ -1190,10 +1194,7 @@ func applyOperations(ops []operation, dryRun bool) error {
 				return fmt.Errorf("write %s: %w", op.path, err)
 			}
 		case "symlink":
-			fmt.Printf("%s %s -> %s (%s)\n", formatAction(dryRun, "symlink"), op.path, op.linkTo, op.note)
-			if dryRun {
-				continue
-			}
+			fmt.Printf("symlink %s -> %s (%s)\n", op.path, op.linkTo, op.note)
 			if err := os.MkdirAll(filepath.Dir(op.path), 0o755); err != nil {
 				return fmt.Errorf("create parent directory for %s: %w", op.path, err)
 			}
@@ -1210,29 +1211,19 @@ func applyOperations(ops []operation, dryRun bool) error {
 	return nil
 }
 
-func maybeInitGit(targetRoot string, dryRun bool) error {
+func maybeInitGit(targetRoot string) error {
 	gitDir := filepath.Join(targetRoot, ".git")
 	if _, err := os.Stat(gitDir); err == nil {
-		fmt.Printf("%s %s (git repo already present)\n", formatAction(dryRun, "skip"), gitDir)
+		fmt.Printf("skip %s (git repo already present)\n", gitDir)
 		return nil
 	}
-	fmt.Printf("%s git init %s\n", formatAction(dryRun, "exec"), targetRoot)
-	if dryRun {
-		return nil
-	}
+	fmt.Printf("exec git init %s\n", targetRoot)
 	cmd := exec.Command("git", "init", targetRoot)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git init %s: %w: %s", targetRoot, err, strings.TrimSpace(string(output)))
 	}
 	return nil
-}
-
-func formatAction(dryRun bool, action string) string {
-	if dryRun {
-		return "dry-run " + action
-	}
-	return action
 }
 
 func printAssessment(mode Mode, target string, a Assessment) {

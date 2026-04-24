@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.51.0 | AC79: sync-review.md reinstated + TEMPLATE_VERSION bookkeeping fix |
 | 0.50.0 | AC78: minimal governa — enhance+ack removed, legacy artifacts auto-migrated |
 | 0.49.0 | AC77: sync-UX rollup (addresses skout feedback from v0.44.0 syncs) |
 | 0.48.0 | AC76: sync-review quality fixes (addresses skout feedback from v0.47.1 syncs) |

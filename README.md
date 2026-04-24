@@ -47,7 +47,7 @@ Or with flags to skip prompts:
 governa sync -y CODE -n my-service -p "API gateway for internal services" -s "Go"
 ```
 
-**Existing repo** (governance artifacts or manifest found): for every template file that would differ from what the repo already has, sync prompts interactively with `k` (keep existing), `o` (overwrite with template), or `s` (skip for now). Add `--yes` to overwrite everything, or `--no` to keep everything — useful in CI where stdin is not a TTY.
+**Existing repo** (governance artifacts or manifest found): non-colliding files (new to the target, or identical to the template) are written automatically along with bookkeeping (`TEMPLATE_VERSION`, `.governa/manifest`). Any file whose existing content differs from the template is **not touched** — the collision is recorded in `.governa/sync-review.md` with a diff preview for DEV, QA, and the Director to review. DEV then drafts an AC against the review and either edits adopts manually or re-runs `governa sync --yes` (the escape hatch) to batch-overwrite every collision.
 
 ```bash
 governa sync

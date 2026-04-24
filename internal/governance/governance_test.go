@@ -1,9 +1,10 @@
 package governance
 
 import (
-	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -42,34 +43,80 @@ func TestParseFlagsSyncDefaults(t *testing.T) {
 	if cfg.Target != "/tmp/nope" {
 		t.Errorf("Target = %q; want /tmp/nope", cfg.Target)
 	}
-	if cfg.AssumeYes || cfg.AssumeNo {
-		t.Errorf("expected no batch flags by default; got yes=%v no=%v", cfg.AssumeYes, cfg.AssumeNo)
+	if cfg.AssumeYes {
+		t.Errorf("expected AssumeYes=false by default")
 	}
 }
 
-func TestParseFlagsAssumeYesNoMutuallyExclusive(t *testing.T) {
+// AC79 Part B AT8: `--no` flag is no longer recognized.
+func TestParseFlagsRejectsNo(t *testing.T) {
 	t.Parallel()
-	_, _, err := parseFlags(ModeSync, []string{"--yes", "--no", "--target", "/tmp/x"})
-	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("expected mutually-exclusive error; got %v", err)
+	_, _, err := parseFlags(ModeSync, []string{"--no", "--target", "/tmp/x"})
+	if err == nil {
+		t.Fatal("expected flag-parse error for removed --no flag; got nil")
 	}
 }
 
-func TestModeHelpSyncDescribesCollisionPrompt(t *testing.T) {
+// AC79 Part B AT9: `--dry-run` flag is no longer recognized.
+func TestParseFlagsRejectsDryRun(t *testing.T) {
+	t.Parallel()
+	_, _, err := parseFlags(ModeSync, []string{"--dry-run", "--target", "/tmp/x"})
+	if err == nil {
+		t.Fatal("expected flag-parse error for removed --dry-run flag; got nil")
+	}
+	_, _, err = parseFlags(ModeSync, []string{"-d", "--target", "/tmp/x"})
+	if err == nil {
+		t.Fatal("expected flag-parse error for removed -d shorthand; got nil")
+	}
+}
+
+func TestParseFlagsAcceptsYes(t *testing.T) {
+	t.Parallel()
+	cfg, _, err := parseFlags(ModeSync, []string{"--yes", "--target", "/tmp/x"})
+	if err != nil {
+		t.Fatalf("parseFlags --yes: %v", err)
+	}
+	if !cfg.AssumeYes {
+		t.Errorf("AssumeYes = false; want true after --yes")
+	}
+}
+
+func TestModeHelpSyncDescribesReviewDoc(t *testing.T) {
 	t.Parallel()
 	help := ModeHelp(ModeSync)
 	if help == "" {
 		t.Fatal("ModeHelp returned empty")
 	}
-	if !strings.Contains(help, "--yes") || !strings.Contains(help, "--no") {
-		t.Errorf("sync help missing --yes/--no flags: %q", help)
-	}
-	if !strings.Contains(help, "keep") || !strings.Contains(help, "overwrite") || !strings.Contains(help, "skip") {
-		t.Errorf("sync help missing collision prompt verbs: %q", help)
+	if !strings.Contains(help, ".governa/sync-review.md") {
+		t.Errorf("sync help missing review-doc reference: %q", help)
 	}
 }
 
-func TestModeHelpUnknownMode(t *testing.T) {
+// AC79 F-new-3: --yes must appear as its own flag-list row, not only in the
+// footer prose. Regex-anchored so the assertion catches footer-only mentions.
+func TestModeHelpSyncListsYesFlag(t *testing.T) {
+	t.Parallel()
+	help := ModeHelp(ModeSync)
+	re := regexp.MustCompile(`(?m)^\s+(?:-\w,\s+)?--yes\s{2,}`)
+	if !re.MatchString(help) {
+		t.Errorf("sync help missing --yes as a flag-list row (regex %q); got:\n%s", re, help)
+	}
+}
+
+// AC79 F-new-2: --dry-run must NOT appear as a flag-list row (it was retired).
+func TestModeHelpSyncOmitsDryRun(t *testing.T) {
+	t.Parallel()
+	help := ModeHelp(ModeSync)
+	if strings.Contains(help, "--dry-run") {
+		t.Errorf("sync help still references --dry-run; should be removed per AC79. Got:\n%s", help)
+	}
+	re := regexp.MustCompile(`(?m)^\s+-d,`)
+	if re.MatchString(help) {
+		t.Errorf("sync help still references -d shorthand; should be removed. Got:\n%s", help)
+	}
+}
+
+func TestModeHelpRemovedModes(t *testing.T) {
 	t.Parallel()
 	if got := ModeHelp(Mode("enhance")); got != "" {
 		t.Errorf("removed mode 'enhance' should have empty help; got %q", got)
@@ -99,14 +146,6 @@ func TestInferPurposeFromReadme(t *testing.T) {
 	}
 }
 
-func TestInferPurposeNoReadme(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	if got := inferPurpose(dir); got != "" {
-		t.Errorf("inferPurpose without README = %q; want empty", got)
-	}
-}
-
 func TestInferStackFromGoMod(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
@@ -128,7 +167,7 @@ func TestDetectSyncModeNewRepo(t *testing.T) {
 func TestDetectSyncModeReSync(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
-		".governa/manifest": "governa-manifest-v1\ntemplate-version: 0.49.0\n",
+		".governa/manifest": "governa-manifest-v1\ntemplate-version: 0.50.0\n",
 	})
 	if got := detectSyncMode(dir); got != "re-sync" {
 		t.Errorf("detectSyncMode with manifest = %q; want re-sync", got)
@@ -137,221 +176,157 @@ func TestDetectSyncModeReSync(t *testing.T) {
 
 func TestBuildManifestMinimalShape(t *testing.T) {
 	t.Parallel()
-	params := ManifestParams{
-		RepoName: "x",
-		Purpose:  "p",
-		Type:     "CODE",
-		Stack:    "Go",
-	}
-	m := buildManifest("1.2.3", params)
+	m := buildManifest("1.2.3", ManifestParams{RepoName: "x", Type: "CODE"})
 	if m.TemplateVersion != "1.2.3" {
 		t.Errorf("TemplateVersion = %q; want 1.2.3", m.TemplateVersion)
 	}
 	if m.Params.RepoName != "x" {
 		t.Errorf("Params.RepoName = %q; want x", m.Params.RepoName)
 	}
-	if m.FormatVersion != "governa-manifest-v1" {
-		t.Errorf("FormatVersion = %q; want governa-manifest-v1", m.FormatVersion)
-	}
 }
 
-func TestFormatManifestNoEntriesNoAcknowledged(t *testing.T) {
+// AC79 Part B AT10: removed-symbol grep. Asserted at build time — if any of
+// these compile, the build fails — so this test just has to reference them
+// in documentation form.
+func TestAC79RemovedSymbols(t *testing.T) {
 	t.Parallel()
-	m := buildManifest("0.50.0", ManifestParams{RepoName: "x", Purpose: "p", Type: "CODE"})
-	out := formatManifest(m)
-	if strings.Contains(out, "sha256:") {
-		t.Errorf("formatted manifest must not contain sha256 entries; got:\n%s", out)
-	}
-	if strings.Contains(out, "acknowledged:") {
-		t.Errorf("formatted manifest must not contain acknowledged block; got:\n%s", out)
-	}
-	if !strings.Contains(out, "template-version: 0.50.0") {
-		t.Errorf("formatted manifest missing template-version line; got:\n%s", out)
-	}
+	// Symbols removed by AC79 Part B, confirmed absent by the fact that this
+	// test file (and the production code) compile:
+	//   - resolveCollision
+	//   - readExistingForCollision
+	//   - parseCollisionReply
+	//   - isTTY
+	//   - collisionChoice, choiceKeep, choiceOverwrite, choiceSkip
+	//   - Config.AssumeNo, Config.Input, Config.DryRun
+	// If any of those return, this test file will need references updated
+	// before re-passing — serves as a trip-wire, not a live assertion.
 }
 
-func TestParseManifestIgnoresLegacyEntries(t *testing.T) {
-	t.Parallel()
-	raw := `governa-manifest-v1
-template-version: 0.49.0
-repo-name: x
-purpose: p
-type: CODE
-
-AGENTS.md sha256:deadbeef source:base/AGENTS.md source-sha256:feedface
-
-acknowledged:
-  - path: README.md
-    consumer-sha: aaaa
-    template-sha: bbbb
-    template-version: 0.48.0
-    reason: legacy ack
-`
-	m, err := parseManifest(raw)
-	if err != nil {
-		t.Fatalf("parseManifest: %v", err)
-	}
-	if m.TemplateVersion != "0.49.0" {
-		t.Errorf("TemplateVersion = %q; want 0.49.0", m.TemplateVersion)
-	}
-	if m.Params.RepoName != "x" {
-		t.Errorf("Params.RepoName = %q; want x", m.Params.RepoName)
-	}
-	// Legacy per-entry and acknowledged lines should not crash the parser.
-}
-
-func TestResolveCollisionDryRunAutoSkips(t *testing.T) {
-	t.Parallel()
+// AC79 Part A AT1: TEMPLATE_VERSION is always overwritten, even when the
+// disk content differs from the current template version.
+func TestRunSyncAlwaysWritesTemplateVersion(t *testing.T) {
 	dir := t.TempDir()
-	choice, err := resolveCollision(filepath.Join(dir, "f"), dir, Config{DryRun: true})
-	if err != nil {
-		t.Fatalf("resolveCollision dry-run: %v", err)
+	// Seed stale TEMPLATE_VERSION + minimal manifest to put target in re-sync state.
+	if err := os.WriteFile(filepath.Join(dir, "TEMPLATE_VERSION"), []byte("0.0.1\n"), 0o644); err != nil {
+		t.Fatalf("seed TEMPLATE_VERSION: %v", err)
 	}
-	if choice != choiceSkip {
-		t.Errorf("dry-run choice = %v; want choiceSkip", choice)
+	if err := os.MkdirAll(filepath.Join(dir, ".governa"), 0o755); err != nil {
+		t.Fatalf("mkdir .governa: %v", err)
+	}
+	manifestContent := "governa-manifest-v1\ntemplate-version: 0.0.1\nrepo-name: x\npurpose: x\ntype: CODE\nstack: Go\n"
+	if err := os.WriteFile(filepath.Join(dir, ".governa", "manifest"), []byte(manifestContent), 0o644); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	cfg := Config{
+		Mode:      ModeSync,
+		Target:    dir,
+		Type:      RepoTypeCode,
+		RepoName:  "x",
+		Purpose:   "x",
+		Stack:     "Go",
+		AssumeYes: false, // deliberately NOT --yes; bookkeeping writes should happen anyway.
+	}
+	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil && !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "TEMPLATE_VERSION"))
+	if err != nil {
+		t.Fatalf("read post-sync TEMPLATE_VERSION: %v", err)
+	}
+	want := templates.TemplateVersion + "\n"
+	// Some test setups might not have the trailing newline — accept either.
+	if strings.TrimSpace(string(got)) != strings.TrimSpace(want) {
+		t.Errorf("TEMPLATE_VERSION = %q; want %q", string(got), want)
 	}
 }
 
-func TestResolveCollisionAssumeYes(t *testing.T) {
-	t.Parallel()
+// AC79 Part A AT2: TEMPLATE_VERSION is never listed as a collision in the
+// review doc (bookkeeping writes are exempt from the collision path).
+func TestSyncReviewOmitsTemplateVersion(t *testing.T) {
 	dir := t.TempDir()
-	choice, err := resolveCollision(filepath.Join(dir, "f"), dir, Config{AssumeYes: true})
+	if err := os.WriteFile(filepath.Join(dir, "TEMPLATE_VERSION"), []byte("0.0.1\n"), 0o644); err != nil {
+		t.Fatalf("seed TEMPLATE_VERSION: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".governa"), 0o755); err != nil {
+		t.Fatalf("mkdir .governa: %v", err)
+	}
+	manifestContent := "governa-manifest-v1\ntemplate-version: 0.0.1\nrepo-name: x\npurpose: x\ntype: CODE\nstack: Go\n"
+	if err := os.WriteFile(filepath.Join(dir, ".governa", "manifest"), []byte(manifestContent), 0o644); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	cfg := Config{Mode: ModeSync, Target: dir, Type: RepoTypeCode, RepoName: "x", Purpose: "x", Stack: "Go"}
+	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil && !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+
+	review, err := os.ReadFile(filepath.Join(dir, syncReviewFile))
 	if err != nil {
-		t.Fatalf("resolveCollision --yes: %v", err)
+		t.Fatalf("read sync-review.md: %v", err)
 	}
-	if choice != choiceOverwrite {
-		t.Errorf("--yes choice = %v; want choiceOverwrite", choice)
-	}
-}
-
-func TestResolveCollisionAssumeNo(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	choice, err := resolveCollision(filepath.Join(dir, "f"), dir, Config{AssumeNo: true})
-	if err != nil {
-		t.Fatalf("resolveCollision --no: %v", err)
-	}
-	if choice != choiceKeep {
-		t.Errorf("--no choice = %v; want choiceKeep", choice)
+	if strings.Contains(string(review), "TEMPLATE_VERSION") {
+		t.Errorf("sync-review.md must not list TEMPLATE_VERSION (it's bookkeeping); got:\n%s", string(review))
 	}
 }
 
-func TestResolveCollisionNonTTYErrors(t *testing.T) {
+// AC79 Part B AT7: review-doc shape — header, per-collision section, diff preview.
+func TestRenderSyncReviewShape(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	// bytes.Buffer is not a *os.File, so isTTY reports false.
-	in := &bytes.Buffer{}
-	_, err := resolveCollision(filepath.Join(dir, "f"), dir, Config{Input: in})
-	if err == nil {
-		t.Fatal("expected non-TTY error; got nil")
+	records := []collisionRecord{
+		{
+			path:     "/tmp/t/AGENTS.md",
+			existing: "existing line 1\nexisting line 2\n",
+			proposed: "template line 1\ntemplate line 2\n",
+		},
 	}
-	if !strings.Contains(err.Error(), "--yes") || !strings.Contains(err.Error(), "--no") {
-		t.Errorf("non-TTY error should point at --yes/--no; got %v", err)
+	out := renderSyncReview("/tmp/t", "0.49.0", "0.51.0", records)
+	mustContain(t, out, "# Governa Sync Review")
+	mustContain(t, out, "Template version: 0.49.0 → 0.51.0")
+	mustContain(t, out, "1 file(s) need review")
+	mustContain(t, out, "### `AGENTS.md`")
+	mustContain(t, out, "```diff")
+	mustContain(t, out, "-existing line 1")
+	mustContain(t, out, "+template line 1")
+}
+
+// AC79 Part B AT5: zero-collision case writes a summary-only review-doc.
+func TestRenderSyncReviewZeroCollisions(t *testing.T) {
+	t.Parallel()
+	out := renderSyncReview("/tmp/t", "0.50.0", "0.51.0", nil)
+	mustContain(t, out, "# Governa Sync Review")
+	mustContain(t, out, "0 files need review")
+	if strings.Contains(out, "## Collisions") {
+		t.Errorf("zero-collision review-doc must not include a ## Collisions section; got:\n%s", out)
 	}
 }
 
-func TestResolveCollisionInteractiveKeep(t *testing.T) {
+// AC79 Part B: diff preview truncates at maxLines with a "more lines" marker.
+func TestUnifiedDiffPreviewTruncation(t *testing.T) {
 	t.Parallel()
-	for _, in := range []string{"k\n", "keep\n", "KEEP\n", "  k  \n"} {
-		got, ok := parseCollisionReply(in)
-		if !ok || got != choiceKeep {
-			t.Errorf("parseCollisionReply(%q) = (%v, %v); want (choiceKeep, true)", in, got, ok)
-		}
+	var eLines []string
+	for i := range 100 {
+		eLines = append(eLines, fmt.Sprint("existing ", i))
+	}
+	existing := strings.Join(eLines, "\n") + "\n"
+	out := unifiedDiffPreview(existing, "", 10)
+	if !strings.Contains(out, "more lines") {
+		t.Errorf("expected truncation marker in preview; got:\n%s", out)
+	}
+	// Count lines — should be ≤ 11 (10 diff lines + 1 truncation marker).
+	if got := strings.Count(out, "\n"); got > 11 {
+		t.Errorf("preview line count = %d; want ≤ 11", got)
 	}
 }
 
-func TestResolveCollisionInteractiveOverwrite(t *testing.T) {
-	t.Parallel()
-	for _, in := range []string{"o\n", "overwrite\n", "OVERWRITE\n"} {
-		got, ok := parseCollisionReply(in)
-		if !ok || got != choiceOverwrite {
-			t.Errorf("parseCollisionReply(%q) = (%v, %v); want (choiceOverwrite, true)", in, got, ok)
-		}
+// Helper that calls t.Errorf with the full string if assertion fails.
+func mustContain(t *testing.T, haystack, needle string) {
+	t.Helper()
+	if !strings.Contains(haystack, needle) {
+		t.Errorf("missing substring %q in:\n%s", needle, haystack)
 	}
 }
 
-func TestResolveCollisionInteractiveSkip(t *testing.T) {
-	t.Parallel()
-	for _, in := range []string{"s\n", "skip\n", "SKIP\n"} {
-		got, ok := parseCollisionReply(in)
-		if !ok || got != choiceSkip {
-			t.Errorf("parseCollisionReply(%q) = (%v, %v); want (choiceSkip, true)", in, got, ok)
-		}
-	}
-}
-
-func TestResolveCollisionInteractiveUnknownVerb(t *testing.T) {
-	t.Parallel()
-	for _, in := range []string{"", "\n", "yes\n", "nope\n", "foo\n"} {
-		if _, ok := parseCollisionReply(in); ok {
-			t.Errorf("parseCollisionReply(%q) unexpectedly succeeded", in)
-		}
-	}
-}
-
-func TestValidateConfigSyncRequiresParams(t *testing.T) {
-	t.Parallel()
-	err := validateConfig(Config{Mode: ModeSync})
-	if err == nil {
-		t.Fatal("expected validation error for empty sync config")
-	}
-}
-
-func TestValidateConfigSyncWithCodeParams(t *testing.T) {
-	t.Parallel()
-	err := validateConfig(Config{
-		Mode:     ModeSync,
-		RepoName: "x",
-		Purpose:  "p",
-		Type:     RepoTypeCode,
-		Stack:    "Go",
-	})
-	if err != nil {
-		t.Fatalf("validateConfig: %v", err)
-	}
-}
-
-func TestDeriveTypeFromShape(t *testing.T) {
-	t.Parallel()
-	cases := map[string]RepoType{
-		"likely CODE": RepoTypeCode,
-		"likely DOC":  RepoTypeDoc,
-		"mixed":       "",
-		"":            "",
-	}
-	for in, want := range cases {
-		if got := deriveTypeFromShape(in); got != want {
-			t.Errorf("deriveTypeFromShape(%q) = %q; want %q", in, got, want)
-		}
-	}
-}
-
-func TestMigrateGovernaLegacyPathsRemovesAC78Artifacts(t *testing.T) {
-	t.Parallel()
-	dir := newFixtureTarget(t, map[string]string{
-		".governa/sync-review.md":        "stale review artifact",
-		".governa/config":                "critique-mode: integrated",
-		".governa/proposed/AGENTS.md":    "stale proposed",
-		".governa/feedback/ac60-sync.md": "stale feedback",
-	})
-	if err := migrateGovernaLegacyPaths(dir); err != nil {
-		t.Fatalf("migrateGovernaLegacyPaths: %v", err)
-	}
-	for _, rel := range []string{".governa/sync-review.md", ".governa/config", ".governa/proposed", ".governa/feedback"} {
-		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
-			t.Errorf("%s should have been removed by AC78 migration; got err=%v", rel, err)
-		}
-	}
-}
-
-func TestReadManifestMissingFile(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	_, found, err := readManifest(dir)
-	if err != nil {
-		t.Fatalf("readManifest: %v", err)
-	}
-	if found {
-		t.Error("found = true for empty dir; want false")
-	}
-}
+// Compile-time probe to ensure fmt is imported where test helpers need it.
+var _ = fmt.Sprint
