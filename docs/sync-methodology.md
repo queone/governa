@@ -30,7 +30,21 @@ The repo agent must follow these steps for every `adopt` item:
 6. **Report — explain each decision to the director.**
    - For each `adopt` item, the agent must state one of: **adopted** (with summary of changes), **kept** (with documented repo-specific reason), or **needs director judgment** (with explanation).
    - The agent must not silently skip any `adopt` item. Every item must have a stated disposition.
-   - For partial-adopt cases (adopting some template content while preserving some existing content), produce `docs/ac<N>-<slug>-dispositions.md` listing each preserved difference with (1) content kept, (2) template content rejected, (3) repo-specific reason. See `docs/ac-template.md` Companion Artifacts.
+   - For partial-adopt cases (adopting some template content while preserving some existing content), produce `docs/ac<N>-<slug>-dispositions.md`. Each preserved difference is recorded as three labeled sub-bullets under a file heading: `**Kept:**` (the content kept from the repo), `**Rejected:**` (the template content that was not adopted), `**Reason:**` (why the repo-specific content wins). The triple shape is load-bearing — do not invent alternative keys, do not collapse into prose; keep each label on its own sub-bullet so the file is diff-reviewable. Example:
+
+         ### `docs/build-release.md`
+
+         - **Kept:** skout's `Acceptance Tests` bullet about `~/.config/skout/skout.db` vs `~/skout.db`.
+         - **Rejected:** template's generic path guidance.
+         - **Reason:** DB path is domain-specific — the template version doesn't name skout's actual data dir.
+
+         ### `plan.md`
+
+         - **Kept:** repo-specific `Priorities` preamble carve-out for governance ACs.
+         - **Rejected:** template's default `Priorities` shape.
+         - **Reason:** governance ACs originate outside the cycle's step-1 source; keeping the carve-out localized avoids divergence from the template-tracked file.
+
+   - See `docs/ac-template.md` Companion Artifacts for the `-dispositions.md` lifecycle (deleted at release prep; consolidate long-term WHY reasons into inline comments or durable docs before deletion).
 
 7. **Feedback — surface improvements for the governance template.**
    - The agent must note any recommendations that were confusing, lacked sufficient context to evaluate, or didn't account for a common repo pattern.

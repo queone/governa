@@ -4613,7 +4613,7 @@ func TestRenderSyncReviewPreamble(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	// Preamble bookkeeping assertions (preserved from the deleted
 	// TestRenderSyncReviewMethodology).
 	if !strings.Contains(output, "bookkeeping") {
@@ -4633,12 +4633,12 @@ func TestRenderSyncReviewVersionLine(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical", existingLines: 10, proposedLines: 10},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "0.17.0", "0.18.0")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "0.17.0", "0.18.0")
 	if !strings.Contains(output, "Template version: 0.17.0 → 0.18.0") {
 		t.Fatalf("review doc should show version transition, got:\n%s", output)
 	}
 	// No version line when versions are empty
-	outputNoVer := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	outputNoVer := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if strings.Contains(outputNoVer, "Template version:") {
 		t.Fatal("review doc should not show version line when versions are empty")
 	}
@@ -4666,7 +4666,7 @@ func TestRenderSyncReviewAdoptItems(t *testing.T) {
 			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatal("output should contain Adoption Items section")
 	}
@@ -5307,7 +5307,7 @@ func TestRenderSyncReviewClassificationTags(t *testing.T) {
 			proposedContent: "# Guide\n\n## Checklist\n\n1. Step A\n2. Step B\n\n## Style\n\nKeep it short.\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "(structural)") {
 		t.Fatalf("output should contain (structural) tag, got:\n%s", output)
 	}
@@ -5338,7 +5338,7 @@ func TestRenderSyncReviewAdoptRefersToProposed(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\nKeep it short.\n\n## Checklist\n\n1. Step A\n2. Step B\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, ".governa/proposed/") {
 		t.Fatalf("content changes should reference .governa/proposed/, got:\n%s", output)
 	}
@@ -5414,7 +5414,7 @@ func TestRenderSyncReviewLeanFormat(t *testing.T) {
 			proposedContent: "# Guide\n\n## Style\n\n- Keep it short.\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, ".governa/proposed/") {
 		t.Fatal("review doc should reference .governa/proposed/ for comparison")
 	}
@@ -5446,7 +5446,7 @@ func TestRenderSyncReviewTableIsFileLevel(t *testing.T) {
 			proposedContent: "# Guide\n\n## Alpha\n\nnew alpha\n\n## Beta\n\nnew beta\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	// Count table data rows (lines starting with "| `")
 	tableRows := 0
 	for line := range strings.SplitSeq(output, "\n") {
@@ -5727,7 +5727,7 @@ func TestRenderSyncReviewAdvisoryNotes(t *testing.T) {
 			missingSections: []string{"Gamma", "Delta"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "## Advisory Notes") {
 		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
 	}
@@ -5798,7 +5798,7 @@ func TestRenderSyncReviewRenameNote(t *testing.T) {
 			sectionRenames: map[string]string{"Using Sync": "Governa Templating Maintenance"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "Section renamed:") {
 		t.Fatalf("expected rename note in output, got:\n%s", output)
 	}
@@ -5888,7 +5888,7 @@ func TestRenderSyncReviewStandingDrift(t *testing.T) {
 			proposedContent: proposed,
 		},
 	}
-	output := renderSyncReview(dir, scores, nil, "", "")
+	output := renderSyncReview(dir, scores, nil, nil, "", "")
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatalf("expected Adoption Items section, got:\n%s", output)
 	}
@@ -5949,7 +5949,7 @@ func TestRenderSyncReviewAdoptNonMarkdown(t *testing.T) {
 			proposedContent: "#!/bin/bash\ngo run ./cmd/build \"$@\"\ngo run ./cmd/rel \"$@\"\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "## Adoption Items") {
 		t.Fatalf("expected Adoption Items section, got:\n%s", output)
 	}
@@ -6174,7 +6174,7 @@ func TestApplyAdoptTransformsSymlinkConflict(t *testing.T) {
 	ops := []operation{
 		{kind: "symlink", path: claudePath, linkTo: "AGENTS.md", note: "agent alias link"},
 	}
-	transformed, _, conflicts := applyAdoptTransforms(ops, nil, nil, dir)
+	transformed, _, _, conflicts := applyAdoptTransforms(ops, nil, nil, dir)
 	if len(conflicts) != 1 {
 		t.Fatalf("expected 1 conflict, got %d", len(conflicts))
 	}
@@ -6209,7 +6209,7 @@ func TestApplyAdoptTransformsExistingSymlinkOk(t *testing.T) {
 	ops := []operation{
 		{kind: "symlink", path: claudePath, linkTo: "AGENTS.md", note: "agent alias link"},
 	}
-	_, _, conflicts := applyAdoptTransforms(ops, nil, nil, dir)
+	_, _, _, conflicts := applyAdoptTransforms(ops, nil, nil, dir)
 	if len(conflicts) != 0 {
 		t.Fatalf("expected 0 conflicts for existing symlink, got %d", len(conflicts))
 	}
@@ -6225,7 +6225,7 @@ func TestRenderSyncReviewConflictsSection(t *testing.T) {
 			description: "`CLAUDE.md` exists as a regular file. Governa is agent-agnostic: `AGENTS.md` is the canonical governance contract. Back up or remove the existing `CLAUDE.md`, then re-run sync to create the symlink.",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", nil, conflicts, "", "")
+	output := renderSyncReview("/tmp/repo", nil, nil, conflicts, "", "")
 	if !strings.Contains(output, "## Conflicts") {
 		t.Fatalf("output should contain ## Conflicts section, got:\n%s", output)
 	}
@@ -6249,7 +6249,7 @@ func TestRenderSyncReviewConflictsOnlyNoScores(t *testing.T) {
 			description: "`CLAUDE.md` exists as a regular file...",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", nil, conflicts, "", "")
+	output := renderSyncReview("/tmp/repo", nil, nil, conflicts, "", "")
 	if !strings.Contains(output, "## Conflicts") {
 		t.Fatal("conflicts-only review doc must contain ## Conflicts section")
 	}
@@ -6296,7 +6296,7 @@ func TestApplyAdoptTransformsFirstSyncWording(t *testing.T) {
 		{kind: "write", note: "overlay file", path: overlayPath, content: "*.tmp\n"},
 	}
 	// nil oldManifest = first sync
-	_, scores, _ := applyAdoptTransforms(ops, nil, nil, dir)
+	_, scores, _, _ := applyAdoptTransforms(ops, nil, nil, dir)
 	if len(scores) != 1 {
 		t.Fatalf("expected 1 score, got %d", len(scores))
 	}
@@ -6667,7 +6667,7 @@ func TestRenderSyncReviewMergeHint(t *testing.T) {
 			proposedContent: "# AC Template\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "- `.gitignore` — merge template patterns into your existing file (don't replace wholesale) → `diff .gitignore .governa/proposed/.gitignore`") {
 		t.Fatalf(".gitignore adoption entry should have merge hint, got:\n%s", output)
 	}
@@ -6751,7 +6751,7 @@ func TestRenderSyncReviewSummaryNextActions(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out := renderSyncReview("/tmp/repo", tc.scores, tc.conflicts, "", "")
+			out := renderSyncReview("/tmp/repo", tc.scores, nil, tc.conflicts, "", "")
 			// Unified Summary section must be present.
 			if !strings.Contains(out, "## Summary") {
 				t.Fatalf("output must contain ## Summary section, got:\n%s", out)
@@ -7002,7 +7002,7 @@ func TestRenderSyncReviewAdvisoryDiffSuffix(t *testing.T) {
 			proposedContent: "# keep-with-missing\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "## Advisory Notes") {
 		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
 	}
@@ -7182,7 +7182,7 @@ func TestRenderSyncReviewSummaryStatusField(t *testing.T) {
 	adoptScores := []collisionScore{
 		{path: "/tmp/repo/x.md", recommendation: "adopt", reason: "x"},
 	}
-	outAdopt := renderSyncReview("/tmp/repo", adoptScores, nil, "", "")
+	outAdopt := renderSyncReview("/tmp/repo", adoptScores, nil, nil, "", "")
 	if !strings.Contains(outAdopt, "## Summary") ||
 		!strings.Contains(outAdopt, "**Status:** `PENDING`") ||
 		!strings.Contains(outAdopt, "operator review required") {
@@ -7193,7 +7193,7 @@ func TestRenderSyncReviewSummaryStatusField(t *testing.T) {
 	conflicts := []conflict{
 		{kind: "symlink-vs-regular", path: "/tmp/repo/CLAUDE.md", description: "### `CLAUDE.md`\n"},
 	}
-	outConflict := renderSyncReview("/tmp/repo", nil, conflicts, "", "")
+	outConflict := renderSyncReview("/tmp/repo", nil, nil, conflicts, "", "")
 	if !strings.Contains(outConflict, "**Status:** `PENDING`") {
 		t.Fatalf("conflict case should render PENDING status field, got:\n%s", outConflict)
 	}
@@ -7202,7 +7202,7 @@ func TestRenderSyncReviewSummaryStatusField(t *testing.T) {
 	pureKeep := []collisionScore{
 		{path: "/tmp/repo/x.md", recommendation: "keep", reason: "identical"},
 	}
-	outClean := renderSyncReview("/tmp/repo", pureKeep, nil, "", "")
+	outClean := renderSyncReview("/tmp/repo", pureKeep, nil, nil, "", "")
 	if !strings.Contains(outClean, "**Status:** `CLEAN`") ||
 		!strings.Contains(outClean, "no required adoption/conflict action") {
 		t.Fatalf("pure-keep case should render CLEAN status field with narrow wording, got:\n%s", outClean)
@@ -7220,7 +7220,7 @@ func TestRenderSyncReviewSummaryStatusField(t *testing.T) {
 			proposedContent: "# proposed\n",
 		},
 	}
-	outAdvisory := renderSyncReview("/tmp/repo", keepWithAdvisory, nil, "", "")
+	outAdvisory := renderSyncReview("/tmp/repo", keepWithAdvisory, nil, nil, "", "")
 	if !strings.Contains(outAdvisory, "**Status:** `CLEAN`") {
 		t.Fatalf("keep-with-advisory should still render CLEAN (advisory doesn't block), got:\n%s", outAdvisory)
 	}
@@ -7806,7 +7806,7 @@ func TestAdoptionItemsEmitsAddsAndChanged(t *testing.T) {
 			proposedContent:        "# DEV\n",
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	var itemLine string
 	for line := range strings.SplitSeq(output, "\n") {
 		if strings.Contains(line, "`docs/roles/dev.md`") && strings.HasPrefix(line, "- ") {
@@ -7907,7 +7907,7 @@ func TestBulletRemovalAdvisoryRendersOnAdopt(t *testing.T) {
 	if len(score.bulletRemovals) != 1 || score.bulletRemovals[0].section != "Project Rules" || score.bulletRemovals[0].removed != 2 {
 		t.Fatalf("expected bulletRemovals = [{Project Rules, 2}], got %+v", score.bulletRemovals)
 	}
-	out := renderSyncReview(dir, []collisionScore{score}, nil, "0.31.0", "0.32.0")
+	out := renderSyncReview(dir, []collisionScore{score}, nil, nil, "0.31.0", "0.32.0")
 	wantSubstr := "this adopt would remove 2 bullets from `Project Rules`; verify they are not repo-specific before adopting."
 	if !strings.Contains(out, wantSubstr) {
 		t.Fatalf("rendered review missing IE7 advisory wording.\nwant substring: %s\ngot:\n%s", wantSubstr, out)
@@ -8807,7 +8807,7 @@ func TestRenderSyncReviewIncludesSectionOrderAdvisory(t *testing.T) {
 			sectionOrderTemplate: []string{"A", "B", "C"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "section order differs from template") {
 		t.Fatalf("expected ordering advisory, got:\n%s", output)
 	}
@@ -8839,7 +8839,7 @@ func TestHasAdvisoryGateIncludesOrderDrift(t *testing.T) {
 			sectionOrderTemplate: []string{"A", "B", "C"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "## Advisory Notes") {
 		t.Fatalf("expected Advisory Notes section, got:\n%s", output)
 	}
@@ -8895,7 +8895,7 @@ func TestSectionOrderDriftSuppressedForAdoptAndAcknowledged(t *testing.T) {
 				sectionOrderTemplate: []string{"A", "B", "C"},
 			},
 		}
-		output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 		if strings.Contains(output, "section order differs from template") {
 			t.Errorf("recommendation=%q must suppress ordering advisory, got:\n%s", rec, output)
 		}
@@ -8912,7 +8912,7 @@ func TestSectionOrderDriftSuppressedForAdoptAndAcknowledged(t *testing.T) {
 			sectionOrderTemplate: []string{"A", "B", "C"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "section order differs from template") {
 		t.Fatalf("recommendation=keep must emit ordering advisory, got:\n%s", output)
 	}
@@ -8946,7 +8946,7 @@ func TestSectionOrderDriftCombinedWithRename(t *testing.T) {
 			sectionOrderTemplate: template,
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	if !strings.Contains(output, "current: A → RenamedB → D → C") {
 		t.Fatalf("expected consumer-name current: display, got:\n%s", output)
 	}
@@ -9550,7 +9550,7 @@ func TestSyncReviewLabelsTemplateDrivenAndConsumerDrift(t *testing.T) {
 			driftSections:          []string{"C"},
 		},
 	}
-	output := renderSyncReview("/tmp/repo", scores, nil, "0.38.0", "0.40.0")
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "0.38.0", "0.40.0")
 	if !strings.Contains(output, "template-driven:") {
 		t.Errorf("expected 'template-driven:' label in output:\n%s", output)
 	}
@@ -10007,7 +10007,7 @@ func TestFeedbackAdvisoryUsesExistingHasAdvisoryGate(t *testing.T) {
 	// renderSyncReview's own CHANGELOG parse by feeding empty scores (no
 	// sections changed). The feedback closures should still open Advisory
 	// Notes via the hasAdvisory gate addition.
-	output := renderSyncReview(dir, nil, nil, "0.35.0", "0.40.0")
+	output := renderSyncReview(dir, nil, nil, nil, "0.35.0", "0.40.0")
 	if !strings.Contains(output, "## Advisory Notes") {
 		// Note: with empty scores and no real CHANGELOG rows matching
 		// skout, the production buildFeedbackClosures returns nothing. The
@@ -10763,7 +10763,7 @@ func TestSyncReviewLinksMethodologyDoc(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/file.md", recommendation: "keep", reason: "identical"},
 	}
-	out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	out := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 	const wantPointer = "See `docs/sync-methodology.md` for the 7-step adoption methodology"
 	if !strings.Contains(out, wantPointer) {
 		t.Errorf("preamble must contain methodology pointer %q; got:\n%s", wantPointer, out)
@@ -10779,10 +10779,10 @@ func TestSyncReviewOmitsInlineMethodology(t *testing.T) {
 	// on either branch.
 	cleanOut := renderSyncReview("/tmp/repo",
 		[]collisionScore{{path: "/tmp/repo/keep.md", recommendation: "keep", reason: "identical"}},
-		nil, "", "")
+		nil, nil, "", "")
 	adoptOut := renderSyncReview("/tmp/repo",
 		[]collisionScore{{path: "/tmp/repo/adopt.md", recommendation: "adopt", reason: "x"}},
-		nil, "", "")
+		nil, nil, "", "")
 
 	// Note: the adopt-path output legitimately mentions "Adoption Items" and the
 	// per-section methodology pointer. The phrases below appeared verbatim ONLY
@@ -10821,7 +10821,7 @@ func TestSyncReviewCompactCleanMode(t *testing.T) {
 			{path: "/tmp/repo/b.md", recommendation: "keep", reason: "identical"},
 			{path: "/tmp/repo/c.md", recommendation: "keep", reason: "identical"},
 		}
-		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		out := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 		// (a) compact Recommendations line with N count
 		wantCompact := "3 files reviewed, all aligned with template."
 		if !strings.Contains(out, wantCompact) {
@@ -10867,7 +10867,7 @@ func TestSyncReviewCompactCleanMode(t *testing.T) {
 			{path: "/tmp/repo/ack1.md", recommendation: "acknowledged", acknowledgedReason: "stable carve-out"},
 			{path: "/tmp/repo/ack2.md", recommendation: "acknowledged", acknowledgedReason: "stable carve-out"},
 		}
-		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		out := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 		// Acknowledged drift line should appear when M > 0.
 		wantAck := "**Acknowledged drift:** 2 file(s)"
 		if !strings.Contains(out, wantAck) {
@@ -10884,7 +10884,7 @@ func TestSyncReviewFullTableWhenAdoptsPresent(t *testing.T) {
 	scores := []collisionScore{
 		{path: "/tmp/repo/adopt.md", recommendation: "adopt", reason: "template-driven change", existingLines: 10, proposedLines: 20},
 	}
-	out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+	out := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 
 	// (a) full table present in Recommendations
 	if !strings.Contains(out, "| File | Recommendation | Reason | Existing Lines | Proposed Lines |") {
@@ -10895,14 +10895,31 @@ func TestSyncReviewFullTableWhenAdoptsPresent(t *testing.T) {
 		t.Errorf("adopt-path Recommendations should contain the adopt row %q; got:\n%s", wantRow, out)
 	}
 
-	// (b) Adoption Items section body begins with the methodology pointer
+	// (b) Adoption Items section body begins with the 7-step condensed reminder
+	// intro line referencing docs/sync-methodology.md (AC77 Part C replaced the
+	// single-line pointer with a bulleted 7-step list).
 	_, aiBody, ok := strings.Cut(out, "## Adoption Items\n\n")
 	if !ok {
 		t.Fatalf("adopt-path output must contain ## Adoption Items section")
 	}
-	wantPointer := "Follow the methodology in `docs/sync-methodology.md` for every item below."
-	if !strings.HasPrefix(aiBody, wantPointer) {
-		t.Errorf("Adoption Items body must begin with methodology pointer %q; got prefix:\n%s", wantPointer, aiBody[:minInt(len(aiBody), 200)])
+	wantIntro := "For each `adopt` item below, follow these 7 steps (full detail in `docs/sync-methodology.md`):"
+	if !strings.HasPrefix(aiBody, wantIntro) {
+		t.Errorf("Adoption Items body must begin with 7-step intro %q; got prefix:\n%s", wantIntro, aiBody[:minInt(len(aiBody), 200)])
+	}
+	// All seven step bullets must be present in the preamble.
+	wantSteps := []string{
+		"- Structure pass",
+		"- Content pass",
+		"- Residual check",
+		"- Role files",
+		"- Manifest confirm",
+		"- Report",
+		"- Feedback",
+	}
+	for _, want := range wantSteps {
+		if !strings.Contains(aiBody, want) {
+			t.Errorf("Adoption Items preamble missing step bullet %q", want)
+		}
 	}
 
 	// (c) Summary has PENDING status
@@ -11424,7 +11441,7 @@ func TestSyncReviewEnumeratesKeptFilesInAdoptMode(t *testing.T) {
 			{path: "/tmp/repo/keep-2.md", recommendation: "keep", reason: "identical to template"},
 			{path: "/tmp/repo/keep-3.md", recommendation: "keep", reason: "identical to template"},
 		}
-		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		out := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 		if !strings.Contains(out, "## Kept Files (no action)") {
 			t.Errorf("adopt-mode output should contain '## Kept Files (no action)' section; got:\n%s", out)
 		}
@@ -11442,7 +11459,7 @@ func TestSyncReviewEnumeratesKeptFilesInAdoptMode(t *testing.T) {
 			{path: "/tmp/repo/keep-1.md", recommendation: "keep", reason: "identical to template"},
 			{path: "/tmp/repo/keep-2.md", recommendation: "keep", reason: "identical to template"},
 		}
-		out := renderSyncReview("/tmp/repo", scores, nil, "", "")
+		out := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
 		if strings.Contains(out, "## Kept Files (no action)") {
 			t.Errorf("CLEAN-mode output should NOT contain '## Kept Files (no action)' section; AC68 one-liner handles it. Got:\n%s", out)
 		}
@@ -11953,5 +11970,493 @@ func TestExtractBacktickNames(t *testing.T) {
 		if !names[k] {
 			t.Errorf("missing expected name %q", k)
 		}
+	}
+}
+
+// captureStdout redirects os.Stdout for the duration of fn and returns what
+// was written. Test helper for AC77 AT4/AT12/AT13.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		var buf strings.Builder
+		io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	w.Close()
+	os.Stdout = orig
+	return <-done
+}
+
+// captureStderr redirects os.Stderr for the duration of fn and returns what
+// was written. Test helper for AC77 AT8.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	done := make(chan string)
+	go func() {
+		var buf strings.Builder
+		io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	w.Close()
+	os.Stderr = orig
+	return <-done
+}
+
+// AC77 AT1: base/AGENTS.md contains the three backported bullets in their
+// intended sections.
+func TestAC77BaseAgentsBackportedBullets(t *testing.T) {
+	t.Parallel()
+	content, err := fs.ReadFile(templates.EmbeddedFS, "base/AGENTS.md")
+	if err != nil {
+		t.Fatalf("read base/AGENTS.md: %v", err)
+	}
+	s := string(content)
+
+	// Shell Tool Efficiency bullet under ## Project Rules.
+	if !strings.Contains(s, "Prefer dedicated tools when available") {
+		t.Error("base/AGENTS.md missing Shell Tool Efficiency bullet")
+	}
+	if !strings.Contains(s, "`fd`") || !strings.Contains(s, "`rg`") || !strings.Contains(s, "`ast-grep`") {
+		t.Error("Shell Tool Efficiency bullet missing expected tool names")
+	}
+
+	// Comment public functions bullet under ## Project Rules.
+	if !strings.Contains(s, "Comment public functions.") {
+		t.Error("base/AGENTS.md missing 'Comment public functions.' bullet")
+	}
+
+	// What's next? bullet under ## Interaction Mode.
+	if !strings.Contains(s, `**"What's next?"**`) {
+		t.Error("base/AGENTS.md missing 'What's next?' bullet")
+	}
+	if !strings.Contains(s, "next roadmap candidate") || !strings.Contains(s, "next implementation-ready item") {
+		t.Error("What's next? bullet missing expected clarification about candidate vs implementation-ready")
+	}
+
+	// Verify Interaction Mode placement (not Documentation Update Expectations,
+	// per AC77 Decision F).
+	interactionIdx := strings.Index(s, "## Interaction Mode")
+	whatsNextIdx := strings.Index(s, `**"What's next?"**`)
+	docUpdateIdx := strings.Index(s, "## Documentation Update Expectations")
+	if interactionIdx < 0 || whatsNextIdx < 0 || docUpdateIdx < 0 {
+		t.Fatal("missing expected section anchors in base/AGENTS.md")
+	}
+	if whatsNextIdx < interactionIdx || whatsNextIdx > docUpdateIdx {
+		t.Errorf("What's next? bullet not under ## Interaction Mode: interactionIdx=%d whatsNextIdx=%d docUpdateIdx=%d",
+			interactionIdx, whatsNextIdx, docUpdateIdx)
+	}
+
+	// Root AGENTS.md must carry the same three bullets — governa dogfoods the
+	// template it ships, and TestGovernanceImprovementsFromSkout enforces
+	// content parity outside ## Purpose. Explicit assertion here keeps Part A
+	// coverage intact even if the parity invariant is ever relaxed.
+	rootContent, err := os.ReadFile("../../AGENTS.md")
+	if err != nil {
+		t.Fatalf("read root AGENTS.md: %v", err)
+	}
+	r := string(rootContent)
+	if !strings.Contains(r, "Prefer dedicated tools when available") {
+		t.Error("root AGENTS.md missing Shell Tool Efficiency bullet")
+	}
+	if !strings.Contains(r, "Comment public functions.") {
+		t.Error("root AGENTS.md missing 'Comment public functions.' bullet")
+	}
+	if !strings.Contains(r, `**"What's next?"**`) {
+		t.Error("root AGENTS.md missing 'What's next?' bullet")
+	}
+}
+
+// AC77 AT2: base/AGENTS.md preserves the flat-bullet convention — zero sub-subsections.
+func TestAC77BaseAgentsNoSubSubsections(t *testing.T) {
+	t.Parallel()
+	content, err := fs.ReadFile(templates.EmbeddedFS, "base/AGENTS.md")
+	if err != nil {
+		t.Fatalf("read base/AGENTS.md: %v", err)
+	}
+	count := 0
+	for line := range strings.SplitSeq(string(content), "\n") {
+		if strings.HasPrefix(line, "### ") {
+			count++
+		}
+	}
+	if count != 0 {
+		t.Errorf("base/AGENTS.md has %d ### sub-subsection lines; expected 0 (flat-bullet convention)", count)
+	}
+}
+
+// AC77 AT3: governa ack --help documents the 200-char limit and both rejection
+// branches.
+func TestAC77AckHelpDocumentsLimitAndRejectionBranches(t *testing.T) {
+	t.Parallel()
+	help := ModeHelp(ModeAck)
+	if help == "" {
+		t.Fatal("ModeHelp(ModeAck) returned empty")
+	}
+
+	// --reason flag block must reference the 200-char limit.
+	reasonBlockStart := strings.Index(help, "-m, --reason")
+	if reasonBlockStart < 0 {
+		t.Fatal("ack help missing --reason flag")
+	}
+	// Constrain the search to the flag-description block: everything up to
+	// the next flag or blank line.
+	reasonEnd := strings.Index(help[reasonBlockStart:], "\n  ")
+	if reasonEnd < 0 {
+		reasonEnd = len(help) - reasonBlockStart
+	}
+	reasonBlock := help[reasonBlockStart : reasonBlockStart+reasonEnd]
+	if !strings.Contains(reasonBlock, "200 character") {
+		t.Errorf("ack --reason flag block missing 200 character limit reference: %q", reasonBlock)
+	}
+
+	// Footer must reference both rejection branches.
+	if !strings.Contains(help, "accept") {
+		t.Error("ack help footer missing 'accept' rejection branch reference")
+	}
+	if !strings.Contains(help, "nothing to acknowledge") {
+		t.Error("ack help footer missing 'nothing to acknowledge' rejection branch reference")
+	}
+}
+
+// AC77 AT4 precondition: printNewOverlaySummary emits the expected line when
+// newOverlays is non-empty and nothing when empty.
+func TestAC77PrintNewOverlaySummary(t *testing.T) {
+	// Not parallel — captures stdout.
+	dir := t.TempDir()
+
+	// Empty case — no output.
+	captured := captureStdout(t, func() {
+		printNewOverlaySummary(nil, dir)
+	})
+	if captured != "" {
+		t.Errorf("empty newOverlays should produce no output; got %q", captured)
+	}
+
+	// Single overlay.
+	scores := []collisionScore{
+		{path: filepath.Join(dir, "docs", "sync-methodology.md")},
+	}
+	captured = captureStdout(t, func() {
+		printNewOverlaySummary(scores, dir)
+	})
+	if !strings.Contains(captured, "wrote 1 overlay file") {
+		t.Errorf("single-overlay output missing expected prefix: %q", captured)
+	}
+	if !strings.Contains(captured, "docs/sync-methodology.md") {
+		t.Errorf("single-overlay output missing path: %q", captured)
+	}
+
+	// Multiple overlays — pluralized + sorted.
+	scores = []collisionScore{
+		{path: filepath.Join(dir, "docs", "zzz.md")},
+		{path: filepath.Join(dir, "docs", "aaa.md")},
+	}
+	captured = captureStdout(t, func() {
+		printNewOverlaySummary(scores, dir)
+	})
+	if !strings.Contains(captured, "wrote 2 overlay files") {
+		t.Errorf("multi-overlay output missing pluralized prefix: %q", captured)
+	}
+	aaaIdx := strings.Index(captured, "aaa.md")
+	zzzIdx := strings.Index(captured, "zzz.md")
+	if aaaIdx < 0 || zzzIdx < 0 || aaaIdx > zzzIdx {
+		t.Errorf("multi-overlay output not sorted by path: %q", captured)
+	}
+}
+
+// AC77 AT5: renderSyncReview emits 'new' recommendation rows for first-time
+// overlay writes.
+func TestAC77RenderSyncReviewNewOverlayRows(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{path: "/tmp/repo/existing.md", recommendation: "adopt", reason: "template changed", existingLines: 10, proposedLines: 12},
+	}
+	newOverlays := []collisionScore{
+		{path: "/tmp/repo/docs/sync-methodology.md", proposedLines: 42},
+		{path: "/tmp/repo/docs/critique-protocol.md", proposedLines: 51},
+	}
+	output := renderSyncReview("/tmp/repo", scores, newOverlays, nil, "", "")
+	if !strings.Contains(output, "| `docs/sync-methodology.md` | new |") {
+		t.Error("Recommendations table missing new row for docs/sync-methodology.md")
+	}
+	if !strings.Contains(output, "| `docs/critique-protocol.md` | new |") {
+		t.Error("Recommendations table missing new row for docs/critique-protocol.md")
+	}
+	if !strings.Contains(output, "overlay file added this sync — no action needed") {
+		t.Error("new row missing the no-action reason text")
+	}
+}
+
+// AC77 AT6: Adoption Items preamble is a 7-bullet list, not paragraph prose.
+func TestAC77AdoptionItemsPreambleIs7BulletList(t *testing.T) {
+	t.Parallel()
+	scores := []collisionScore{
+		{path: "/tmp/repo/AGENTS.md", recommendation: "adopt", reason: "test"},
+	}
+	output := renderSyncReview("/tmp/repo", scores, nil, nil, "", "")
+
+	// Every step must appear as an anchored bullet line.
+	wantBullets := []string{
+		"- Structure pass",
+		"- Content pass",
+		"- Residual check",
+		"- Role files",
+		"- Manifest confirm",
+		"- Report",
+		"- Feedback",
+	}
+	for _, want := range wantBullets {
+		if !strings.Contains(output, want) {
+			t.Errorf("Adoption Items preamble missing bullet %q", want)
+		}
+	}
+
+	// Pointer to full methodology must still be present.
+	if !strings.Contains(output, "docs/sync-methodology.md") {
+		t.Error("Adoption Items preamble lost methodology pointer")
+	}
+
+	// Report bullet must reference the Kept/Rejected/Reason triple.
+	if !strings.Contains(output, "`**Kept:** / **Rejected:** / **Reason:**`") {
+		t.Error("Report bullet missing dispositions triple reference")
+	}
+}
+
+// AC77 AT7: docs/sync-methodology.md step 6 defines the dispositions triple
+// with a two-entry example.
+func TestAC77SyncMethodologyDispositionsTriple(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../docs/sync-methodology.md")
+	if err != nil {
+		t.Fatalf("read sync-methodology.md: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "**Kept:**") || !strings.Contains(s, "**Rejected:**") || !strings.Contains(s, "**Reason:**") {
+		t.Error("sync-methodology.md missing **Kept:** / **Rejected:** / **Reason:** triple labels")
+	}
+	// Two-entry example — should contain two distinct file-heading blocks
+	// inside the step 6 body.
+	kept := strings.Count(s, "- **Kept:**")
+	if kept < 2 {
+		t.Errorf("expected at least 2 **Kept:** example entries; got %d", kept)
+	}
+}
+
+// AC77 AT8: .governa/config parser returns default when file absent, respects
+// explicit values, warns on invalid, and treats unknown keys as warnings.
+func TestAC77ConfigParser(t *testing.T) {
+	// Not parallel — stderr capture.
+
+	// Absent file → default.
+	dir := t.TempDir()
+	if got := ConfigCritiqueMode(dir); got != "integrated" {
+		t.Errorf("absent file: got %q; want integrated", got)
+	}
+
+	// File without critique-mode → default.
+	dirEmpty := t.TempDir()
+	os.MkdirAll(filepath.Join(dirEmpty, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirEmpty, ".governa", "config"), []byte("# empty config\n"), 0o644)
+	if got := ConfigCritiqueMode(dirEmpty); got != "integrated" {
+		t.Errorf("no key: got %q; want integrated", got)
+	}
+
+	// External value.
+	dirExt := t.TempDir()
+	os.MkdirAll(filepath.Join(dirExt, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirExt, ".governa", "config"), []byte("critique-mode: external\n"), 0o644)
+	if got := ConfigCritiqueMode(dirExt); got != "external" {
+		t.Errorf("external: got %q; want external", got)
+	}
+
+	// Integrated explicit value.
+	dirInt := t.TempDir()
+	os.MkdirAll(filepath.Join(dirInt, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirInt, ".governa", "config"), []byte("critique-mode: integrated\n"), 0o644)
+	if got := ConfigCritiqueMode(dirInt); got != "integrated" {
+		t.Errorf("integrated explicit: got %q; want integrated", got)
+	}
+
+	// Invalid value → default + stderr warning (warn path, no exit).
+	dirBad := t.TempDir()
+	os.MkdirAll(filepath.Join(dirBad, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirBad, ".governa", "config"), []byte("critique-mode: bogus\n"), 0o644)
+	stderr := captureStderr(t, func() {
+		if got := ConfigCritiqueMode(dirBad); got != "integrated" {
+			t.Errorf("invalid value: got %q; want integrated", got)
+		}
+	})
+	if !strings.Contains(stderr, "warning") || !strings.Contains(stderr, "bogus") {
+		t.Errorf("invalid value missing stderr warning: %q", stderr)
+	}
+
+	// Unknown key → warning + ignored.
+	dirUnknown := t.TempDir()
+	os.MkdirAll(filepath.Join(dirUnknown, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirUnknown, ".governa", "config"), []byte("future-key: something\n"), 0o644)
+	stderr = captureStderr(t, func() {
+		if got := ConfigCritiqueMode(dirUnknown); got != "integrated" {
+			t.Errorf("unknown key: got %q; want integrated", got)
+		}
+	})
+	if !strings.Contains(stderr, "unknown key") {
+		t.Errorf("unknown key missing stderr warning: %q", stderr)
+	}
+
+	// Comment handling.
+	dirComment := t.TempDir()
+	os.MkdirAll(filepath.Join(dirComment, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirComment, ".governa", "config"),
+		[]byte("# a comment\ncritique-mode: external  # inline comment\n"), 0o644)
+	if got := ConfigCritiqueMode(dirComment); got != "external" {
+		t.Errorf("comment handling: got %q; want external", got)
+	}
+}
+
+// AC77 AT9: docs/critique-protocol.md has a Configuration section that
+// references the config key and both mode values.
+func TestAC77CritiqueProtocolConfiguration(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../docs/critique-protocol.md")
+	if err != nil {
+		t.Fatalf("read critique-protocol.md: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "## Configuration") {
+		t.Error("critique-protocol.md missing ## Configuration section")
+	}
+	if !strings.Contains(s, ".governa/config") {
+		t.Error("Configuration section doesn't reference .governa/config")
+	}
+	if !strings.Contains(s, "critique-mode") {
+		t.Error("Configuration section doesn't reference critique-mode key")
+	}
+	if !strings.Contains(s, "`integrated`") || !strings.Contains(s, "`external`") {
+		t.Error("Configuration section missing mode values")
+	}
+}
+
+// AC77 AT10: docs/development-guidelines.md contains Template Placeholder Guidance
+// covering prose-content placeholders.
+func TestAC77DevelopmentGuidelinesPlaceholderGuidance(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../docs/development-guidelines.md")
+	if err != nil {
+		t.Fatalf("read development-guidelines.md: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "## Template Placeholder Guidance") {
+		t.Error("development-guidelines.md missing ## Template Placeholder Guidance section")
+	}
+	wantPlaceholders := []string{"{{PROJECT_PURPOSE}}", "{{REPO_NAME}}", "{{STACK_OR_PLATFORM}}", "{{PUBLISHING_PLATFORM}}", "{{DOC_STYLE}}"}
+	for _, p := range wantPlaceholders {
+		if !strings.Contains(s, p) {
+			t.Errorf("Template Placeholder Guidance missing %q", p)
+		}
+	}
+	// Purpose description must anchor on repo-identity shape.
+	if !strings.Contains(s, "repo-identity") {
+		t.Error("Template Placeholder Guidance missing 'repo-identity' anchor phrase for Purpose")
+	}
+}
+
+// AC77 AT11: .governa/sync-review.md header branches by critique-mode.
+func TestAC77SyncReviewHeaderCritiqueMode(t *testing.T) {
+	t.Parallel()
+
+	dirDefault := t.TempDir()
+	scores := []collisionScore{
+		{path: filepath.Join(dirDefault, "AGENTS.md"), recommendation: "keep", reason: "identical"},
+	}
+	outDefault := renderSyncReview(dirDefault, scores, nil, nil, "", "")
+	if !strings.Contains(outDefault, "Critique mode: integrated") {
+		t.Errorf("default mode: sync-review header missing integrated advisory")
+	}
+	if !strings.Contains(outDefault, "## Critique") {
+		t.Errorf("integrated routing note missing reference to ## Critique section")
+	}
+
+	dirExternal := t.TempDir()
+	os.MkdirAll(filepath.Join(dirExternal, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirExternal, ".governa", "config"), []byte("critique-mode: external\n"), 0o644)
+	scoresExt := []collisionScore{
+		{path: filepath.Join(dirExternal, "AGENTS.md"), recommendation: "keep", reason: "identical"},
+	}
+	outExternal := renderSyncReview(dirExternal, scoresExt, nil, nil, "", "")
+	if !strings.Contains(outExternal, "Critique mode: external") {
+		t.Errorf("external mode: sync-review header missing external advisory")
+	}
+	if !strings.Contains(outExternal, "docs/ac<N>-<slug>-critique.md") {
+		t.Errorf("external routing note missing reference to companion file path")
+	}
+}
+
+// AC77 AT12: printCritiqueModeAdvisory emits a line only when .governa/config
+// is present; silent otherwise.
+func TestAC77PrintCritiqueModeAdvisory(t *testing.T) {
+	// Not parallel — stdout capture.
+
+	// Absent config → silent.
+	dirAbsent := t.TempDir()
+	captured := captureStdout(t, func() {
+		printCritiqueModeAdvisory(dirAbsent)
+	})
+	if captured != "" {
+		t.Errorf("absent config: expected silence; got %q", captured)
+	}
+
+	// Present config → emit line.
+	dirPresent := t.TempDir()
+	os.MkdirAll(filepath.Join(dirPresent, ".governa"), 0o755)
+	os.WriteFile(filepath.Join(dirPresent, ".governa", "config"), []byte("critique-mode: external\n"), 0o644)
+	captured = captureStdout(t, func() {
+		printCritiqueModeAdvisory(dirPresent)
+	})
+	if !strings.Contains(captured, "critique mode:") || !strings.Contains(captured, "external") {
+		t.Errorf("present config: missing expected advisory line; got %q", captured)
+	}
+}
+
+// AC77 AT14: docs/roles/qa.md has the two-bullet split.
+func TestAC77QaRoleVerbosityBulletsSplit(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../docs/roles/qa.md")
+	if err != nil {
+		t.Fatalf("read qa.md: %v", err)
+	}
+	s := string(content)
+	if !strings.Contains(s, "**Calibrate verbosity to findings density.**") {
+		t.Error("qa.md missing findings-density bullet")
+	}
+	if !strings.Contains(s, `**Skip the enumerated "Verified against code" block when every check passed.**`) {
+		t.Error("qa.md missing verified-block bullet")
+	}
+}
+
+// AC77 AT15: qa.md no longer contains the old conflated single-bullet phrasing.
+func TestAC77QaRoleOldPhrasingRemoved(t *testing.T) {
+	t.Parallel()
+	content, err := os.ReadFile("../../docs/roles/qa.md")
+	if err != nil {
+		t.Fatalf("read qa.md: %v", err)
+	}
+	s := string(content)
+	if strings.Contains(s, "verified-against-code block, observations, and five-field") {
+		t.Error("qa.md still contains the old conflated bullet phrasing")
 	}
 }

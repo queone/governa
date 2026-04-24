@@ -39,6 +39,7 @@ Prefer flat `##` sections with inline bullets over `###` sub-subsections in gove
 - When the user authorizes changes, make the smallest concrete change that satisfies the request.
 - Surface assumptions, ambiguities, and missing context plainly before taking action that could change project direction.
 - If `docs/roles/` exists and the user has not explicitly assigned a role: if `docs/roles/maintainer.md` is present, default to maintainer immediately and announce the active role in the first response (e.g., "Operating as maintainer (default)."). If no maintainer role exists, ask which role to assume. Role assignment requires an explicit instruction such as "act as DEV", "use docs/roles/qa.md", or "you are QA". After assignment, read `docs/roles/<role>.md` (case-insensitive lookup) and follow it alongside this file. `AGENTS.md` defines the shared repo contract; the assigned role file defines role-specific behavior for that session. Assignment persists for the session unless the user explicitly switches. If the requested role file does not exist, say so and continue under shared governance only. `director.md` is a reference document describing the human's role — it is not an assignable agent role. If asked to operate as director, decline and ask for a valid agent role.
+- **"What's next?"** — consult `plan.md`. Distinguish (a) the next roadmap candidate (highest-priority item not yet started, may lack an AC), and (b) the next implementation-ready item (has AC, critiqued, user-confirmed). Present both if they differ.
 
 ## Approval Boundaries
 
@@ -105,3 +106,5 @@ Prefer flat `##` sections with inline bullets over `###` sub-subsections in gove
 - Wrap user-facing errors with operation context and recovery guidance.
 - Every AC must label each acceptance test as `[Automated]` or `[Manual]`. See `docs/ac-template.md`.
 - New CLI flags pair a one-letter short form (the standard form; leads help output) with a long-form alias; migrate existing when their code is next touched.
+- Comment public functions.
+- Prefer dedicated tools when available: `fd` (file discovery), `rg` (text search), `jq` (JSON), `pup` (HTML), `sd` (in-place text replacement), `sqlite-utils` (SQLite), `ast-grep` (syntax-aware structural search). Batch independent shell operations into fewer calls. Avoid re-reading files already in context.

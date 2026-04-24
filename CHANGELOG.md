@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.49.0 | AC77: sync-UX rollup (addresses skout feedback from v0.44.0 syncs) |
 | 0.48.0 | AC76: sync-review quality fixes (addresses skout feedback from v0.47.1 syncs) |
 | 0.47.1 | AC75: feedback-loop fixes (addresses utils feedback from v0.47.0 syncs) |
 | 0.47.0 | AC74: IE dual-use semantics (addresses utils feedback from v0.46.0 syncs) |

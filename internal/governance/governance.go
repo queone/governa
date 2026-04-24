@@ -332,11 +332,11 @@ func ModeHelp(mode Mode) string {
 		}, "Without -r: self-review embedded vs on-disk templates. With -r: review reference repo.")
 	case ModeAck:
 		return color.FormatUsage("governa ack <path> [options]", []color.UsageLine{
-			{Flag: "-m, --reason", Desc: "single-line justification for acknowledged drift"},
+			{Flag: "-m, --reason", Desc: "single-line justification for acknowledged drift (max 200 character limit, single line)"},
 			{Flag: "-x, --remove", Desc: "remove an existing acknowledged-drift entry"},
 			{Flag: "-r, --review", Desc: "read-only: propose keep/drop for each acked entry (no path required)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
-		}, "Use `governa ack <path> --reason \"...\"` to suppress stable adopt churn, `governa ack --remove <path>` to return a file to normal adopt-flow treatment, or `governa ack --review` to audit existing entries against the current template.")
+		}, "Use `governa ack <path> --reason \"...\"` to suppress stable adopt churn, `governa ack --remove <path>` to return a file to normal adopt-flow treatment, or `governa ack --review` to audit existing entries against the current template. Rejections: `accept`-branch — ack refuses when the file does not yet exist in the consumer (recommendation=accept); `nothing to acknowledge` — path is not in the current sync's score map (first-time-write overlays are scored but excluded from the score slice, so they hit this branch).")
 	}
 	return ""
 }
@@ -729,7 +729,7 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	if adopt {
 		oldEntryMap := manifestEntryMap(oldManifest)
 		newEntryMap := manifestEntryMap(manifest)
-		transformed, scores, conflicts := applyAdoptTransforms(canonical, oldEntryMap, newEntryMap, targetAbs)
+		transformed, scores, newOverlays, conflicts := applyAdoptTransforms(canonical, oldEntryMap, newEntryMap, targetAbs)
 		syncConflicts = conflicts
 		prunedAcknowledged := pruneOrphanedAcknowledgedEntries(targetAbs, &manifest)
 		for _, path := range prunedAcknowledged {
@@ -812,8 +812,8 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 				collisions = append(collisions, s)
 			}
 		}
-		if len(collisions) > 0 || len(conflicts) > 0 {
-			if err := writeSyncReview(targetAbs, collisions, conflicts, oldManifest.TemplateVersion, templateVersion, cfg.DryRun); err != nil {
+		if len(collisions) > 0 || len(conflicts) > 0 || len(newOverlays) > 0 {
+			if err := writeSyncReview(targetAbs, collisions, newOverlays, conflicts, oldManifest.TemplateVersion, templateVersion, cfg.DryRun); err != nil {
 				return err
 			}
 			if err := writeProposedFiles(targetAbs, collisions, cfg.DryRun); err != nil {
@@ -821,6 +821,8 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 			}
 		}
 		printAdoptDriftFromScores(collisions)
+		printNewOverlaySummary(newOverlays, targetAbs)
+		printCritiqueModeAdvisory(targetAbs)
 		if len(conflicts) > 0 {
 			printConflictsSummary(targetAbs, conflicts)
 		}
@@ -903,7 +905,7 @@ func computeLiveSyncScores(tfs fs.FS, repoRoot, targetAbs string, cfg Config, ma
 	templateVersion := readTemplateVersion(repoRoot)
 	nextManifest := buildManifest(canonical, templateVersion, tfs, repoRoot, targetAbs)
 	nextManifest.Params = manifest.Params
-	_, scores, _ := applyAdoptTransforms(canonical, manifestEntryMap(manifest), manifestEntryMap(nextManifest), targetAbs)
+	_, scores, _, _ := applyAdoptTransforms(canonical, manifestEntryMap(manifest), manifestEntryMap(nextManifest), targetAbs)
 	return scores, nextManifest, templateVersion, nil
 }
 
@@ -1831,7 +1833,7 @@ func planRender(tfs fs.FS, repoRoot string, cfg Config, targetRoot string, adopt
 	if !adopt {
 		return compactOperations(canonical), nil
 	}
-	transformed, _, _ := applyAdoptTransforms(canonical, nil, nil, targetRoot)
+	transformed, _, _, _ := applyAdoptTransforms(canonical, nil, nil, targetRoot)
 	return compactOperations(transformed), nil
 }
 
@@ -1953,9 +1955,18 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 	return ops, nil
 }
 
-func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry, newManifest map[string]ManifestEntry, targetDir string) ([]operation, []collisionScore, []conflict) {
+// applyAdoptTransforms classifies each canonical operation against the consumer's
+// current state, collision-scoring where appropriate. It returns:
+//   - out: the ops slice rewritten into write / skip decisions
+//   - scores: non-accept collision scores (adopt / keep / acknowledged) that need review
+//   - newOverlays: accept-recommendation overlay scores — overlays written this sync
+//     for the first time. Surfaced to the operator via stdout summary and as `new`
+//     rows in .governa/sync-review.md Recommendations (AC77 Part C).
+//   - conflicts: symlink-vs-regular-file conflicts
+func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry, newManifest map[string]ManifestEntry, targetDir string) ([]operation, []collisionScore, []collisionScore, []conflict) {
 	out := make([]operation, len(ops))
 	var scores []collisionScore
+	var newOverlays []collisionScore
 	var conflicts []conflict
 	modulePath := readModulePath(targetDir)
 	firstSync := len(oldManifest) == 0
@@ -2001,6 +2012,7 @@ func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry,
 			demoteSubsectionCoverage(&score)
 			if score.recommendation == "accept" {
 				out[i] = op // file doesn't exist, write directly
+				newOverlays = append(newOverlays, score)
 			} else {
 				scores = append(scores, score)
 				out[i] = operation{kind: "skip"} // collision handled via review doc
@@ -2009,7 +2021,7 @@ func applyAdoptTransforms(ops []operation, oldManifest map[string]ManifestEntry,
 			out[i] = op
 		}
 	}
-	return out, scores, conflicts
+	return out, scores, newOverlays, conflicts
 }
 
 // symlinkConflict builds the operator-facing conflict description for a
@@ -4093,7 +4105,7 @@ func detectChangedGovernedSections(existingContent, templateContent string) []st
 	return changed
 }
 
-func renderSyncReview(targetDir string, scores []collisionScore, conflicts []conflict, oldVersion, newVersion string) string {
+func renderSyncReview(targetDir string, scores []collisionScore, newOverlays []collisionScore, conflicts []conflict, oldVersion, newVersion string) string {
 	relPath := func(absPath string) string {
 		if targetDir != "" {
 			if r, err := filepath.Rel(targetDir, absPath); err == nil {
@@ -4125,6 +4137,17 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	// Rendered every sync, including CLEAN runs, so the trail to the
 	// methodology is always present in sync output.
 	fmt.Fprintln(&b, "See `docs/sync-methodology.md` for the 7-step adoption methodology the repo agent must follow for every `adopt` item. The methodology applies on every sync that produces adopt items — skipping it means silently skipping rules the template expects every consumer to follow.")
+	fmt.Fprintln(&b, "")
+
+	// AC77 Part D: Critique mode advisory. Always rendered — consumers need to
+	// know where QA findings land regardless of whether they've opted into
+	// .governa/config. Default is "integrated" (post-AC63 migration).
+	mode := ConfigCritiqueMode(targetDir)
+	if mode == critiqueModeExternal {
+		fmt.Fprintln(&b, "Critique mode: external — QA findings land in `docs/ac<N>-<slug>-critique.md` companion files per `docs/critique-protocol.md`.")
+	} else {
+		fmt.Fprintln(&b, "Critique mode: integrated — QA findings land in the AC's `## Critique` section per `docs/critique-protocol.md`.")
+	}
 	fmt.Fprintln(&b, "")
 
 	if len(conflicts) > 0 {
@@ -4159,13 +4182,21 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	fmt.Fprintln(&b, "")
 	// AC68: CLEAN-mode compaction — when there's no required adoption/conflict
 	// action, replace the per-file table with a single-line summary.
-	if adopts == 0 && len(conflicts) == 0 {
+	// AC77 Part C: new-overlay rows surface first-time writes; they don't require
+	// action (the overlay is already written) but the consumer needs awareness.
+	if adopts == 0 && len(conflicts) == 0 && len(newOverlays) == 0 {
 		fmt.Fprintf(&b, "%d files reviewed, all aligned with template.\n", len(scores))
 	} else {
 		fmt.Fprintln(&b, "| File | Recommendation | Reason | Existing Lines | Proposed Lines |")
 		fmt.Fprintln(&b, "|------|----------------|--------|---------------|----------------|")
 		for _, s := range scores {
 			fmt.Fprintf(&b, "| `%s` | %s | %s | %d | %d |\n", relPath(s.path), s.recommendation, s.reason, s.existingLines, s.proposedLines)
+		}
+		// AC77 Part C: new-overlay rows. Sorted by path for deterministic output.
+		newSorted := append([]collisionScore(nil), newOverlays...)
+		sort.Slice(newSorted, func(i, j int) bool { return newSorted[i].path < newSorted[j].path })
+		for _, s := range newSorted {
+			fmt.Fprintf(&b, "| `%s` | new | overlay file added this sync — no action needed | 0 | %d |\n", relPath(s.path), s.proposedLines)
 		}
 	}
 
@@ -4183,9 +4214,19 @@ func renderSyncReview(targetDir string, scores []collisionScore, conflicts []con
 	// Adoption Items — single detail section for all adopt files
 	if adopts > 0 {
 		fmt.Fprintf(&b, "\n## Adoption Items\n\n")
-		// AC68: methodology pointer as the first body line — lands the reminder
-		// exactly where operational attention falls when an agent acts on adoptions.
-		fmt.Fprintln(&b, "Follow the methodology in `docs/sync-methodology.md` for every item below.")
+		// AC68: methodology pointer.
+		// AC77 Part C: condensed 7-step reminder inlined as a bullet list — lands
+		// the steps where operational attention falls when an agent acts on
+		// adoptions, so pointer-missers don't silently skip steps 1-3.
+		fmt.Fprintln(&b, "For each `adopt` item below, follow these 7 steps (full detail in `docs/sync-methodology.md`):")
+		fmt.Fprintln(&b, "")
+		fmt.Fprintln(&b, "- Structure pass — match template section names/order; collapse repo-only sub-subsections.")
+		fmt.Fprintln(&b, "- Content pass — start from template text, layer repo additions.")
+		fmt.Fprintln(&b, "- Residual check — each remaining diff must be justifiable as repo-specific.")
+		fmt.Fprintln(&b, "- Role files — migrate any renamed paths.")
+		fmt.Fprintln(&b, "- Manifest confirm — baseline artifacts remain correct.")
+		fmt.Fprintln(&b, "- Report — state `adopted` / `kept <reason>` / `needs director judgment` per item. For partial adopts, record the `**Kept:** / **Rejected:** / **Reason:**` triple in `docs/ac<N>-<slug>-dispositions.md`.")
+		fmt.Fprintln(&b, "- Feedback — write the per-sync feedback artifact.")
 		fmt.Fprintln(&b, "")
 		fmt.Fprintln(&b, "For each file below, read `.governa/proposed/<file>` and adopt the template content. Keep only content that is definitively repo-specific with a documented reason.")
 		fmt.Fprintln(&b, "")
@@ -4928,14 +4969,14 @@ func readmeMissingWhySection(targetDir string) bool {
 	return !strings.Contains(string(content), "## Why")
 }
 
-func writeSyncReview(targetDir string, scores []collisionScore, conflicts []conflict, oldVersion, newVersion string, dryRun bool) error {
+func writeSyncReview(targetDir string, scores []collisionScore, newOverlays []collisionScore, conflicts []conflict, oldVersion, newVersion string, dryRun bool) error {
 	reviewPath := filepath.Join(targetDir, syncReviewFile)
 	if !dryRun {
 		if err := os.MkdirAll(filepath.Dir(reviewPath), 0o755); err != nil {
 			return fmt.Errorf("create %s: %w", governaDir, err)
 		}
 	}
-	content := renderSyncReview(targetDir, scores, conflicts, oldVersion, newVersion)
+	content := renderSyncReview(targetDir, scores, newOverlays, conflicts, oldVersion, newVersion)
 	fmt.Printf("%s %s (sync review document)\n", formatAction(dryRun, "write"), reviewPath)
 	if dryRun {
 		return nil
@@ -5645,6 +5686,41 @@ func printAdoptDriftFromScores(scores []collisionScore) {
 		suffix = " — see .governa/sync-review.md"
 	}
 	fmt.Printf("%s %s%s\n", color.Yel("drift:"), strings.Join(parts, ", "), suffix)
+}
+
+// printCritiqueModeAdvisory emits a one-line stdout summary of the active
+// critique mode read from .governa/config (AC77 Part D). Silent when the
+// consumer has not opted in (no .governa/config present) — default integrated
+// mode matches the post-AC63 repo behavior and needs no announcement.
+func printCritiqueModeAdvisory(targetDir string) {
+	if !configFilePresent(targetDir) {
+		return
+	}
+	mode := ConfigCritiqueMode(targetDir)
+	fmt.Printf("%s %s\n", color.Yel("critique mode:"), mode)
+}
+
+// printNewOverlaySummary emits a one-line stdout summary listing overlay files
+// written for the first time this sync (AC77 Part C). Elided when no overlays
+// are newly written (N=0) so steady-state syncs stay quiet.
+func printNewOverlaySummary(newOverlays []collisionScore, targetDir string) {
+	if len(newOverlays) == 0 {
+		return
+	}
+	paths := make([]string, 0, len(newOverlays))
+	for _, s := range newOverlays {
+		rel, err := filepath.Rel(targetDir, s.path)
+		if err != nil {
+			rel = s.path
+		}
+		paths = append(paths, filepath.ToSlash(rel))
+	}
+	sort.Strings(paths)
+	fmt.Printf("%s wrote %d overlay file", color.Yel("overlays:"), len(paths))
+	if len(paths) != 1 {
+		fmt.Print("s")
+	}
+	fmt.Printf(": %s\n", strings.Join(paths, ", "))
 }
 
 func emitAdoptAdvisories(targetDir string) {
