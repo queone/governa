@@ -44,7 +44,6 @@ type Config struct {
 	Target             string
 	Type               RepoType
 	RepoName           string
-	Purpose            string
 	Stack              string
 	PublishingPlatform string
 	Style              string
@@ -99,7 +98,6 @@ type flagValues struct {
 	target             string
 	repoType           string
 	repoName           string
-	purpose            string
 	stack              string
 	publishingPlatform string
 	style              string
@@ -131,8 +129,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.StringVar(&values.target, "target", "", "target directory")
 	fset.StringVar(&values.repoName, "n", "", "repo name")
 	fset.StringVar(&values.repoName, "repo-name", "", "repo name")
-	fset.StringVar(&values.purpose, "p", "", "project purpose")
-	fset.StringVar(&values.purpose, "purpose", "", "project purpose")
 	fset.StringVar(&values.stack, "s", "", "stack or platform for CODE repos")
 	fset.StringVar(&values.stack, "stack", "", "stack or platform for CODE repos")
 	fset.StringVar(&values.publishingPlatform, "u", "", "publishing platform for DOC repos")
@@ -170,7 +166,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 		Target:             target,
 		Type:               RepoType(strings.ToUpper(strings.TrimSpace(values.repoType))),
 		RepoName:           strings.TrimSpace(values.repoName),
-		Purpose:            strings.TrimSpace(values.purpose),
 		Stack:              strings.TrimSpace(values.stack),
 		PublishingPlatform: strings.TrimSpace(values.publishingPlatform),
 		Style:              strings.TrimSpace(values.style),
@@ -188,7 +183,6 @@ func ModeHelp(mode Mode) string {
 		return color.FormatUsage("governa sync [options]", []color.UsageLine{
 			{Flag: "-n, --repo-name", Desc: "repo name"},
 			{Flag: "-y, --type", Desc: "repo type: CODE or DOC"},
-			{Flag: "-p, --purpose", Desc: "project purpose"},
 			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos)"},
 			{Flag: "-u, --publishing-platform", Desc: "publishing platform (DOC repos)"},
 			{Flag: "-v, --style", Desc: "style or voice (DOC repos)"},
@@ -210,41 +204,6 @@ func inferRepoName(targetDir string) string {
 		return filepath.Base(targetDir)
 	}
 	return filepath.Base(abs)
-}
-
-func inferPurpose(targetDir string) string {
-	path := filepath.Join(targetDir, "README.md")
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	foundContent := false
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			if foundContent {
-				// Blank line after content means end of first paragraph.
-				break
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		// Skip badge lines, HTML, and image links
-		if strings.HasPrefix(line, "![") || strings.HasPrefix(line, "<") || strings.HasPrefix(line, "[!") {
-			continue
-		}
-		foundContent = true
-		if len(line) > 200 {
-			return line[:200]
-		}
-		return line
-	}
-	return ""
 }
 
 var stackManifests = []struct {
@@ -285,20 +244,6 @@ func resolveAdoptParams(cfg Config, targetDir string) (Config, []paramSource) {
 		}
 	} else {
 		sources = append(sources, paramSource{"repo-name", cfg.RepoName, "flag"})
-	}
-
-	if cfg.Purpose == "" {
-		if hasManifest && manifest.Params.Purpose != "" {
-			cfg.Purpose = manifest.Params.Purpose
-			sources = append(sources, paramSource{"purpose", cfg.Purpose, "manifest"})
-		} else {
-			cfg.Purpose = inferPurpose(targetDir)
-			if cfg.Purpose != "" {
-				sources = append(sources, paramSource{"purpose", cfg.Purpose, "inferred"})
-			}
-		}
-	} else {
-		sources = append(sources, paramSource{"purpose", cfg.Purpose, "flag"})
 	}
 
 	if cfg.Stack == "" {
@@ -354,9 +299,6 @@ func validateConfig(cfg Config) error {
 	case ModeSync:
 		if cfg.RepoName == "" {
 			return errors.New("repo name is required: use -n or --repo-name")
-		}
-		if cfg.Purpose == "" {
-			return errors.New("project purpose is required: use -p or --purpose")
 		}
 		if cfg.Type != RepoTypeCode && cfg.Type != RepoTypeDoc {
 			return errors.New("repo type must be CODE or DOC: use -y or --type")
@@ -448,10 +390,6 @@ func promptMissing(cfg *Config, targetDir string) {
 		}
 	}
 
-	if cfg.Purpose == "" {
-		cfg.Purpose = promptParam("Project purpose (one line): ", "", sc)
-	}
-
 	if cfg.Type == RepoTypeCode && cfg.Stack == "" {
 		cfg.Stack = promptParam("Stack (Go, Node, Rust, Python, Java): ", "", sc)
 	}
@@ -534,7 +472,6 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 	templateVersion := readTemplateVersion(repoRoot)
 	params := ManifestParams{
 		RepoName:           cfg.RepoName,
-		Purpose:            cfg.Purpose,
 		Type:               string(cfg.Type),
 		Stack:              cfg.Stack,
 		PublishingPlatform: cfg.PublishingPlatform,
@@ -1029,7 +966,6 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 	}
 	placeholders := map[string]string{
 		"{{REPO_NAME}}":           cfg.RepoName,
-		"{{PROJECT_PURPOSE}}":     cfg.Purpose,
 		"{{STACK_OR_PLATFORM}}":   valueOrDefault(cfg.Stack, "TBD"),
 		"{{PUBLISHING_PLATFORM}}": valueOrDefault(cfg.PublishingPlatform, "TBD"),
 		"{{DOC_STYLE}}":           valueOrDefault(cfg.Style, "TBD"),

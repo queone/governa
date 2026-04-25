@@ -11,7 +11,6 @@ func TestFormatParseManifestRoundTrip(t *testing.T) {
 	t.Parallel()
 	m := buildManifest("0.50.0", ManifestParams{
 		RepoName: "example",
-		Purpose:  "An example repo.",
 		Type:     "CODE",
 		Stack:    "Go",
 	})

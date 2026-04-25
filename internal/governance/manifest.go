@@ -43,7 +43,6 @@ const syncReviewFile = ".governa/sync-review.md"
 
 type ManifestParams struct {
 	RepoName           string
-	Purpose            string
 	Type               string
 	Stack              string
 	PublishingPlatform string
@@ -74,9 +73,6 @@ func formatManifest(m Manifest) string {
 	fmt.Fprintf(&b, "template-version: %s\n", m.TemplateVersion)
 	if m.Params.RepoName != "" {
 		fmt.Fprintf(&b, "repo-name: %s\n", m.Params.RepoName)
-	}
-	if m.Params.Purpose != "" {
-		fmt.Fprintf(&b, "purpose: %s\n", m.Params.Purpose)
 	}
 	if m.Params.Type != "" {
 		fmt.Fprintf(&b, "type: %s\n", m.Params.Type)
@@ -127,7 +123,7 @@ func parseManifest(content string) (Manifest, error) {
 		case "repo-name":
 			m.Params.RepoName = value
 		case "purpose":
-			m.Params.Purpose = value
+			// Legacy field — silently ignored; no longer written.
 		case "type":
 			m.Params.Type = value
 		case "stack":

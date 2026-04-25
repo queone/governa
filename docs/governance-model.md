@@ -60,7 +60,7 @@ The canonical entrypoint is `cmd/governa/main.go`, installed via `go install git
 
 ## CLI Convention
 
-Flag-shape convention lives in `AGENTS.md` `Project Rules` — see the rule on short/long flag forms. Applies repo-wide to every tool governa ships.
+Flag-shape convention lives in `AGENTS.md` `Base Rules` — see the rule on short/long flag forms. Applies repo-wide to every tool governa ships.
 
 Flag mapping (mode is determined by the `sync` subcommand):
 

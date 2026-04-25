@@ -134,18 +134,6 @@ func TestRunWithFSRejectsUnsupportedMode(t *testing.T) {
 	}
 }
 
-func TestInferPurposeFromReadme(t *testing.T) {
-	t.Parallel()
-	dir := newFixtureTarget(t, map[string]string{
-		"README.md": "# My Repo\n\nDoes a specific thing for specific users.\n",
-	})
-	got := inferPurpose(dir)
-	want := "Does a specific thing for specific users."
-	if got != want {
-		t.Errorf("inferPurpose = %q; want %q", got, want)
-	}
-}
-
 func TestInferStackFromGoMod(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
@@ -220,7 +208,6 @@ func TestRunSyncAlwaysWritesTemplateVersion(t *testing.T) {
 		Target:    dir,
 		Type:      RepoTypeCode,
 		RepoName:  "x",
-		Purpose:   "x",
 		Stack:     "Go",
 		AssumeYes: false, // deliberately NOT --yes; bookkeeping writes should happen anyway.
 	}
@@ -254,7 +241,7 @@ func TestSyncReviewOmitsTemplateVersion(t *testing.T) {
 		t.Fatalf("seed manifest: %v", err)
 	}
 
-	cfg := Config{Mode: ModeSync, Target: dir, Type: RepoTypeCode, RepoName: "x", Purpose: "x", Stack: "Go"}
+	cfg := Config{Mode: ModeSync, Target: dir, Type: RepoTypeCode, RepoName: "x", Stack: "Go"}
 	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil && !strings.Contains(err.Error(), "conflicts") {
 		t.Fatalf("RunWithFS: %v", err)
 	}
