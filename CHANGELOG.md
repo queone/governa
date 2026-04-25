@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.54.1 | hotfix: remove governa-specific content from overlay dev.md.tmpl |
 | 0.54.0 | AC82: role-doc overlay sync + QA verbosity rule refinement |
 | 0.53.0 | AC81: template drift cleanup (post-AC80 prose audit) |
 | 0.52.0 | AC80: cleanup retired-convention drift from AC78/AC79 across overlays/docs |

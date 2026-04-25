@@ -13,7 +13,6 @@ All work — implementation, review, and file changes — targets the current wo
 - Always use the repo's canonical build command (`./build.sh`) — never run individual Go commands for build/test/lint.
 - Follow the documented pre-release checklist exactly and in order.
 - Never run the release command; present it for the user to run.
-- Propagate fixes to overlay templates and rendered examples in the same change.
 - When work needs an AC, create or update the AC file in `docs/` before asking for review; do not use a chat-only AC draft as the source of truth.
 - When an AC document exists for the current work, follow its scope and update its status when complete. Do not expand scope without updating the AC first.
 - When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `docs/build-release.md` Pre-Release Checklist).
@@ -43,11 +42,3 @@ Consumer repos run `governa sync` to pull governance template updates. The gover
 - Treat non-trivial overwrites as real work — draft an AC before applying them so the change gets scoped and reviewed through the normal development cycle.
 - After sync completes: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.
 
-### Template Improvement (governa repo only)
-
-Template improvements originate in the governa repo, not in consumer repos. DEV (or QA, when acting on the template) proposes them by reviewing consumer repos directly — reading the consumer's `AGENTS.md`, recent AC docs, and `.governa/manifest` — to identify patterns worth upstreaming. Each proposed change goes through the normal AC workflow (draft AC → critique → implement → release) as a regular template PR. There is no CLI subcommand for this; filesystem access plus the ordinary editor workflow is enough.
-
-- Read consumer governance files and recent AC history to find portable patterns (rules that every governed repo should benefit from, not project-specific local choices).
-- Draft an AC in `docs/` scoping the template edit.
-- Implement against `internal/templates/base/` or the appropriate overlay in `internal/templates/overlays/`.
-- Keep the root `AGENTS.md` in parity with `internal/templates/base/AGENTS.md` — the `TestGovernanceImprovementsFromSkout` test enforces this invariant.
