@@ -107,4 +107,5 @@ Prefer flat `##` sections with inline bullets over `###` sub-subsections in gove
 - Every AC must label each acceptance test as `[Automated]` or `[Manual]`. See `docs/ac-template.md`.
 - New CLI flags pair a one-letter short form (the standard form; leads help output) with a long-form alias; migrate existing when their code is next touched.
 - Comment public functions.
+- Every source-level change to `internal/` must propagate to three sites in the same pass: (1) the source file, (2) the overlay template under `internal/templates/overlays/`, and (3) the rendered example under `examples/`. Rebuild the governa binary and re-run `governa sync --yes` (with `go.mod` seed) against both `examples/code/` and `examples/doc/` to complete propagation. A change is not done until all three sites are consistent.
 - Prefer dedicated tools when available: `fd` (file discovery), `rg` (text search), `jq` (JSON), `pup` (HTML), `sd` (in-place text replacement), `sqlite-utils` (SQLite), `ast-grep` (syntax-aware structural search). Batch independent shell operations into fewer calls. Avoid re-reading files already in context.
