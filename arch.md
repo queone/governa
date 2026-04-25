@@ -26,7 +26,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 - `cmd/governa`: installable CLI binary. One mode: `sync`.
 - `cmd/build`, `cmd/prep`, and `cmd/rel`: Go entrypoints for local validation, release staging, and release orchestration
 - `internal/`: shared logic for governance, build, release, colorized CLI output, and template access
-- `examples/`: rendered sample repos used to verify that output is concrete and usable
+- `governa examples`: on-demand command that renders sample repos to `/tmp/governa-examples/` for inspection and build validation
 
 ## Data And Control Flow
 

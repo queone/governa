@@ -1,6 +1,0 @@
-governa-manifest-v1
-template-version: 0.54.1
-repo-name: example-code
-purpose: Example governed code repository rendered from the template.
-type: CODE
-stack: Go

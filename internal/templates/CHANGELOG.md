@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.56.0 | AC83: governa examples cmd, drop examples/ and prep.sh, slim release docs |
 | 0.55.0 | fix mdcheck crash on deleted files + propagation rule in Project Rules |
 | 0.54.1 | hotfix: remove governa-specific content from overlay dev.md.tmpl |
 | 0.54.0 | AC82: role-doc overlay sync + QA verbosity rule refinement |

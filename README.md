@@ -82,9 +82,7 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 - [`docs/roles/`](docs/roles/)
 
 ## Rendered Examples
-Generated examples:
 
-- [`examples/code/`](examples/code/)
-- [`examples/doc/`](examples/doc/)
+Run `governa examples` to render both CODE and DOC overlays to `/tmp/governa-examples/` for inspection or testing.
 
 See [`docs/governance-model.md`](docs/governance-model.md).

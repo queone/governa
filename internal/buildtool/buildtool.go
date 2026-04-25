@@ -192,6 +192,35 @@ func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 		fmt.Fprintf(out, "    installed: %s\n", color.Cya(outputPath))
 	}
 
+	fmt.Fprintln(out, "\n"+color.Yel("==> Render example repos and validate"))
+	exDir := "/tmp/governa-examples"
+	if err := runStreaming(out, errOut, "go", "run", "./cmd/governa", "examples"); err != nil {
+		return fmt.Errorf("governa examples: %w", err)
+	}
+	exCodeDir := filepath.Join(exDir, "code")
+	for _, sub := range []string{"code", "doc"} {
+		subDir := filepath.Join(exDir, sub)
+		if _, err := os.Stat(subDir); err != nil {
+			return fmt.Errorf("example dir missing: %s", subDir)
+		}
+	}
+	if output, failed := runCapturedCheckInDir(exCodeDir, "go", "vet", "./..."); failed {
+		writeIndented(out, output)
+		return fmt.Errorf("go vet failed on rendered code example")
+	} else {
+		fmt.Fprintln(out, "    go vet examples/code: ok")
+	}
+	exTestArgs := []string{"test"}
+	if cfg.Verbose {
+		exTestArgs = append(exTestArgs, "-v")
+	}
+	exTestArgs = append(exTestArgs, "./...")
+	if err := runStreamingInDir(exCodeDir, out, errOut, "go", exTestArgs...); err != nil {
+		return fmt.Errorf("go test failed on rendered code example: %w", err)
+	}
+	os.RemoveAll(exDir)
+	fmt.Fprintln(out, "    example validation passed; cleaned up "+exDir)
+
 	if nextTag, ok, err := nextPatchTag(); err != nil {
 		return err
 	} else if ok {
@@ -499,10 +528,30 @@ func runCapturedCheck(name string, args ...string) (string, bool) {
 	return string(output), err != nil
 }
 
+func runCapturedCheckInDir(dir string, name string, args ...string) (string, bool) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	return string(output), err != nil
+}
+
 func runStreaming(out io.Writer, errOut io.Writer, name string, args ...string) error {
 	command := strings.TrimSpace(name + " " + strings.Join(args, " "))
 	fmt.Fprintf(out, "    %s\n", color.Grn(command))
 	cmd := exec.Command(name, args...)
+	cmd.Stdout = out
+	cmd.Stderr = errOut
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s %s failed: %w", name, strings.Join(args, " "), err)
+	}
+	return nil
+}
+
+func runStreamingInDir(dir string, out io.Writer, errOut io.Writer, name string, args ...string) error {
+	command := strings.TrimSpace(name + " " + strings.Join(args, " "))
+	fmt.Fprintf(out, "    %s (in %s)\n", color.Grn(command), dir)
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
 	cmd.Stdout = out
 	cmd.Stderr = errOut
 	if err := cmd.Run(); err != nil {

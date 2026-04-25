@@ -82,11 +82,8 @@ Prefer flat `##` sections with inline bullets over `###` sub-subsections in gove
 ## Release Or Publish Triggers
 
 - Do not prepare or execute a release, publish, deploy, or distribution step unless the user explicitly asks for it.
-- Bootstrap and maintain a root `CHANGELOG.md` for release-bearing repos, following the canonical table specified in `docs/build-release.md` Pre-Release Checklist CHANGELOG step. Do not invent alternative shapes.
-- Do not start release-prep bookkeeping early. Only begin the Pre-Release Checklist in `docs/build-release.md` when the user explicitly asks to prep for release or equivalent.
-- Version bumps, changelog/release-note updates, tag prep, and publish workflows are release-scoped work, not routine edits.
-- When release prep is explicitly requested, run the documented pre-release checklist, prepare the exact version and a concrete release message derived from the actual changes, and then present only the canonical release command for the user to run or approve. Show the full git sequence only if the user explicitly asks for it.
-- When the user does trigger a release or publish flow, update the required release artifacts in the same pass.
+- Do not start release-prep bookkeeping early. Only begin when the user explicitly asks to prep for release.
+- Follow the Pre-Release Checklist in `docs/build-release.md` for the full procedure.
 
 ## Documentation Update Expectations
 

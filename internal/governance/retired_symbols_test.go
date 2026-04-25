@@ -65,8 +65,6 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		switch {
 		case rel == ".git":
 			return true
-		case rel == "examples": // regenerated artifacts; cleared by Part C
-			return true
 		case strings.HasPrefix(rel, "node_modules"):
 			return true
 		}
@@ -198,8 +196,6 @@ func TestRetiredProseNotPresent(t *testing.T) {
 		rel = filepath.ToSlash(rel)
 		switch {
 		case rel == ".git":
-			return true
-		case rel == "examples":
 			return true
 		case strings.HasPrefix(rel, "node_modules"):
 			return true

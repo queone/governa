@@ -13,7 +13,7 @@ All work — implementation, review, and file changes — targets the current wo
 - Always use the repo's canonical build command (`./build.sh`) — never run individual Go commands for build/test/lint.
 - Follow the documented pre-release checklist exactly and in order.
 - Never run the release command; present it for the user to run.
-- Propagate fixes to overlay templates and rendered examples in the same change.
+- Propagate fixes to overlay templates in the same change.
 - When work needs an AC, create or update the AC file in `docs/` before asking for review; do not use a chat-only AC draft as the source of truth.
 - When an AC document exists for the current work, follow its scope and update its status when complete. Do not expand scope without updating the AC first.
 - When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `docs/build-release.md` Pre-Release Checklist).

@@ -50,46 +50,20 @@ If you pass `build` or `rel` as targets, the command will validate those entrypo
 
 Under sandboxed execution that blocks Go's build cache (look for `writing stat cache ... operation not permitted`), `staticcheck` may print a `matched no packages` warning even though it ran cleanly. Treat as advisory unless real findings appear; an unrestricted rerun confirms.
 
-## Canonical Release Commands
-
-```bash
-go run ./cmd/rel vX.Y.Z "release message"
-```
-
-Convenience wrapper:
-
-```bash
-./build.sh vX.Y.Z "release message"
-```
-
-The release command always asks for interactive confirmation before it runs the git steps.
-
-## Release Trigger
-
-Only perform release work when the user explicitly asks for release, publish, or version preparation.
-
-## Release Checklist
-
-1. run the canonical build and validation flow
-2. confirm root docs and architecture notes are current
-3. update `CHANGELOG.md` for the release
-4. confirm `TEMPLATE_VERSION` matches the template release version being prepared
-5. prepare version or publish artifacts only within the explicit release request
-
 ## Pre-Release Checklist
 
 Do not start this checklist unless the user explicitly asks to prep for release or equivalent.
 
 The operator flow is two steps:
 
-1. **Run `./prep.sh vX.Y.Z "message"`.** Stages version bumps, inserts the CHANGELOG row, deletes completed AC files (plus `-critique.md` companions), runs validation builds before and after, and prints the canonical release command. The agent determines the version (semver classification from the AC's scope) and drafts the release message (≤ 80 characters) before invoking prep.
+1. **Run `go run ./cmd/prep/ vX.Y.Z "message"`.** Stages version bumps, inserts the CHANGELOG row, deletes completed AC files (plus `-critique.md` companions), runs validation builds before and after, and prints the canonical release command. The agent determines the version (semver classification from the AC's scope) and drafts the release message (≤ 80 characters) before invoking prep.
 2. **Run the printed release command (`./build.sh vX.Y.Z "message"`).** `cmd/rel` shows `git status --short`, lists every git step it will execute, and prompts for interactive confirmation. On approval it orchestrates `git add → commit → tag → push tag → push branch`. Optional: run `git diff` between the two steps if you want to inspect the CHANGELOG row wording and version-string values before committing — `cmd/rel`'s own status preview is sufficient to catch wrong-file inclusions or deletions.
 
 Present only the release command after prep; do not add trailing commentary about wrapper routing or prompts. The director already knows.
 
 ### Appendix: what prep does
 
-`./prep.sh` runs nine phases internally so the operator flow above stays short. Each phase has a clear failure mode:
+`go run ./cmd/prep/` runs nine phases internally so the operator flow above stays short. Each phase has a clear failure mode:
 
 1. **Validate inputs.** Semver pattern (`vX.Y.Z`), message non-empty and ≤ 80 characters.
 2. **Validate git state.** Inside a git work tree, target tag does not exist yet, HEAD is not at the latest tag with a clean working tree.
@@ -108,10 +82,6 @@ CHANGELOG row shape (enforced by prep's insertion code and by convention):
 - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
 - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
 
-Flags: `--dry-run` (or `-n`) prints intended writes without touching the working tree; `--no-build` skips phases 3 and 8. Both are for power users or tests — the common path is plain `./prep.sh vX.Y.Z "message"`.
+Flags: `--dry-run` (or `-n`) prints intended writes without touching the working tree; `--no-build` skips phases 3 and 8. Both are for power users or tests — the common path is plain `go run ./cmd/prep/ vX.Y.Z "message"`.
 
-## Release Artifacts
-
-- `CHANGELOG.md` is the human-readable release history
-- `TEMPLATE_VERSION` is the machine-readable template contract version used by generated repos and future refresh tooling
-- for this repo, keep `TEMPLATE_VERSION` aligned with the released template version unless there is a deliberate reason to version them separately
+Keep `TEMPLATE_VERSION` aligned with the released template version unless there is a deliberate reason to version them separately.

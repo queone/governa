@@ -12,7 +12,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 ## Schema And Data Migrations
 
 - Overlay templates are versioned through `TEMPLATE_VERSION`; when template structure changes, bump the version
-- When renaming a module or import path, audit all Go source, overlay templates, and rendered examples in a single pass
+- When renaming a module or import path, audit all Go source and overlay templates in a single pass
 
 ## External Integration Patterns
 
@@ -22,7 +22,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 ## Generated Artifact Propagation
 
 - Source-of-truth code lives in `internal/`; overlay templates under `internal/templates/overlays/` carry standalone copies of the same logic
-- Fixes to `internal/buildtool`, `internal/reltool`, or `build.sh` must propagate to both overlay template copies and rendered examples
+- Fixes to `internal/buildtool`, `internal/reltool`, or `build.sh` must propagate to the overlay template copies
 - Overlay role-doc templates are consumer-facing — they are not copies of root. When root role docs evolve, update overlays with targeted edits that filter governa-specific content. Do not `cp` root role docs to overlays.
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
