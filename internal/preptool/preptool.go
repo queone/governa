@@ -1,9 +1,9 @@
 // Package preptool stages a release: bumps version constants, inserts a
 // CHANGELOG row, deletes completed AC files (plus -critique.md and
-// -dispositions.md companions), moves -feedback.md companions to
-// .governa/feedback/, runs validation builds around the write phases, and
-// prints the canonical release command. It does not run the release itself;
-// that remains the director's explicit approval via cmd/rel. (AC60)
+// -dispositions.md companions), runs validation builds around the write
+// phases, and prints the canonical release command. It does not run the
+// release itself; that remains the director's explicit approval via cmd/rel.
+// (AC60)
 package preptool
 
 import (
@@ -103,8 +103,7 @@ func Usage() string {
 	return `prep vX.Y.Z "release message" [--dry-run|-n] [--no-build]
 
 Stages a release by bumping version constants, inserting a CHANGELOG row,
-deleting completed AC files (and moving -feedback.md companions to
-.governa/feedback/), and running validation builds before and after.
+deleting completed AC files, and running validation builds before and after.
 
 Flags:
   -h, -?, --help   show this help
@@ -186,7 +185,7 @@ func Run(cfg Config) error {
 		}
 	}
 
-	// Phase 7c: delete AC + companion files, move feedback.
+	// Phase 7c: delete AC + companion files.
 	for _, path := range acFiles {
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("prep: delete %s: %w", path, err)

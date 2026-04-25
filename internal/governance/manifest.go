@@ -213,8 +213,9 @@ func migrateGovernaLegacyPaths(root string) error {
 		}
 		fmt.Fprintf(os.Stderr, "governa sync: removed legacy %s\n", legacyPreAC55ProposedDir)
 	}
-	// Pre-AC55 sync-review.md removal (superseded by .governa/sync-review.md
-	// which itself is removed below as part of the AC78 migration).
+	// Pre-AC55 sync-review.md removal. The current artifact lives at
+	// .governa/sync-review.md (reinstated in AC79); the pre-AC55 location
+	// at the repo root is just legacy.
 	legacyReviewAbs := filepath.Join(root, legacyPreAC55SyncReviewFile)
 	if info, err := os.Stat(legacyReviewAbs); err == nil && !info.IsDir() {
 		if err := os.Remove(legacyReviewAbs); err != nil {
@@ -224,8 +225,10 @@ func migrateGovernaLegacyPaths(root string) error {
 	}
 
 	// AC78 migration: drop the rich-sync artifacts from the `.governa/` dir.
-	// These lived at .governa/sync-review.md, .governa/proposed/, .governa/feedback/,
-	// .governa/config under pre-AC78 governa and are all retired.
+	// These lived at .governa/proposed/, .governa/feedback/, .governa/config
+	// under pre-AC78 governa and are all retired. (`.governa/sync-review.md`
+	// is the current per-sync review artifact, reinstated in AC79 — not part
+	// of this migration.)
 	for _, rel := range []string{legacyPreAC78ProposedDir, legacyPreAC78FeedbackDir} {
 		abs := filepath.Join(root, rel)
 		info, err := os.Stat(abs)

@@ -2,7 +2,7 @@
 
 Index for repo-level workflow and maintenance docs.
 
-- `governance-model.md`: sync and enhance semantics
+- `governance-model.md`: sync semantics
 - `build-release.md`: canonical local build and release rules
 - `development-cycle.md`: working cycle and artifact expectations
 - `ac-template.md`: acceptance-criteria template

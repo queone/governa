@@ -1257,9 +1257,10 @@ func skipIfExists(op operation) operation {
 // falls back to the repo root. This handles files like TEMPLATE_VERSION that
 // live at the repo root rather than inside internal/templates/.
 // readTemplateVersion returns the template version string. When repoRoot is
-// set (enhance mode, dev), it reads from the TEMPLATE_VERSION file on disk.
-// When repoRoot is empty (installed binary, consumer modes), it falls back
-// to the compiled-in templates.TemplateVersion constant.
+// set (test harnesses passing an explicit repo root), it reads from the
+// TEMPLATE_VERSION file on disk. When repoRoot is empty (installed binary,
+// consumer modes), it falls back to the compiled-in templates.TemplateVersion
+// constant.
 func readTemplateVersion(repoRoot string) string {
 	if repoRoot != "" {
 		content, err := os.ReadFile(filepath.Join(repoRoot, "TEMPLATE_VERSION"))

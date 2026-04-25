@@ -16,7 +16,7 @@ The agent runs in the target repo, not in this template repo. This template repo
 2. run `governa sync`
 3. governa detects whether this is a new repo, a first-time sync, or a re-sync
 4. prompts for any missing parameters (or uses flags/manifest/inference)
-5. renders concrete files into the target repo, prompting `[k]eep / [o]verwrite / [s]kip` on each collision with existing content
+5. renders concrete files into the target repo; for any file that already exists and would differ from the template, records the collision in `.governa/sync-review.md` (with diff preview) instead of overwriting — `--yes` is the escape hatch for batch-overwrite
 
 ## Mode: `sync`
 

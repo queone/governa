@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.53.0 | AC81: template drift cleanup (post-AC80 prose audit) |
 | 0.52.0 | AC80: cleanup retired-convention drift from AC78/AC79 across overlays/docs |
 | 0.51.0 | AC79: sync-review.md reinstated + TEMPLATE_VERSION bookkeeping fix |
 | 0.50.0 | AC78: minimal governa — enhance+ack removed, legacy artifacts auto-migrated |

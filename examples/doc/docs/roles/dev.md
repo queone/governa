@@ -39,7 +39,7 @@ Consumer repos run `governa sync` to pull governance template updates. The gover
 ### Sync (consumer repos)
 
 - Run `governa sync` periodically to check if the governance template has evolved.
-- For each template file that differs from the consumer's copy, sync prompts interactively — `k` (keep existing), `o` (overwrite with template), `s` (skip for now). `--yes` and `--no` cover non-interactive use.
+- For each template file that differs from the consumer's copy, sync does not touch the file — it records the collision in `.governa/sync-review.md` (with a diff preview) and exits non-zero. Reviewers act on the doc: apply edits manually against the review, or re-run `governa sync --yes` to batch-overwrite once the adoptions are agreed.
 - Treat non-trivial overwrites as real work — draft an AC before applying them so the change gets scoped and reviewed through the normal development cycle.
 - After sync completes: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.
 

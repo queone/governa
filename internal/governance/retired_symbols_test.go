@@ -150,3 +150,137 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 			len(hits), strings.Join(hits, "\n  "))
 	}
 }
+
+// TestRetiredProseNotPresent is the prose-drift companion to
+// TestRetiredSymbolsNotPresent (AC81 Part E). Walks the same scope and skip
+// set, but matches retired-convention phrases in docs, comments, and help
+// text — drift the Go-symbol guard cannot catch because the offending text
+// is prose, not an identifier.
+//
+// When a future AC retires a user-visible convention (a flag, a help-text
+// claim, a doc phrase that ages out), extend retiredPhrases below; the
+// guard then prevents the same retirement-cleanup audit from recurring.
+func TestRetiredProseNotPresent(t *testing.T) {
+	t.Parallel()
+
+	// Literal substrings, matched case-sensitively. Each phrase is
+	// distinctive enough that false positives are unlikely; if one surfaces,
+	// add a targeted file exemption below rather than weakening the phrase.
+	retiredPhrases := []string{
+		// AC79 — interactive collision prompt + --no flag retired.
+		"[k]eep / [o]verwrite / [s]kip",
+		"--yes and --no",
+		// AC78 — enhance/ack subcommands + RunEnhance entry point retired.
+		"governa enhance",
+		"governa ack",
+		"enhance mode",
+		"enhance references",
+		"enhance semantics",
+		// AC78 — preptool feedback-companion move retired.
+		"moves -feedback.md companions",
+		"moving -feedback.md companions",
+	}
+
+	// Word-boundary patterns. Use these for phrases generic enough that a
+	// raw substring match could false-positive in unrelated prose.
+	retiredWordPatterns := regexp.MustCompile(`\b(move feedback)\b`)
+
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+
+	skipDir := func(abs string) bool {
+		rel, err := filepath.Rel(repoRoot, abs)
+		if err != nil {
+			return false
+		}
+		rel = filepath.ToSlash(rel)
+		switch {
+		case rel == ".git":
+			return true
+		case rel == "examples":
+			return true
+		case strings.HasPrefix(rel, "node_modules"):
+			return true
+		}
+		return false
+	}
+
+	skipFile := func(abs string) bool {
+		rel, err := filepath.Rel(repoRoot, abs)
+		if err != nil {
+			return false
+		}
+		rel = filepath.ToSlash(rel)
+		base := filepath.Base(rel)
+		switch {
+		// Historical AC docs: archival; retain prose for the record.
+		case strings.HasPrefix(rel, "docs/ac") && strings.HasSuffix(rel, ".md"):
+			return true
+		// CHANGELOGs at both locations are history.
+		case base == "CHANGELOG.md":
+			return true
+		// This test file itself lists retired phrases intentionally.
+		case strings.HasSuffix(rel, "retired_symbols_test.go"):
+			return true
+		}
+		return false
+	}
+
+	isTextExt := func(name string) bool {
+		ext := filepath.Ext(name)
+		switch ext {
+		case ".go", ".md", ".tmpl", ".sh", ".txt", ".yaml", ".yml", ".toml", ".gitignore":
+			return true
+		}
+		switch name {
+		case ".gitignore", "TEMPLATE_VERSION", "CHANGELOG.md":
+			return true
+		}
+		return false
+	}
+
+	var hits []string
+	err = filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if skipDir(path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if skipFile(path) {
+			return nil
+		}
+		if !isTextExt(d.Name()) {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		text := string(content)
+		rel, _ := filepath.Rel(repoRoot, path)
+		for _, phrase := range retiredPhrases {
+			if strings.Contains(text, phrase) {
+				hits = append(hits, rel+": "+phrase)
+				return nil // one hit per file
+			}
+		}
+		if m := retiredWordPatterns.FindString(text); m != "" {
+			hits = append(hits, rel+": "+m)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk repo: %v", err)
+	}
+
+	if len(hits) > 0 {
+		t.Errorf("retired prose phrases present in non-history files (%d):\n  %s",
+			len(hits), strings.Join(hits, "\n  "))
+	}
+}

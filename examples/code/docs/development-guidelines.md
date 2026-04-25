@@ -43,7 +43,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 
 - Tests are part of implementation, not a follow-up step
 - Subprocess-dependent functions (exec.Command wrappers) have a documented coverage ceiling — do not mock them, document the gap
-- End-to-end tests should call the exported entry point (e.g. `RunEnhance`), not internal helpers
+- End-to-end tests should call the exported entry point (e.g. `governance.RunWithFS`), not internal helpers
 - Label tests that require live systems as `[Manual]`
 
 ## Dependency And Import Hygiene
