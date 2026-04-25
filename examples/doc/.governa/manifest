@@ -1,5 +1,5 @@
 governa-manifest-v1
-template-version: 0.52.0
+template-version: 0.53.0
 repo-name: example-doc
 purpose: Example governed documentation repository rendered from the template.
 type: DOC

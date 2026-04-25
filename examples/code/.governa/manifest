@@ -1,5 +1,5 @@
 governa-manifest-v1
-template-version: 0.52.0
+template-version: 0.53.0
 repo-name: example-code
 purpose: Example governed code repository rendered from the template.
 type: CODE
