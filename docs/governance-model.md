@@ -29,7 +29,7 @@ Single entry point for both new and existing repos. Detection order:
 ### New-repo behavior
 
 - prompt for missing parameters interactively (repo type, name, stack)
-- all flags (`-n`, `-y`, `-s`) bypass individual prompts
+- all flags (`-n`, `-k`, `-s`) bypass individual prompts
 - copy base files, apply the selected overlay, fill placeholders
 - create `CLAUDE.md → AGENTS.md` symlink
 - write `TEMPLATE_VERSION`
@@ -66,11 +66,11 @@ Flag mapping (mode is determined by the `sync` subcommand):
 
 ```text
 -t, --target
--y, --type
+-k, --type
 -n, --repo-name
 -s, --stack
 -g, --init-git
-    --yes
+-y, --yes
 ```
 
 ## Agent Agnosticism
@@ -98,7 +98,7 @@ Removing the existing `CLAUDE.md` without inspection risks discarding the only c
   - `README.md` (CODE only)
   - `arch.md` (CODE only)
   - `plan.md`
-  - `docs/roles/` (DEV, QA, director reference, and custom role docs)
+  - `docs/roles/` (role docs per overlay — see overlay README)
 - user-owned unless explicitly mapped:
   - source code
   - app content

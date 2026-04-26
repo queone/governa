@@ -13,7 +13,7 @@ Current contents:
 - `internal/color/color.go`
 - `docs/roles/README.md`
 - `docs/roles/director.md`
-- `docs/roles/dev.md`
-- `docs/roles/qa.md`
+- `docs/roles/operator.md`
+- `docs/roles/editor.md`
 - `docs/roles/maintainer.md`
 - `.gitignore`

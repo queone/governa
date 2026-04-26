@@ -7,17 +7,17 @@ This directory defines the delivery model for this repo. Each role file is a beh
 ## Delivery Model
 
 - **Director (human).** Owns intent, priorities, and irreversible decisions: defining success criteria, approving requirements and acceptance criteria, prioritizing the backlog, approving publications, and deciding what "done" means. Agents will otherwise either gold-plate or cut corners. The director also owns the meta-loop — reviewing how agents perform and adjusting their instructions.
-- **DEV.** Owns everything inside the content boundary: translating requirements into content, writing drafts, following the publishing workflow, and maintaining editorial documentation. DEV does not self-certify editorial quality or decide when something publishes.
-- **QA.** Owns verification and editorial safety: turning acceptance criteria into review plans, verifying content accuracy and source claims, checking consistency against style guides, filing structured editorial findings, and red-teaming DEV's work.
-- **Maintainer.** Combined DEV and QA for single-agent repos. Carries the inherent conflict of interest between creation and review — the self-review requirement exists specifically to mitigate this.
+- **Operator.** Owns everything inside the repo-mechanics boundary: file edits, branch/PR creation, formatting, link integrity, navigation structure, and maintaining editorial documentation. Operator does not self-certify editorial quality or decide when something publishes.
+- **Editor.** Owns verification and editorial safety: turning acceptance criteria into review plans, verifying content accuracy and source claims, checking clarity, consistency, structure, and terminology, filing structured editorial findings, and red-teaming Operator's work.
+- **Maintainer.** Combined Operator and Editor for single-agent repos. Carries the inherent conflict of interest between creation and review — the self-review requirement exists specifically to mitigate this.
 
 ## Critical Principle
 
-On anything substantive, the director must never let DEV and QA negotiate directly without being in the loop. The value of two agents is the adversarial check — if they collude or defer to each other, that is one agent with extra steps. Route disagreements through the director, even if it's slower.
+On anything substantive, the director must never let Operator and Editor negotiate directly without being in the loop. The value of two agents is the adversarial check — if they collude or defer to each other, that is one agent with extra steps. Route disagreements through the director, even if it's slower.
 
 ## Caveat
 
-This split assumes agents are capable enough to hold these responsibilities across long horizons. If an agent loses context on editorial standards or misses obvious issues, the answer is not to reshuffle roles — it is to give them better tools (persistent docs, checklists, style guides) and tighter scoped tasks.
+This split assumes agents are capable enough to hold these responsibilities across long horizons. If an agent loses context on editorial standards or misses obvious issues, the answer is not to reshuffle roles — it is to give them better tools (persistent docs, checklists, editorial guides) and tighter scoped tasks.
 
 ## Role Assignment
 
@@ -28,8 +28,8 @@ See `AGENTS.md` Interaction Mode for the full role-assignment rule — default t
 | File | Role | Type | Focus |
 |------|------|------|-------|
 | `director.md` | Director | Reference (human) | Intent, priorities, irreversible decisions |
-| `dev.md` | DEV | Agent | Content creation, editorial workflow |
-| `qa.md` | QA | Agent | Editorial review, accuracy verification |
+| `operator.md` | Operator | Agent | File edits, structure, formatting, repo mechanics |
+| `editor.md` | Editor | Agent | Content quality, accuracy, consistency review |
 | `maintainer.md` | Maintainer | Agent | Combined creation and review for single-agent repos |
 
 ## Adding Custom Roles

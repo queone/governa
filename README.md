@@ -44,7 +44,7 @@ governa sync
 Or with flags to skip prompts:
 
 ```bash
-governa sync -y CODE -n my-service -p "API gateway for internal services" -s "Go"
+governa sync -k CODE -n my-service -s "Go"
 ```
 
 **Existing repo** (governance artifacts or manifest found): non-colliding files (new to the target, or identical to the template) are written automatically along with bookkeeping (`TEMPLATE_VERSION`, `.governa/manifest`). Any file whose existing content differs from the template is **not touched** — the collision is recorded in `.governa/sync-review.md` with a diff preview for DEV, QA, and the Director to review. DEV then drafts an AC against the review and either edits adopts manually or re-runs `governa sync --yes` (the escape hatch) to batch-overwrite every collision.
@@ -53,7 +53,7 @@ governa sync -y CODE -n my-service -p "API gateway for internal services" -s "Go
 governa sync
 ```
 
-Repo name, purpose, type, and stack are inferred from the target directory (directory basename, `README.md` first paragraph, manifest files). Explicit flags override inference: `-n`, `-p`, `-y`, `-s`. On re-sync, stored parameters from the `.governa/manifest` are reused automatically.
+Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`. On re-sync, stored parameters from the `.governa/manifest` are reused automatically.
 
 Run `governa help` for available commands, or `governa sync --help` for sync-specific flags.
 

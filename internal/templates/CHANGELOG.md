@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.60.0 | AC87: DOC role templates (Operator/Editor) + flag short-form audit |
 | 0.59.0 | AC86: slim DOC overlay — drop editorial templates and flags |
 | 0.58.0 | AC85: consolidate governed sections, override semantics, section-aware sync |
 | 0.57.0 | AC84: governance contract cleanup, drop --purpose flag |

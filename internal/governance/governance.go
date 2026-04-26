@@ -127,10 +127,11 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.StringVar(&values.repoName, "repo-name", "", "repo name")
 	fset.StringVar(&values.stack, "s", "", "stack or platform for CODE repos")
 	fset.StringVar(&values.stack, "stack", "", "stack or platform for CODE repos")
-	fset.StringVar(&values.repoType, "y", "", "repo type: CODE|DOC")
+	fset.StringVar(&values.repoType, "k", "", "repo type: CODE|DOC")
 	fset.StringVar(&values.repoType, "type", "", "repo type: CODE|DOC")
 	fset.BoolVar(&values.initGit, "g", false, "initialize git if target is not already a repo")
 	fset.BoolVar(&values.initGit, "init-git", false, "initialize git if target is not already a repo")
+	fset.BoolVar(&values.assumeYes, "y", false, "batch-overwrite all colliding files; skip the review-doc workflow")
 	fset.BoolVar(&values.assumeYes, "yes", false, "batch-overwrite all colliding files; skip the review-doc workflow")
 	if slices.Contains(args, "-?") || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
 		printModeHelp(mode)
@@ -172,11 +173,11 @@ func ModeHelp(mode Mode) string {
 	case ModeSync:
 		return color.FormatUsage("governa sync [options]", []color.UsageLine{
 			{Flag: "-n, --repo-name", Desc: "repo name"},
-			{Flag: "-y, --type", Desc: "repo type: CODE or DOC"},
+			{Flag: "-k, --type", Desc: "repo type: CODE or DOC"},
 			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
 			{Flag: "-g, --init-git", Desc: "initialize git if target is not a repo"},
-			{Flag: "    --yes", Desc: "batch-overwrite all colliding files; skip the review-doc workflow"},
+			{Flag: "-y, --yes", Desc: "batch-overwrite all colliding files; skip the review-doc workflow"},
 		}, "Detects whether the target is a new or existing repo and prompts for missing parameters. Colliding files (existing content differs from template) are NOT touched — they're recorded in `.governa/sync-review.md` for DEV + QA + Director review. `--yes` batch-overwrites every collision directly (escape hatch, skips the review-doc loop).")
 	}
 	return ""
@@ -279,7 +280,7 @@ func validateConfig(cfg Config) error {
 			return errors.New("repo name is required: use -n or --repo-name")
 		}
 		if cfg.Type != RepoTypeCode && cfg.Type != RepoTypeDoc {
-			return errors.New("repo type must be CODE or DOC: use -y or --type")
+			return errors.New("repo type must be CODE or DOC: use -k or --type")
 		}
 		if cfg.Type == RepoTypeCode && cfg.Stack == "" {
 			return errors.New("stack/platform is required for CODE repos: use -s or --stack")
@@ -864,7 +865,7 @@ func isGovernaOwnedPath(rel string) bool {
 	if governaOwnedPaths[norm] {
 		return true
 	}
-	// docs/roles/* is owned by governa (DEV, QA, director reference, maintainer, README)
+	// docs/roles/* is owned by governa (role docs per overlay)
 	if strings.HasPrefix(norm, "docs/roles/") {
 		return true
 	}
