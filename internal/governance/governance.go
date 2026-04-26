@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/queone/governa/internal/color"
@@ -21,7 +20,7 @@ import (
 type Mode string
 
 const (
-	ModeSync Mode = "sync"
+	ModeApply Mode = "apply"
 )
 
 type RepoType string
@@ -31,22 +30,13 @@ const (
 	RepoTypeDoc  RepoType = "DOC"
 )
 
-// ErrConflictsPresent is returned by runSync when sync completes but one or
-// more conflicts (e.g., symlink-vs-regular-file collisions) were detected.
-// Conflicts have already been printed to stderr and recorded in the review
-// doc before this error is returned; the error exists purely so scripted
-// callers can distinguish "sync completed cleanly" (exit 0) from "sync
-// completed with manual-resolution blockers" (non-zero exit).
-var ErrConflictsPresent = errors.New("sync completed with conflicts requiring manual resolution")
-
 type Config struct {
-	Mode      Mode
-	Target    string
-	Type      RepoType
-	RepoName  string
-	Stack     string
-	InitGit   bool
-	AssumeYes bool // AC79 Part B: --yes — batch-overwrite all colliding files; skip the review-doc workflow.
+	Mode     Mode
+	Target   string
+	Type     RepoType
+	RepoName string
+	Stack    string
+	InitGit  bool
 }
 
 type Assessment struct {
@@ -81,38 +71,25 @@ type operation struct {
 	source  string
 }
 
-// conflict represents a pre-apply condition that blocks a planned operation
-// from landing safely. Conflicts are surfaced in the review doc under a
-// ## Conflicts section and trigger a post-transform `needs manual resolution`
-// status line. They are distinct from collision scores (which represent
-// existing-vs-proposed content differences).
-type conflict struct {
-	kind        string // "symlink-vs-regular"
-	path        string // absolute path of the blocked op target
-	description string // operator-facing explanation including required action
-}
-
 type flagValues struct {
-	target    string
-	repoType  string
-	repoName  string
-	stack     string
-	initGit   bool
-	assumeYes bool
+	target   string
+	repoType string
+	repoName string
+	stack    string
+	initGit  bool
 }
 
-// RunWithFS dispatches the one supported mode (sync) against the template FS.
+// RunWithFS dispatches the one supported mode (apply) against the template FS.
 func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
 	switch cfg.Mode {
-	case ModeSync:
-		return runSync(tfs, repoRoot, cfg)
+	case ModeApply:
+		return runApply(tfs, repoRoot, cfg)
 	default:
 		return fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}
 }
 
-// ParseModeArgs parses flags for the given mode. Kept for cmd/governa
-// compatibility even though only ModeSync is supported today.
+// ParseModeArgs parses flags for the given mode.
 func ParseModeArgs(mode Mode, args []string) (Config, bool, error) {
 	return parseFlags(mode, args)
 }
@@ -131,8 +108,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.StringVar(&values.repoType, "type", "", "repo type: CODE|DOC")
 	fset.BoolVar(&values.initGit, "g", false, "initialize git if target is not already a repo")
 	fset.BoolVar(&values.initGit, "init-git", false, "initialize git if target is not already a repo")
-	fset.BoolVar(&values.assumeYes, "y", false, "batch-overwrite all colliding files; skip the review-doc workflow")
-	fset.BoolVar(&values.assumeYes, "yes", false, "batch-overwrite all colliding files; skip the review-doc workflow")
 	if slices.Contains(args, "-?") || slices.Contains(args, "-h") || slices.Contains(args, "--help") {
 		printModeHelp(mode)
 		return Config{}, true, nil
@@ -155,30 +130,28 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	}
 
 	cfg := Config{
-		Mode:      mode,
-		Target:    target,
-		Type:      RepoType(strings.ToUpper(strings.TrimSpace(values.repoType))),
-		RepoName:  strings.TrimSpace(values.repoName),
-		Stack:     strings.TrimSpace(values.stack),
-		InitGit:   values.initGit,
-		AssumeYes: values.assumeYes,
+		Mode:     mode,
+		Target:   target,
+		Type:     RepoType(strings.ToUpper(strings.TrimSpace(values.repoType))),
+		RepoName: strings.TrimSpace(values.repoName),
+		Stack:    strings.TrimSpace(values.stack),
+		InitGit:  values.initGit,
 	}
-	// Validation is deferred to runSync (after prompts) for ModeSync.
+	// Validation is deferred to runApply (after prompts).
 	return cfg, false, nil
 }
 
 // ModeHelp returns mode-specific flag usage text.
 func ModeHelp(mode Mode) string {
 	switch mode {
-	case ModeSync:
-		return color.FormatUsage("governa sync [options]", []color.UsageLine{
+	case ModeApply:
+		return color.FormatUsage("governa apply [options]", []color.UsageLine{
 			{Flag: "-n, --repo-name", Desc: "repo name"},
 			{Flag: "-k, --type", Desc: "repo type: CODE or DOC"},
 			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
 			{Flag: "-g, --init-git", Desc: "initialize git if target is not a repo"},
-			{Flag: "-y, --yes", Desc: "batch-overwrite all colliding files; skip the review-doc workflow"},
-		}, "Detects whether the target is a new or existing repo and prompts for missing parameters. Colliding files (existing content differs from template) are NOT touched — they're recorded in `.governa/sync-review.md` for DEV + QA + Director review. `--yes` batch-overwrites every collision directly (escape hatch, skips the review-doc loop).")
+		}, "Apply governance template to a new or existing repo. Detects repo state and prompts for missing parameters. After apply, all files are consumer-owned.")
 	}
 	return ""
 }
@@ -275,7 +248,7 @@ func printParamSources(sources []paramSource) {
 
 func validateConfig(cfg Config) error {
 	switch cfg.Mode {
-	case ModeSync:
+	case ModeApply:
 		if cfg.RepoName == "" {
 			return errors.New("repo name is required: use -n or --repo-name")
 		}
@@ -291,28 +264,23 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
-// detectSyncMode inspects the target directory and returns one of:
-//   - "re-sync"  — manifest found (adopt path with manifest defaults)
-//   - "adopt"    — governance artifacts found but no manifest
+// detectApplyMode inspects the target directory and returns one of:
+//   - "re-apply" — manifest found (previously governed repo)
+//   - "existing" — governance artifacts found but no manifest
 //   - "new"      — fresh directory
-func detectSyncMode(targetDir string) string {
-	// Check for manifest first (authoritative). Current path (`.governa/manifest`)
-	// takes priority; fall back to pre-AC55 (`.governa-manifest`) and pre-governa
-	// (`.repokit-manifest`) layouts so legacy repos still detect as re-sync before
-	// migrateGovernaLegacyPaths runs.
+func detectApplyMode(targetDir string) string {
 	for _, name := range []string{manifestFileName, legacyPreAC55ManifestFile, legacyManifestFileName} {
 		if _, err := os.Stat(filepath.Join(targetDir, name)); err == nil {
-			return "re-sync"
+			return "re-apply"
 		}
 	}
-	// Check for governance artifacts.
 	for _, artifact := range []string{"AGENTS.md", "CLAUDE.md"} {
 		if _, err := os.Stat(filepath.Join(targetDir, artifact)); err == nil {
-			return "adopt"
+			return "existing"
 		}
 	}
 	if _, err := os.Stat(filepath.Join(targetDir, "docs", "roles")); err == nil {
-		return "adopt"
+		return "existing"
 	}
 	return "new"
 }
@@ -367,22 +335,10 @@ func promptMissing(cfg *Config, targetDir string) {
 
 }
 
-// collisionRecord captures one file whose existing content differs from the
-// rendered template. Populated during runSync and rendered into
-// `.governa/sync-review.md` for DEV/Director/QA to review.
-type collisionRecord struct {
-	path     string // absolute path on disk
-	existing string // content currently on disk
-	proposed string // content the template would write
-}
-
-// runSync writes the base template + overlay files to the target directory.
-// Default behavior: new + identical files are written; colliding files are
-// NOT touched — they're recorded in `.governa/sync-review.md` for review.
-// `--yes` (AssumeYes) is the escape hatch: apply every colliding write
-// directly, skip the review-doc workflow. Bookkeeping writes (TEMPLATE_VERSION,
-// `.governa/manifest`) always apply regardless of collision state.
-func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
+// runApply writes the base template + overlay files to the target directory.
+// All planned operations apply directly — there is no collision negotiation.
+// After apply, all files are consumer-owned.
+func runApply(tfs fs.FS, repoRoot string, cfg Config) error {
 	targetAbs, err := filepath.Abs(cfg.Target)
 	if err != nil {
 		return fmt.Errorf("resolve target path: %w", err)
@@ -395,13 +351,18 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		return fmt.Errorf("migrate legacy governa paths: %w", err)
 	}
 
-	syncMode := detectSyncMode(targetAbs)
-	adopt := syncMode != "new"
+	applyMode := detectApplyMode(targetAbs)
+	existing := applyMode != "new"
 
-	if adopt {
+	if existing {
 		resolved, sources := resolveAdoptParams(cfg, targetAbs)
 		cfg = resolved
 		printParamSources(sources)
+	}
+
+	oldManifest, hasOldManifest, _ := readManifest(targetAbs)
+	if hasOldManifest && oldManifest.TemplateVersion != "" {
+		fmt.Fprintf(os.Stderr, "re-applying to previously-governed repo (last applied: v%s); governance files will be overwritten\n", oldManifest.TemplateVersion)
 	}
 
 	assessment, err := AssessTarget(targetAbs, cfg.Type)
@@ -424,9 +385,6 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		fmt.Printf("type: %s (inferred)\n", cfg.Type)
 	}
 
-	oldManifest, _, _ := readManifest(targetAbs)
-	oldTemplateVersion := oldManifest.TemplateVersion
-
 	canonical, err := planCanonical(tfs, repoRoot, cfg, targetAbs)
 	if err != nil {
 		return err
@@ -446,67 +404,13 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		note:    "bootstrap manifest",
 	}
 
-	// Classify each canonical op:
-	//   - bookkeeping write (template version marker): always apply
-	//   - symlink with regular-file collision: conflict, skip
-	//   - symlink otherwise: skipIfExists
-	//   - write-op where target doesn't exist: apply
-	//   - write-op where target exists + identical: apply (touchless)
-	//   - write-op where target exists + differs:
-	//       AssumeYes: apply (overwrite)
-	//       otherwise: record collision, skip the write
 	resolved := make([]operation, 0, len(canonical))
-	var syncConflicts []conflict
-	var collisions []collisionRecord
 	for _, op := range canonical {
-		if op.kind == "write" {
-			isBookkeeping := op.note == "template version marker"
-			if !isBookkeeping {
-				existingBytes, readErr := os.ReadFile(op.path)
-				switch {
-				case errors.Is(readErr, os.ErrNotExist):
-					// file doesn't exist — fall through to append (new write)
-				case readErr != nil:
-					return fmt.Errorf("read %s: %w", op.path, readErr)
-				default:
-					existing := string(existingBytes)
-					if existing != op.content {
-						if op.note == "base governance contract" {
-							merged, sectionCollisions := mergeAgentsSections(op.content, existing, cfg.AssumeYes)
-							rel := displayPath(targetAbs, op.path)
-							for i := range sectionCollisions {
-								sectionCollisions[i].path = rel + " § " + sectionCollisions[i].path
-							}
-							collisions = append(collisions, sectionCollisions...)
-							op.content = merged
-							if len(sectionCollisions) > 0 && !cfg.AssumeYes {
-								resolved = append(resolved, op)
-								continue
-							}
-							if cfg.AssumeYes {
-								fmt.Printf("overwrite (--yes): %s (section-aware)\n", displayPath(targetAbs, op.path))
-							}
-						} else if cfg.AssumeYes {
-							fmt.Printf("overwrite (--yes): %s\n", displayPath(targetAbs, op.path))
-						} else {
-							collisions = append(collisions, collisionRecord{
-								path:     op.path,
-								existing: existing,
-								proposed: op.content,
-							})
-							resolved = append(resolved, operation{kind: "skip"})
-							continue
-						}
-					}
-					// existing == op.content: fall through — touchless write
-				}
-			}
-		}
 		if op.kind == "symlink" {
 			info, err := os.Lstat(op.path)
 			if err == nil && info.Mode()&os.ModeSymlink == 0 {
 				rel, _ := filepath.Rel(targetAbs, op.path)
-				syncConflicts = append(syncConflicts, symlinkConflict(op, rel))
+				fmt.Fprintf(os.Stderr, "warning: %s exists as a regular file; expected symlink to %s — delete the file and re-run to create the symlink\n", rel, op.linkTo)
 				resolved = append(resolved, operation{kind: "skip"})
 				continue
 			}
@@ -522,19 +426,16 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		return err
 	}
 
-	// Write `.governa/sync-review.md` unless --yes was used (escape hatch
-	// applies everything directly; no review loop needed).
-	if !cfg.AssumeYes {
-		reviewPath := filepath.Join(targetAbs, syncReviewFile)
-		reviewContent := renderSyncReview(targetAbs, oldTemplateVersion, templateVersion, collisions)
-		if err := os.MkdirAll(filepath.Dir(reviewPath), 0o755); err != nil {
-			return fmt.Errorf("create %s: %w", governaDir, err)
-		}
-		if err := os.WriteFile(reviewPath, []byte(reviewContent), 0o644); err != nil {
-			return fmt.Errorf("write sync review: %w", err)
-		}
-		printReviewSummary(targetAbs, reviewPath, len(collisions))
+	// Write adoption AC
+	applyACPath := filepath.Join(targetAbs, "docs", "ac1-governa-apply.md")
+	applyACContent := renderApplyAC(templateVersion, cfg, canonical)
+	if err := os.MkdirAll(filepath.Dir(applyACPath), 0o755); err != nil {
+		return fmt.Errorf("create docs/: %w", err)
 	}
+	if err := os.WriteFile(applyACPath, []byte(applyACContent), 0o644); err != nil {
+		return fmt.Errorf("write adoption AC: %w", err)
+	}
+	fmt.Printf("write %s (adoption record)\n", displayPath(targetAbs, applyACPath))
 
 	if cfg.InitGit {
 		if err := maybeInitGit(targetAbs); err != nil {
@@ -542,112 +443,15 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 		}
 	}
 
-	if len(syncConflicts) > 0 {
-		for _, c := range syncConflicts {
-			fmt.Fprintln(os.Stderr, c.description)
-		}
-		return ErrConflictsPresent
-	}
 	return nil
 }
 
-// displayPath renders an absolute path as repo-relative when possible, for
-// human-readable sync output.
+// displayPath renders an absolute path as repo-relative when possible.
 func displayPath(targetAbs, absPath string) string {
 	if rel, err := filepath.Rel(targetAbs, absPath); err == nil {
 		return filepath.ToSlash(rel)
 	}
 	return absPath
-}
-
-// renderSyncReview produces the `.governa/sync-review.md` content. Scope is
-// pending-decisions-only: colliding files each get a header + diff preview.
-// Zero-collision case writes a summary-only review. Non-colliding writes are
-// NOT listed here — `git diff` shows the rest.
-func renderSyncReview(targetAbs, oldVersion, newVersion string, collisions []collisionRecord) string {
-	var b strings.Builder
-	fmt.Fprintln(&b, "# Governa Sync Review")
-	fmt.Fprintln(&b)
-	if oldVersion != "" && newVersion != "" && oldVersion != newVersion {
-		fmt.Fprintf(&b, "Template version: %s → %s\n\n", oldVersion, newVersion)
-	} else if newVersion != "" {
-		fmt.Fprintf(&b, "Template version: %s\n\n", newVersion)
-	}
-
-	if len(collisions) == 0 {
-		fmt.Fprintln(&b, "0 files need review. Sync is clean — non-colliding writes were applied automatically; see `git diff` for the full set of changes.")
-		return b.String()
-	}
-
-	fmt.Fprintf(&b, "%d file(s) need review. Each entry below lists a file whose existing content differs from the template. Sync did NOT touch these files on disk; they are pending DEV + QA + Director decisions before adoption.\n\n", len(collisions))
-	fmt.Fprintln(&b, "For each entry: review the diff, decide keep-as-is or adopt-template, and capture the decision in the next AC. Re-run `governa sync --yes` after the AC ships to apply all adopt decisions in a batch, or edit the files manually.")
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "## Collisions")
-	fmt.Fprintln(&b)
-
-	sorted := append([]collisionRecord(nil), collisions...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].path < sorted[j].path })
-	for _, c := range sorted {
-		rel := displayPath(targetAbs, c.path)
-		existingLines := strings.Count(c.existing, "\n")
-		proposedLines := strings.Count(c.proposed, "\n")
-		fmt.Fprintf(&b, "### `%s`\n\n", rel)
-		fmt.Fprintf(&b, "Existing: %d lines · Template: %d lines\n\n", existingLines, proposedLines)
-		fmt.Fprintln(&b, "```diff")
-		fmt.Fprint(&b, unifiedDiffPreview(c.existing, c.proposed, 50))
-		fmt.Fprintln(&b, "```")
-		fmt.Fprintln(&b)
-	}
-	return b.String()
-}
-
-// unifiedDiffPreview produces a minimal unified-diff-style rendering of two
-// strings, truncated to maxLines. No hunk headers or context calculation —
-// each line is labelled `-` (existing), `+` (proposed), or ` ` (unchanged).
-// Truncation is indicated with a trailing `... (N more lines)` marker.
-func unifiedDiffPreview(existing, proposed string, maxLines int) string {
-	eLines := strings.Split(existing, "\n")
-	pLines := strings.Split(proposed, "\n")
-
-	var out strings.Builder
-	i, j, emitted := 0, 0, 0
-	for i < len(eLines) || j < len(pLines) {
-		if emitted >= maxLines {
-			remaining := (len(eLines) - i) + (len(pLines) - j)
-			fmt.Fprintf(&out, "... (%d more lines; see full file on disk)\n", remaining)
-			return out.String()
-		}
-		switch {
-		case i < len(eLines) && j < len(pLines) && eLines[i] == pLines[j]:
-			fmt.Fprintf(&out, " %s\n", eLines[i])
-			i++
-			j++
-		case j < len(pLines) && (i >= len(eLines) || eLines[i] != pLines[j]):
-			fmt.Fprintf(&out, "+%s\n", pLines[j])
-			j++
-		case i < len(eLines):
-			fmt.Fprintf(&out, "-%s\n", eLines[i])
-			i++
-		}
-		emitted++
-	}
-	return out.String()
-}
-
-// printReviewSummary emits a one-line stdout summary pointing the operator at
-// the review doc. Distinct counts for clean vs review-needed runs so the
-// summary is actionable.
-func printReviewSummary(targetAbs, reviewPath string, collisionCount int) {
-	rel := displayPath(targetAbs, reviewPath)
-	if collisionCount == 0 {
-		fmt.Printf("%s %s (0 collisions)\n", color.Yel("review:"), rel)
-		return
-	}
-	plural := "collision"
-	if collisionCount != 1 {
-		plural = "collisions"
-	}
-	fmt.Printf("%s %s (%d %s — review + decide)\n", color.Yel("review:"), rel, collisionCount, plural)
 }
 
 func AssessTarget(root string, repoType RepoType) (Assessment, error) {
@@ -673,9 +477,7 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 			}
 			return nil
 		}
-		// .governa/ is governa-managed metadata (manifest, proposed/, sync-review.md,
-		// feedback/); not repo content. Skip it entirely so its markdown files don't
-		// inflate docSignals on re-sync vs first-sync (utils round-5 finding).
+		// .governa/ is governa-managed metadata; not repo content.
 		if rel == governaDir || strings.HasPrefix(rel, governaDir+string(os.PathSeparator)) {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -815,32 +617,18 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 	}, nil
 }
 
-// governaOwnedPaths are exact repo-relative paths that governa writes or
-// maintains. Files at these paths must not contribute to codeSignals or
-// docSignals — they are bookkeeping/generated content, not repo-authored
-// signals. This set is used by isGovernaOwnedPath; its scope is intentionally
-// limited to signal counting and does NOT affect expectedArtifactPaths,
-// ExistingArtifacts computation, collision scoring, review rendering, or
-// .governa/proposed/ materialization.
+// governaOwnedPaths are exact repo-relative paths that governa writes.
+// Files at these paths must not contribute to codeSignals or docSignals —
+// they are bookkeeping/generated content, not repo-authored signals.
 var governaOwnedPaths = map[string]bool{
-	// Bookkeeping
-	manifestFileName:            true, // .governa/manifest
-	syncReviewFile:              true, // .governa/sync-review.md (AC79 Part B review artifact)
-	legacyPreAC55ManifestFile:   true, // pre-AC55 legacy
-	legacyPreAC55SyncReviewFile: true, // pre-AC55 legacy
-	legacyManifestFileName:      true, // pre-governa legacy
-	"TEMPLATE_VERSION":          true,
-
-	// Agent entrypoints (any future entrypoint name that symlinks to AGENTS.md
-	// would be added here via the same pattern).
-	"AGENTS.md": true,
-	"CLAUDE.md": true,
-
-	// Root overlay markdown governa writes into generated repos
-	"arch.md": true,
-	"plan.md": true,
-
-	// docs/ overlay markdown governa writes
+	manifestFileName:                 true,
+	legacyPreAC55ManifestFile:        true,
+	legacyManifestFileName:           true,
+	"TEMPLATE_VERSION":               true,
+	"AGENTS.md":                      true,
+	"CLAUDE.md":                      true,
+	"arch.md":                        true,
+	"plan.md":                        true,
 	"docs/README.md":                 true,
 	"docs/development-cycle.md":      true,
 	"docs/development-guidelines.md": true,
@@ -848,24 +636,13 @@ var governaOwnedPaths = map[string]bool{
 	"docs/ac-template.md":            true,
 }
 
-// isGovernaOwnedPath reports whether a repo-relative path is governa-owned
-// (written or maintained by sync). Used by AssessTarget to skip signal
-// increments for such paths so first-sync and re-sync produce the same
-// `signals:` counts for the same underlying repo content.
-//
-// Scope — this helper ONLY affects codeSignals/docSignals. It does NOT:
-//   - filter files out of ExistingArtifacts or collision reporting
-//   - change which scored files appear in the review doc's Recommendations table
-//   - alter which files get materialized under .governa/proposed/
-//   - affect RepoShape, CollisionRisk, Recommendation, or ResolvedType beyond
-//     what the corrected signal counts naturally produce
+// isGovernaOwnedPath reports whether a repo-relative path is governa-owned.
+// Used by AssessTarget to skip signal increments for such paths.
 func isGovernaOwnedPath(rel string) bool {
-	// Normalize separators for cross-platform map lookup
 	norm := filepath.ToSlash(rel)
 	if governaOwnedPaths[norm] {
 		return true
 	}
-	// docs/roles/* is owned by governa (role docs per overlay)
 	if strings.HasPrefix(norm, "docs/roles/") {
 		return true
 	}
@@ -1034,44 +811,6 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 	return ops, nil
 }
 
-// symlinkConflict builds the operator-facing conflict description for a
-// symlink op that was blocked by an existing regular file. The message
-// enforces governa's agent-agnostic invariant: AGENTS.md is the canonical
-// governance contract, and any agent-specific entrypoint (CLAUDE.md, future
-// names) must be a symlink to it so every agent loads the same rules.
-func symlinkConflict(op operation, repoRel string) conflict {
-	if repoRel == "" {
-		repoRel = filepath.Base(op.path)
-	}
-	linkTarget := op.linkTo
-	if linkTarget == "" {
-		linkTarget = "AGENTS.md"
-	}
-	// Description is a multi-line block starting with a `### <file>` heading.
-	// It is rendered as-is under the review doc's ## Conflicts section, not
-	// wrapped in a bullet. The entrypoint name (repoRel) and link target are
-	// parameterized so this structure applies to any blocked symlink-to-AGENTS
-	// entrypoint — CLAUDE.md is the current concrete instance; future
-	// agent-specific entrypoints inherit the same formatting.
-	var b strings.Builder
-	fmt.Fprintf(&b, "### `%s`\n\n", repoRel)
-	fmt.Fprintf(&b, "`%s` exists as a regular file. Governa is agent-agnostic: `%s` is the canonical governance contract, and agent-specific entrypoints (`CLAUDE.md` for Claude Code, others as they emerge) must be symlinks to it so all agents load the same rules.\n\n", repoRel, linkTarget)
-	fmt.Fprintln(&b, "**Resolution:**")
-	fmt.Fprintln(&b, "")
-	fmt.Fprintf(&b, "1. Diff the existing file against the newly written `%s`:\n\n", linkTarget)
-	fmt.Fprintf(&b, "        diff %s %s\n\n", repoRel, linkTarget)
-	fmt.Fprintf(&b, "2. Migrate any unique repo-specific rules from `%s` into `%s` using the governance section structure. If existing content is already covered by `%s`, skip this step.\n\n", repoRel, linkTarget, linkTarget)
-	fmt.Fprintf(&b, "3. Delete the existing `%s` and re-run `governa sync` to create the symlink.\n\n", repoRel)
-	fmt.Fprintf(&b, "Note: `%s` was written to the repo root during this sync so you can diff against it. This is intentional — the temporary inconsistency (`%s` claims `%s` is a symlink while it is not) resolves as soon as you complete the steps above.\n",
-		linkTarget, linkTarget, repoRel)
-
-	return conflict{
-		kind:        "symlink-vs-regular",
-		path:        op.path,
-		description: b.String(),
-	}
-}
-
 func compactOperations(ops []operation) []operation {
 	out := make([]operation, 0, len(ops))
 	for _, op := range ops {
@@ -1212,109 +951,48 @@ func joinOrNone(items []string) string {
 	return strings.Join(items, ", ")
 }
 
-// agentsSection is one `## Heading` block parsed from an AGENTS.md file.
-type agentsSection struct {
-	heading string // e.g. "Governed Sections"
-	body    string // full text including the `## ` line and trailing content
-}
-
-// parseAgentsSections splits AGENTS.md content into a preamble (everything
-// before the first `## `) and an ordered slice of sections keyed by heading.
-func parseAgentsSections(content string) (preamble string, sections []agentsSection) {
-	lines := strings.SplitAfter(content, "\n")
-	var cur *agentsSection
-	for _, line := range lines {
-		trimmed := strings.TrimRight(line, "\n")
-		if strings.HasPrefix(trimmed, "## ") {
-			if cur != nil {
-				sections = append(sections, *cur)
-			}
-			heading := strings.TrimSpace(trimmed[3:])
-			cur = &agentsSection{heading: heading, body: line}
+// renderApplyAC produces the docs/ac1-governa-apply.md adoption record.
+func renderApplyAC(templateVersion string, cfg Config, ops []operation) string {
+	var b strings.Builder
+	fmt.Fprintln(&b, "# AC1 Governa Apply")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Applied governa v%s governance template (%s overlay) to %s.\n", templateVersion, cfg.Type, cfg.RepoName)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "## Summary")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Applied governa v%s governance template (%s overlay). All files below are now consumer-owned — modify freely to fit the repo's needs.\n", templateVersion, cfg.Type)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "## In Scope")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Files written by governa apply:")
+	fmt.Fprintln(&b)
+	for _, op := range ops {
+		if op.kind == "skip" {
 			continue
 		}
-		if cur != nil {
-			cur.body += line
-		} else {
-			preamble += line
+		fmt.Fprintf(&b, "- `%s`", filepath.Base(op.path))
+		if op.note != "" {
+			fmt.Fprintf(&b, " (%s)", op.note)
 		}
+		fmt.Fprintln(&b)
 	}
-	if cur != nil {
-		sections = append(sections, *cur)
-	}
-	return preamble, sections
-}
-
-// mergeAgentsSections performs section-aware merge for AGENTS.md. Project Rules
-// is consumer-owned and always preserved. All other sections are template-managed.
-func mergeAgentsSections(templateContent, existingContent string, assumeYes bool) (merged string, collisions []collisionRecord) {
-	tPreamble, tSections := parseAgentsSections(templateContent)
-	ePreamble, eSections := parseAgentsSections(existingContent)
-
-	eByHeading := make(map[string]agentsSection, len(eSections))
-	for _, s := range eSections {
-		eByHeading[s.heading] = s
-	}
-
-	tHeadings := make(map[string]bool, len(tSections))
-	for _, s := range tSections {
-		tHeadings[s.heading] = true
-	}
-
-	var out strings.Builder
-
-	// Preamble: template-managed.
-	if ePreamble != tPreamble {
-		if assumeYes {
-			out.WriteString(tPreamble)
-		} else {
-			out.WriteString(ePreamble)
-			collisions = append(collisions, collisionRecord{
-				path:     "preamble",
-				existing: ePreamble,
-				proposed: tPreamble,
-			})
-		}
-	} else {
-		out.WriteString(tPreamble)
-	}
-
-	// Template-managed sections in template order.
-	for _, ts := range tSections {
-		if ts.heading == "Project Rules" {
-			// Consumer-owned: preserve existing content.
-			if es, ok := eByHeading[ts.heading]; ok {
-				out.WriteString(es.body)
-			} else {
-				out.WriteString(ts.body)
-			}
-			continue
-		}
-		es, exists := eByHeading[ts.heading]
-		if !exists || es.body == ts.body {
-			out.WriteString(ts.body)
-			continue
-		}
-		// Consumer edited a template-managed section.
-		if assumeYes {
-			out.WriteString(ts.body)
-		} else {
-			out.WriteString(es.body)
-			collisions = append(collisions, collisionRecord{
-				path:     ts.heading,
-				existing: es.body,
-				proposed: ts.body,
-			})
-		}
-	}
-
-	// Preserve unknown consumer sections not in the template.
-	for _, es := range eSections {
-		if !tHeadings[es.heading] {
-			out.WriteString(es.body)
-		}
-	}
-
-	merged = out.String()
-	return merged, collisions
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "## Out Of Scope")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "- All applied files are consumer-owned and can be freely modified")
+	fmt.Fprintln(&b, "- Governa is not a runtime dependency — this repo does not import or inherit from the template repo")
+	fmt.Fprintln(&b, "- Future governa improvements can be adopted by having a coding agent read the governa repo and cherry-pick useful changes")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "## Acceptance Tests")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "**AT1** [Manual] — Verify AGENTS.md exists and sections match repo needs.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "**AT2** [Manual] — Verify role files in docs/roles/ reflect the repo's delivery model.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "**AT3** [Manual] — Verify CLAUDE.md is a symlink to AGENTS.md.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "## Status")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "`PENDING` — review applied governance and adapt to repo needs.")
+	return b.String()
 }

@@ -30,13 +30,8 @@ You work alongside these roles in this repo:
 
 See `docs/roles/README.md` Critical Principle for the governance rationale on routing disagreements through the director.
 
-## Governa Templating Maintenance
+## Governa Template Origin
 
-Consumer repos run `governa sync` to pull governance template updates. The governa repo itself improves the template through an **out-of-band review workflow** — no CLI subcommand. (The governa repo is a CODE repo; its roles are DEV, QA, and Director — these names refer to the governa repo's own CODE roles, not this repo's roles.)
+This repo's governance structure was bootstrapped by `governa apply`. All files are consumer-owned — modify freely to fit the repo's needs.
 
-### Sync (consumer repos)
-
-- Run `governa sync` periodically to check if the governance template has evolved.
-- For each template file that differs from the consumer's copy, sync does not touch the file — it records the collision in `.governa/sync-review.md` (with a diff preview) and exits non-zero. Reviewers act on the doc: apply edits manually against the review, or re-run `governa sync --yes` to batch-overwrite once the adoptions are agreed.
-- Treat non-trivial overwrites as real work — draft an AC before applying them so the change gets scoped and reviewed through the normal development cycle.
-- After sync completes: commit the bookkeeping files (`TEMPLATE_VERSION`, `.governa/manifest`) to record the new baseline.
+To adopt future governa improvements, have a coding agent read the governa repo's `AGENTS.md`, role files, and `CHANGELOG.md`, then cherry-pick what's useful. There is no re-sync mechanism — improvements are pulled by the consumer, not pushed by the template.

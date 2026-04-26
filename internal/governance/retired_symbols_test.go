@@ -42,6 +42,18 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		"checkDrift",
 		"relayDriftSummary",
 		"resolveGoverna",
+		// AC88 — collision/review/sync machinery retired
+		"ModeSync",
+		"collisionRecord",
+		"renderSyncReview",
+		"unifiedDiffPreview",
+		"printReviewSummary",
+		"mergeAgentsSections",
+		"parseAgentsSections",
+		"symlinkConflict",
+		"ErrConflictsPresent",
+		"syncReviewFile",
+		"detectSyncMode",
 	}
 
 	// Compile one pattern that matches any of the retired symbols as whole
@@ -177,6 +189,10 @@ func TestRetiredProseNotPresent(t *testing.T) {
 		// AC78 — preptool feedback-companion move retired.
 		"moves -feedback.md companions",
 		"moving -feedback.md companions",
+		// AC88 — sync subcommand + collision/review prose retired.
+		"governa sync",
+		"sync-review.md",
+		".governa/sync-review",
 	}
 
 	// Word-boundary patterns. Use these for phrases generic enough that a

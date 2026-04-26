@@ -1,10 +1,8 @@
 package governance
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -28,30 +26,27 @@ func newFixtureTarget(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-func TestParseFlagsSyncDefaults(t *testing.T) {
+func TestParseFlagsApplyDefaults(t *testing.T) {
 	t.Parallel()
-	cfg, help, err := parseFlags(ModeSync, []string{"--target", "/tmp/nope"})
+	cfg, help, err := parseFlags(ModeApply, []string{"--target", "/tmp/nope"})
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
 	if help {
 		t.Fatal("unexpected help request")
 	}
-	if cfg.Mode != ModeSync {
-		t.Errorf("Mode = %q; want %q", cfg.Mode, ModeSync)
+	if cfg.Mode != ModeApply {
+		t.Errorf("Mode = %q; want %q", cfg.Mode, ModeApply)
 	}
 	if cfg.Target != "/tmp/nope" {
 		t.Errorf("Target = %q; want /tmp/nope", cfg.Target)
-	}
-	if cfg.AssumeYes {
-		t.Errorf("expected AssumeYes=false by default")
 	}
 }
 
 // AC79 Part B AT8: `--no` flag is no longer recognized.
 func TestParseFlagsRejectsNo(t *testing.T) {
 	t.Parallel()
-	_, _, err := parseFlags(ModeSync, []string{"--no", "--target", "/tmp/x"})
+	_, _, err := parseFlags(ModeApply, []string{"--no", "--target", "/tmp/x"})
 	if err == nil {
 		t.Fatal("expected flag-parse error for removed --no flag; got nil")
 	}
@@ -60,59 +55,59 @@ func TestParseFlagsRejectsNo(t *testing.T) {
 // AC79 Part B AT9: `--dry-run` flag is no longer recognized.
 func TestParseFlagsRejectsDryRun(t *testing.T) {
 	t.Parallel()
-	_, _, err := parseFlags(ModeSync, []string{"--dry-run", "--target", "/tmp/x"})
+	_, _, err := parseFlags(ModeApply, []string{"--dry-run", "--target", "/tmp/x"})
 	if err == nil {
 		t.Fatal("expected flag-parse error for removed --dry-run flag; got nil")
 	}
-	_, _, err = parseFlags(ModeSync, []string{"-d", "--target", "/tmp/x"})
+	_, _, err = parseFlags(ModeApply, []string{"-d", "--target", "/tmp/x"})
 	if err == nil {
 		t.Fatal("expected flag-parse error for removed -d shorthand; got nil")
 	}
 }
 
-func TestParseFlagsAcceptsYes(t *testing.T) {
+// AC88: --yes flag is removed (no collision negotiation).
+func TestParseFlagsRejectsYes(t *testing.T) {
 	t.Parallel()
-	cfg, _, err := parseFlags(ModeSync, []string{"--yes", "--target", "/tmp/x"})
-	if err != nil {
-		t.Fatalf("parseFlags --yes: %v", err)
+	_, _, err := parseFlags(ModeApply, []string{"--yes", "--target", "/tmp/x"})
+	if err == nil {
+		t.Fatal("expected flag-parse error for removed --yes flag; got nil")
 	}
-	if !cfg.AssumeYes {
-		t.Errorf("AssumeYes = false; want true after --yes")
+	_, _, err = parseFlags(ModeApply, []string{"-y", "--target", "/tmp/x"})
+	if err == nil {
+		t.Fatal("expected flag-parse error for removed -y shorthand; got nil")
 	}
 }
 
-func TestModeHelpSyncDescribesReviewDoc(t *testing.T) {
+// AC88: help text describes consumer ownership, not collision/review.
+func TestModeHelpApplyDescribesConsumerOwnership(t *testing.T) {
 	t.Parallel()
-	help := ModeHelp(ModeSync)
+	help := ModeHelp(ModeApply)
 	if help == "" {
 		t.Fatal("ModeHelp returned empty")
 	}
-	if !strings.Contains(help, ".governa/sync-review.md") {
-		t.Errorf("sync help missing review-doc reference: %q", help)
+	if !strings.Contains(help, "consumer-owned") {
+		t.Errorf("apply help missing consumer-owned reference: %q", help)
 	}
 }
 
-// AC79 F-new-3: --yes must appear as its own flag-list row, not only in the
-// footer prose. Regex-anchored so the assertion catches footer-only mentions.
-func TestModeHelpSyncListsYesFlag(t *testing.T) {
+// AC88: --yes must NOT appear in help (removed).
+func TestModeHelpApplyOmitsYesFlag(t *testing.T) {
 	t.Parallel()
-	help := ModeHelp(ModeSync)
-	re := regexp.MustCompile(`(?m)^\s+(?:-\w,\s+)?--yes\s{2,}`)
-	if !re.MatchString(help) {
-		t.Errorf("sync help missing --yes as a flag-list row (regex %q); got:\n%s", re, help)
+	help := ModeHelp(ModeApply)
+	if strings.Contains(help, "--yes") {
+		t.Errorf("apply help still references --yes; should be removed. Got:\n%s", help)
+	}
+	if strings.Contains(help, "-y,") {
+		t.Errorf("apply help still references -y shorthand; should be removed. Got:\n%s", help)
 	}
 }
 
 // AC79 F-new-2: --dry-run must NOT appear as a flag-list row (it was retired).
-func TestModeHelpSyncOmitsDryRun(t *testing.T) {
+func TestModeHelpApplyOmitsDryRun(t *testing.T) {
 	t.Parallel()
-	help := ModeHelp(ModeSync)
+	help := ModeHelp(ModeApply)
 	if strings.Contains(help, "--dry-run") {
-		t.Errorf("sync help still references --dry-run; should be removed per AC79. Got:\n%s", help)
-	}
-	re := regexp.MustCompile(`(?m)^\s+-d,`)
-	if re.MatchString(help) {
-		t.Errorf("sync help still references -d shorthand; should be removed. Got:\n%s", help)
+		t.Errorf("apply help still references --dry-run; should be removed. Got:\n%s", help)
 	}
 }
 
@@ -144,21 +139,21 @@ func TestInferStackFromGoMod(t *testing.T) {
 	}
 }
 
-func TestDetectSyncModeNewRepo(t *testing.T) {
+func TestDetectApplyModeNewRepo(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if got := detectSyncMode(dir); got != "new" {
-		t.Errorf("detectSyncMode on fresh dir = %q; want new", got)
+	if got := detectApplyMode(dir); got != "new" {
+		t.Errorf("detectApplyMode on fresh dir = %q; want new", got)
 	}
 }
 
-func TestDetectSyncModeReSync(t *testing.T) {
+func TestDetectApplyModeReApply(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
 		".governa/manifest": "governa-manifest-v1\ntemplate-version: 0.50.0\n",
 	})
-	if got := detectSyncMode(dir); got != "re-sync" {
-		t.Errorf("detectSyncMode with manifest = %q; want re-sync", got)
+	if got := detectApplyMode(dir); got != "re-apply" {
+		t.Errorf("detectApplyMode with manifest = %q; want re-apply", got)
 	}
 }
 
@@ -180,239 +175,92 @@ func TestBuildManifestMinimalShape(t *testing.T) {
 // AC79 retirement set.
 func TestAC79RemovedSymbols(t *testing.T) {
 	t.Parallel()
-	// Symbols removed by AC79 Part B (enumerated in AT13's retiredSymbols
-	// list). If any return, AT13 fails before tests even compile in most
-	// cases.
-	// If any of those return, this test file will need references updated
-	// before re-passing — serves as a trip-wire, not a live assertion.
 }
 
-// AC79 Part A AT1: TEMPLATE_VERSION is always overwritten, even when the
-// disk content differs from the current template version.
-func TestRunSyncAlwaysWritesTemplateVersion(t *testing.T) {
+// AC88 AT1: TEMPLATE_VERSION is always overwritten on apply.
+func TestRunApplyAlwaysWritesTemplateVersion(t *testing.T) {
 	dir := t.TempDir()
-	// Seed stale TEMPLATE_VERSION + minimal manifest to put target in re-sync state.
 	if err := os.WriteFile(filepath.Join(dir, "TEMPLATE_VERSION"), []byte("0.0.1\n"), 0o644); err != nil {
 		t.Fatalf("seed TEMPLATE_VERSION: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, ".governa"), 0o755); err != nil {
 		t.Fatalf("mkdir .governa: %v", err)
 	}
-	manifestContent := "governa-manifest-v1\ntemplate-version: 0.0.1\nrepo-name: x\npurpose: x\ntype: CODE\nstack: Go\n"
+	manifestContent := "governa-manifest-v1\ntemplate-version: 0.0.1\nrepo-name: x\ntype: CODE\nstack: Go\n"
 	if err := os.WriteFile(filepath.Join(dir, ".governa", "manifest"), []byte(manifestContent), 0o644); err != nil {
 		t.Fatalf("seed manifest: %v", err)
 	}
 
 	cfg := Config{
-		Mode:      ModeSync,
-		Target:    dir,
-		Type:      RepoTypeCode,
-		RepoName:  "x",
-		Stack:     "Go",
-		AssumeYes: false, // deliberately NOT --yes; bookkeeping writes should happen anyway.
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "x",
+		Stack:    "Go",
 	}
-	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil && !strings.Contains(err.Error(), "conflicts") {
+	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
 		t.Fatalf("RunWithFS: %v", err)
 	}
 
 	got, err := os.ReadFile(filepath.Join(dir, "TEMPLATE_VERSION"))
 	if err != nil {
-		t.Fatalf("read post-sync TEMPLATE_VERSION: %v", err)
+		t.Fatalf("read post-apply TEMPLATE_VERSION: %v", err)
 	}
-	want := templates.TemplateVersion + "\n"
-	// Some test setups might not have the trailing newline — accept either.
-	if strings.TrimSpace(string(got)) != strings.TrimSpace(want) {
-		t.Errorf("TEMPLATE_VERSION = %q; want %q", string(got), want)
+	if strings.TrimSpace(string(got)) != strings.TrimSpace(templates.TemplateVersion) {
+		t.Errorf("TEMPLATE_VERSION = %q; want %q", string(got), templates.TemplateVersion)
 	}
 }
 
-// AC79 Part A AT2: TEMPLATE_VERSION is never listed as a collision in the
-// review doc (bookkeeping writes are exempt from the collision path).
-func TestSyncReviewOmitsTemplateVersion(t *testing.T) {
+// AC88: apply produces docs/ac1-governa-apply.md adoption record.
+func TestRunApplyProducesAdoptionAC(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "TEMPLATE_VERSION"), []byte("0.0.1\n"), 0o644); err != nil {
-		t.Fatalf("seed TEMPLATE_VERSION: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, ".governa"), 0o755); err != nil {
-		t.Fatalf("mkdir .governa: %v", err)
-	}
-	manifestContent := "governa-manifest-v1\ntemplate-version: 0.0.1\nrepo-name: x\npurpose: x\ntype: CODE\nstack: Go\n"
-	if err := os.WriteFile(filepath.Join(dir, ".governa", "manifest"), []byte(manifestContent), 0o644); err != nil {
-		t.Fatalf("seed manifest: %v", err)
-	}
 
-	cfg := Config{Mode: ModeSync, Target: dir, Type: RepoTypeCode, RepoName: "x", Stack: "Go"}
-	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil && !strings.Contains(err.Error(), "conflicts") {
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Go",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
 		t.Fatalf("RunWithFS: %v", err)
 	}
 
-	review, err := os.ReadFile(filepath.Join(dir, syncReviewFile))
+	acPath := filepath.Join(dir, "docs", "ac1-governa-apply.md")
+	content, err := os.ReadFile(acPath)
 	if err != nil {
-		t.Fatalf("read sync-review.md: %v", err)
+		t.Fatalf("read adoption AC: %v", err)
 	}
-	if strings.Contains(string(review), "TEMPLATE_VERSION") {
-		t.Errorf("sync-review.md must not list TEMPLATE_VERSION (it's bookkeeping); got:\n%s", string(review))
-	}
+	text := string(content)
+	mustContain(t, text, "# AC1 Governa Apply")
+	mustContain(t, text, "## Summary")
+	mustContain(t, text, "## In Scope")
+	mustContain(t, text, "## Status")
+	mustContain(t, text, "consumer-owned")
 }
 
-// AC79 Part B AT7: review-doc shape — header, per-collision section, diff preview.
-func TestRenderSyncReviewShape(t *testing.T) {
+// AC88: renderApplyAC lists files from operations and marks consumer ownership.
+func TestRenderApplyACShape(t *testing.T) {
 	t.Parallel()
-	records := []collisionRecord{
-		{
-			path:     "/tmp/t/AGENTS.md",
-			existing: "existing line 1\nexisting line 2\n",
-			proposed: "template line 1\ntemplate line 2\n",
-		},
+	ops := []operation{
+		{kind: "write", path: "/tmp/t/AGENTS.md", note: "governance contract"},
+		{kind: "symlink", path: "/tmp/t/CLAUDE.md", linkTo: "AGENTS.md"},
+		{kind: "skip"},
 	}
-	out := renderSyncReview("/tmp/t", "0.49.0", "0.51.0", records)
-	mustContain(t, out, "# Governa Sync Review")
-	mustContain(t, out, "Template version: 0.49.0 → 0.51.0")
-	mustContain(t, out, "1 file(s) need review")
-	mustContain(t, out, "### `AGENTS.md`")
-	mustContain(t, out, "```diff")
-	mustContain(t, out, "-existing line 1")
-	mustContain(t, out, "+template line 1")
-}
-
-// AC79 Part B AT5: zero-collision case writes a summary-only review-doc.
-func TestRenderSyncReviewZeroCollisions(t *testing.T) {
-	t.Parallel()
-	out := renderSyncReview("/tmp/t", "0.50.0", "0.51.0", nil)
-	mustContain(t, out, "# Governa Sync Review")
-	mustContain(t, out, "0 files need review")
-	if strings.Contains(out, "## Collisions") {
-		t.Errorf("zero-collision review-doc must not include a ## Collisions section; got:\n%s", out)
-	}
-}
-
-// AC79 Part B: diff preview truncates at maxLines with a "more lines" marker.
-func TestUnifiedDiffPreviewTruncation(t *testing.T) {
-	t.Parallel()
-	var eLines []string
-	for i := range 100 {
-		eLines = append(eLines, fmt.Sprint("existing ", i))
-	}
-	existing := strings.Join(eLines, "\n") + "\n"
-	out := unifiedDiffPreview(existing, "", 10)
-	if !strings.Contains(out, "more lines") {
-		t.Errorf("expected truncation marker in preview; got:\n%s", out)
-	}
-	// Count lines — should be ≤ 11 (10 diff lines + 1 truncation marker).
-	if got := strings.Count(out, "\n"); got > 11 {
-		t.Errorf("preview line count = %d; want ≤ 11", got)
-	}
-}
-
-// --- AC85 Part E: section-aware AGENTS.md merge ---
-
-func TestMergeAgentsSectionsPreservesProjectRules(t *testing.T) {
-	t.Parallel()
-	template := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n"
-	existing := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n\n- my custom rule\n"
-	merged, collisions := mergeAgentsSections(template, existing, false)
-	if len(collisions) != 0 {
-		t.Errorf("expected 0 collisions; got %d", len(collisions))
-	}
-	if !strings.Contains(merged, "- my custom rule") {
-		t.Errorf("merged content must preserve consumer Project Rules; got:\n%s", merged)
-	}
-}
-
-func TestMergeAgentsSectionsDetectsBaseRulesCollision(t *testing.T) {
-	t.Parallel()
-	template := "# AGENTS.md\n\n## Base Rules\n\n- template rule\n\n## Project Rules\n"
-	existing := "# AGENTS.md\n\n## Base Rules\n\n- consumer edited rule\n\n## Project Rules\n"
-	_, collisions := mergeAgentsSections(template, existing, false)
-	if len(collisions) == 0 {
-		t.Fatal("expected collision for edited Base Rules; got none")
-	}
-	found := false
-	for _, c := range collisions {
-		if c.path == "Base Rules" {
-			found = true
+	out := renderApplyAC("0.60.0", Config{Type: RepoTypeCode, RepoName: "x"}, ops)
+	mustContain(t, out, "# AC1 Governa Apply")
+	mustContain(t, out, "0.60.0")
+	mustContain(t, out, "AGENTS.md")
+	mustContain(t, out, "CLAUDE.md")
+	mustContain(t, out, "consumer-owned")
+	mustContain(t, out, "## Acceptance Tests")
+	if strings.Count(out, "skip") > 0 {
+		lines := strings.SplitSeq(out, "\n")
+		for l := range lines {
+			if strings.HasPrefix(l, "- `skip`") {
+				t.Errorf("skip operations should not appear in the file list; got line: %s", l)
+			}
 		}
-	}
-	if !found {
-		t.Errorf("collision path should be 'Base Rules'; got paths: %v", collisions)
-	}
-}
-
-func TestMergeAgentsSectionsAssumeYesOverwritesManaged(t *testing.T) {
-	t.Parallel()
-	template := "# AGENTS.md\n\n## Base Rules\n\n- template rule\n\n## Project Rules\n"
-	existing := "# AGENTS.md\n\n## Base Rules\n\n- consumer edited rule\n\n## Project Rules\n\n- my custom rule\n"
-	merged, collisions := mergeAgentsSections(template, existing, true)
-	if len(collisions) != 0 {
-		t.Errorf("assumeYes should produce 0 collisions; got %d", len(collisions))
-	}
-	if !strings.Contains(merged, "- template rule") {
-		t.Errorf("assumeYes should overwrite managed sections with template content; got:\n%s", merged)
-	}
-	if strings.Contains(merged, "- consumer edited rule") {
-		t.Errorf("assumeYes should not preserve consumer edits to managed sections; got:\n%s", merged)
-	}
-	if !strings.Contains(merged, "- my custom rule") {
-		t.Errorf("assumeYes must still preserve Project Rules; got:\n%s", merged)
-	}
-}
-
-func TestMergeAgentsSectionsNewConsumerSections(t *testing.T) {
-	t.Parallel()
-	template := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n"
-	existing := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n\n## Custom\n\n- custom content\n"
-	merged, collisions := mergeAgentsSections(template, existing, false)
-	if len(collisions) != 0 {
-		t.Errorf("expected 0 collisions; got %d", len(collisions))
-	}
-	if !strings.Contains(merged, "## Custom") {
-		t.Errorf("merged must preserve unknown consumer sections; got:\n%s", merged)
-	}
-	if !strings.Contains(merged, "- custom content") {
-		t.Errorf("merged must preserve unknown consumer section content; got:\n%s", merged)
-	}
-}
-
-func TestSyncPreservesProjectRulesEndToEnd(t *testing.T) {
-	dir := t.TempDir()
-
-	// First sync: bootstrap a new repo.
-	cfg := Config{
-		Mode:      ModeSync,
-		Target:    dir,
-		Type:      RepoTypeCode,
-		RepoName:  "test-repo",
-		Stack:     "Go",
-		AssumeYes: true,
-	}
-	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
-		t.Fatalf("first sync: %v", err)
-	}
-
-	// Add consumer content to Project Rules.
-	agentsPath := filepath.Join(dir, "AGENTS.md")
-	content, err := os.ReadFile(agentsPath)
-	if err != nil {
-		t.Fatalf("read AGENTS.md: %v", err)
-	}
-	modified := string(content) + "\n- My repo-specific rule\n"
-	if err := os.WriteFile(agentsPath, []byte(modified), 0o644); err != nil {
-		t.Fatalf("write modified AGENTS.md: %v", err)
-	}
-
-	// Re-sync with --yes.
-	cfg.AssumeYes = true
-	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
-		t.Fatalf("re-sync: %v", err)
-	}
-
-	// Verify Project Rules content survived.
-	result, err := os.ReadFile(agentsPath)
-	if err != nil {
-		t.Fatalf("read post-sync AGENTS.md: %v", err)
-	}
-	if !strings.Contains(string(result), "- My repo-specific rule") {
-		t.Errorf("Project Rules content lost after re-sync; got:\n%s", string(result))
 	}
 }
 
@@ -423,6 +271,3 @@ func mustContain(t *testing.T, haystack, needle string) {
 		t.Errorf("missing substring %q in:\n%s", needle, haystack)
 	}
 }
-
-// Compile-time probe to ensure fmt is imported where test helpers need it.
-var _ = fmt.Sprint

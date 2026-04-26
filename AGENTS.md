@@ -6,23 +6,19 @@
 
 Detail and rationale live in `docs/development-guidelines.md`, `docs/build-release.md`, `docs/development-cycle.md`.
 
-Editable sections (fixed set):
+Sections (fixed set):
 
 - `Governed Sections`
 - `Interaction Mode`
 - `Approval Boundaries`
 - `File-Change Discipline`
 - `Review Style`
-- `Base Rules`
 - `Project Rules`
 
 Rules:
 
 - Preserve each section's semantic intent across edits.
 - Add new rules under the best-fit section. Do not invent top-level sections.
-- Put repo-specific rules under `## Project Rules`. Do not add `## Local Rules` to this file — use it in supplementary docs only.
-- Precedence: `Project Rules` overrides any preceding section when the override is explicit and named (e.g., "**Review Style override:** ..."). Absent an explicit override, preceding sections apply as written. Do not infer overrides from tone, adjacency, or apparent conflict — ask.
-- Overrides are escape hatches, not preferences. Prefer Project Rules additions over Base Rules overrides.
 - Do not reorder sections or rewrite the file unless the user requests a contract change.
 - When updating, name the exact sections to change and keep edits local.
 - Treat this file as a governed config artifact, not freeform prose.
@@ -82,7 +78,7 @@ Rules:
 - Do not note skipped checks unless the omission is unusual or affects confidence.
 - Architectural decisions to the director: present two bounded options plus a recommendation. One viable option → state as recommendation. More than two → name the best two, note the rest in one sentence.
 
-## Base Rules
+## Project Rules
 
 - Use the repo's canonical build command (`./build.sh` or equivalent). Never run individual tool commands directly. See `docs/build-release.md`.
 - For single-utility smoke tests, use `go run ./cmd/<tool>/` or `go build -o /tmp/<name> ./cmd/<tool>/`. Do not `go build ./cmd/<tool>/` from repo root — drops a stray binary.
@@ -95,8 +91,5 @@ Rules:
 - Comment public functions.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace), `sqlite-utils` (SQLite), `ast-grep` (structural). Batch independent shell calls. Do not re-read files already in context.
 - Follow existing repo patterns unless an approved improvement says otherwise.
-
-## Project Rules
-
 - Every source-level change to `internal/` must propagate to two sites in the same pass: (1) the source file and (2) the overlay template under `internal/templates/overlays/`. Run `./build.sh` to validate — it renders examples to a temp dir and runs `go vet`/`go test` against them. A change is not done until both sites are consistent.
 - Keep generated repos self-contained. No runtime dependence on this template repo.

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -18,7 +17,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.60.0"
+const programVersion = "0.61.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -46,13 +45,16 @@ func main() {
 			os.Exit(1)
 		}
 		return
-	case "sync":
+	case "apply":
 		// handled below
+	case "sync":
+		fmt.Fprintf(os.Stderr, "unknown command: sync (use \"governa apply\")\n")
+		os.Exit(2)
 	case "new":
-		fmt.Fprintf(os.Stderr, "unknown command: new (use \"governa sync\")\n")
+		fmt.Fprintf(os.Stderr, "unknown command: new (use \"governa apply\")\n")
 		os.Exit(2)
 	case "adopt":
-		fmt.Fprintf(os.Stderr, "unknown command: adopt (use \"governa sync\")\n")
+		fmt.Fprintf(os.Stderr, "unknown command: adopt (use \"governa apply\")\n")
 		os.Exit(2)
 	case "enhance", "ack":
 		fmt.Fprintf(os.Stderr, "command removed in v0.50.0: %q (see CHANGELOG)\n", subcmd)
@@ -81,22 +83,16 @@ func main() {
 	versionNotice := make(chan string, 1)
 	go checkLatestVersion(versionNotice)
 
-	// Fail-safe: refuse to sync into the governa repo itself. The check looks at
-	// the target path (so syncing from inside the governa repo to an *external*
-	// dir via -t is fine — only writing the template onto the template source
-	// is the forbidden case).
+	// Fail-safe: refuse to apply into the governa repo itself.
 	if target, _ := filepath.Abs(cfg.Target); target != "" {
 		if _, err := detectGovernaCheckoutAt(target); err == nil {
-			fmt.Fprintln(os.Stderr, "error: cannot run sync against the governa repo itself — sync is for consumer repos")
+			fmt.Fprintln(os.Stderr, "error: cannot run apply against the governa repo itself — apply is for consumer repos")
 			os.Exit(1)
 		}
 	}
 
 	var tfs fs.FS = templates.EmbeddedFS
 	if err := governance.RunWithFS(tfs, "", cfg); err != nil {
-		if errors.Is(err, governance.ErrConflictsPresent) {
-			os.Exit(1)
-		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -111,11 +107,11 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "%s v%s\n", color.BoldW("governa"), programVersion)
 	fmt.Fprintln(os.Stderr, color.Gra(fmt.Sprintf("Repo governance templates — %s", sourceRepo)))
 	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
-		{Flag: "sync", Desc: "bootstrap or update governance in a repo"},
+		{Flag: "apply", Desc: "apply governance template to a repo"},
 		{Flag: "examples", Desc: "render example repos to /tmp/governa-examples/"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help, h", Desc: "show this help"},
-	}, "Run 'governa sync --help' for sync-specific flags."))
+	}, "Run 'governa apply --help' for apply-specific flags."))
 }
 
 const examplesOutputDir = "/tmp/governa-examples"
@@ -135,21 +131,19 @@ func runExamples() error {
 		{
 			subdir: "code",
 			cfg: governance.Config{
-				Mode:      governance.ModeSync,
-				RepoName:  "example-code",
-				Type:      governance.RepoTypeCode,
-				Stack:     "Go",
-				AssumeYes: true,
+				Mode:     governance.ModeApply,
+				RepoName: "example-code",
+				Type:     governance.RepoTypeCode,
+				Stack:    "Go",
 			},
 			module: "github.com/queone/governa/examples/code",
 		},
 		{
 			subdir: "doc",
 			cfg: governance.Config{
-				Mode:      governance.ModeSync,
-				RepoName:  "example-doc",
-				Type:      governance.RepoTypeDoc,
-				AssumeYes: true,
+				Mode:     governance.ModeApply,
+				RepoName: "example-doc",
+				Type:     governance.RepoTypeDoc,
 			},
 			module: "github.com/queone/governa/examples/doc",
 		},

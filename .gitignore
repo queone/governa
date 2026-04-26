@@ -16,10 +16,6 @@ build-cover-*.out
 .DS_Store
 Thumbs.db
 
-# Governa working artifacts
-.governa/sync-review.md
-.governa/proposed/
-
 # Editor files
 *.swp
 *.swo

@@ -1,10 +1,12 @@
 # Governance Model
 
-governa ships one workflow:
+governa ships one command:
 
-- `sync` — bootstrap a new repo, or update governance in an existing repo (auto-detected)
+- `apply` — bootstrap governance into a new or existing repo (one-time)
 
-Template improvements happen out-of-band through the normal AC workflow; there is no CLI subcommand for reviewing consumer repos. See `docs/roles/dev.md` § Template Improvement.
+After apply, all files are consumer-owned. Future governa improvements are adopted by having a coding agent in the consumer repo read governa's source, then cherry-pick what's useful. There is no re-sync mechanism.
+
+Template improvements to the governa repo itself happen out-of-band through the normal AC workflow; there is no CLI subcommand for reviewing consumer repos. See `docs/roles/dev.md` § Template Improvement.
 
 ## Core Principle
 
@@ -13,17 +15,18 @@ The agent runs in the target repo, not in this template repo. This template repo
 ## Target-Repo Flow
 
 1. open the target directory (new or existing)
-2. run `governa sync`
-3. governa detects whether this is a new repo, a first-time sync, or a re-sync
+2. run `governa apply`
+3. governa detects whether this is a new repo or an existing one (with or without a manifest)
 4. prompts for any missing parameters (or uses flags/manifest/inference)
-5. renders concrete files into the target repo; for any file that already exists and would differ from the template, records the collision in `.governa/sync-review.md` (with diff preview) instead of overwriting — `--yes` is the escape hatch for batch-overwrite
+5. renders all files directly into the target repo — no collision negotiation
+6. writes `docs/ac1-governa-apply.md` as an adoption record
 
-## Mode: `sync`
+## Command: `apply`
 
 Single entry point for both new and existing repos. Detection order:
 
-1. `.governa/manifest` (or pre-AC55 `.governa-manifest`, or pre-governa `.repokit-manifest`) found → **re-sync** (existing repo with stored params)
-2. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/roles/) → **first sync** (existing repo, no stored params)
+1. `.governa/manifest` (or pre-AC55 `.governa-manifest`, or pre-governa `.repokit-manifest`) found → **re-apply** (existing repo with stored params)
+2. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/roles/) → **existing** (no stored params)
 3. Otherwise → **new repo** bootstrap
 
 ### New-repo behavior
@@ -33,19 +36,17 @@ Single entry point for both new and existing repos. Detection order:
 - copy base files, apply the selected overlay, fill placeholders
 - create `CLAUDE.md → AGENTS.md` symlink
 - write `TEMPLATE_VERSION`
+- write `docs/ac1-governa-apply.md` (adoption record)
 - optionally initialize git if the target is not already a repo
 
 ### Existing-repo behavior
 
 - inspect current files before writing anything
 - resolve metadata via priority: (1) explicit flag, (2) stored manifest params, (3) inference from target directory, (4) interactive prompt
-- create missing governed files from the template (no collision, written automatically)
-- for each file that already exists and would differ from the template, **do not touch the file** — record the collision in `.governa/sync-review.md` with a diff preview
-- `--yes` is the escape hatch: batch-overwrite every colliding file directly, skip the review-doc workflow
-- always write `TEMPLATE_VERSION` and `.governa/manifest` (bookkeeping bypasses the collision path)
-- create `CLAUDE.md → AGENTS.md` symlink if missing
-
-The review-doc workflow: DEV runs sync, shares the summary + `.governa/sync-review.md` with the Director, Director routes to QA, the three iterate until decisions are clear, DEV drafts an AC implementing the adopts (manual edits against the review, or re-run `governa sync --yes` after AC ships). Before writing files, sync prints an assessment of how well the template fits the target repo.
+- all template files are written directly
+- always write `TEMPLATE_VERSION` and `.governa/manifest`
+- symlinks: if a regular file blocks a planned symlink, warn on stderr and skip; otherwise create if missing
+- write `docs/ac1-governa-apply.md` (adoption record)
 
 ## Implementation Constraints
 
@@ -60,9 +61,9 @@ The canonical entrypoint is `cmd/governa/main.go`, installed via `go install git
 
 ## CLI Convention
 
-Flag-shape convention lives in `AGENTS.md` `Base Rules` — see the rule on short/long flag forms. Applies repo-wide to every tool governa ships.
+Flag-shape convention lives in `AGENTS.md` `Project Rules` — see the rule on short/long flag forms. Applies repo-wide to every tool governa ships.
 
-Flag mapping (mode is determined by the `sync` subcommand):
+Flag mapping (mode is determined by the `apply` subcommand):
 
 ```text
 -t, --target
@@ -70,48 +71,30 @@ Flag mapping (mode is determined by the `sync` subcommand):
 -n, --repo-name
 -s, --stack
 -g, --init-git
--y, --yes
 ```
 
 ## Agent Agnosticism
 
 Governa is agent-agnostic. `AGENTS.md` is the canonical governance contract. Agent-specific entrypoints (`CLAUDE.md` for Claude Code, future names like `CURSOR.md` or `COPILOT.md` as they emerge) **must** be symlinks to `AGENTS.md` so every agent loads exactly the same rules.
 
-This invariant is enforced during sync. When sync plans a `CLAUDE.md → AGENTS.md` symlink and finds an existing regular file at `CLAUDE.md`, it does not overwrite the file (preserving operator content) but reports the conflict on stderr and returns a non-zero exit code so scripted callers can detect the unresolved state. The same rule applies to any planned symlink-to-AGENTS.md op that collides with a regular file.
-
-### Safe migration sequence
-
-Removing the existing `CLAUDE.md` without inspection risks discarding the only copy of repo-specific governance. The operator-facing workflow is:
+During apply, if a regular file exists where a symlink is planned, governa warns on stderr and skips the symlink. The operator-facing migration:
 
 1. diff the existing `CLAUDE.md` against the newly written `AGENTS.md`
 2. migrate any unique repo-specific rules into `AGENTS.md` (use the governance section structure)
-3. delete the existing `CLAUDE.md` and re-run `governa sync` to create the symlink
+3. delete the existing `CLAUDE.md` and re-run `governa apply` to create the symlink
 
 ## Ownership Model
 
-- fully template-owned when created by bootstrap:
-  - `AGENTS.md`
-  - `CLAUDE.md` symlink
-  - `TEMPLATE_VERSION` — records the last governa template version this repo was synced against; updated automatically by `governa sync` on every run
-  - `.governa/manifest`
-- overlay-owned by default when newly created:
-  - `README.md` (CODE only)
-  - `arch.md` (CODE only)
-  - `plan.md`
-  - `docs/roles/` (role docs per overlay — see overlay README)
-- user-owned unless explicitly mapped:
-  - source code
-  - app content
-  - business docs
-  - CI config
+After apply, all files are consumer-owned. The consumer repo can freely modify any file governa produced. Bookkeeping files record provenance but impose no constraints:
 
-For sync on existing repos, template-owned sections should be narrow and explicit. `AGENTS.md` is the clearest case: it is treated like a governed config file with named sections. Sync is section-aware for `AGENTS.md`: template-managed sections are compared individually (collisions recorded per-section), while `## Project Rules` is consumer-owned and preserved verbatim across re-syncs.
+- `TEMPLATE_VERSION` — records the governa template version used at apply time
+- `.governa/manifest` — records apply parameters (repo name, type, stack) for re-apply inference
 
 ## Bootstrap Manifest
 
-During `sync`, governa writes a `.governa/manifest` file into the generated repo recording:
+During `apply`, governa writes a `.governa/manifest` file into the generated repo recording:
 
-- the template version used at bootstrap time (updated on every sync)
-- adopt parameters (repo name, type, and stack) so subsequent sync runs can reuse them without flags
+- the template version used at apply time
+- apply parameters (repo name, type, and stack) so subsequent apply runs can reuse them without flags
 
-The manifest is intentionally minimal — no per-file checksums, no acknowledged-drift ledger, no source-sha tracking. Pre-AC78 manifests carrying those fields parse cleanly; the data is ignored and dropped when the manifest is rewritten on the next sync.
+The manifest is intentionally minimal — no per-file checksums, no acknowledged-drift ledger, no source-sha tracking. Pre-AC78 manifests carrying those fields parse cleanly; the data is ignored and dropped when the manifest is rewritten on the next apply.

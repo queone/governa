@@ -22,43 +22,41 @@ governa ships with a small role split so agent sessions have a predictable start
 
 Role definitions live in [`docs/roles/`](docs/roles/). By default, sessions run as Maintainer when `docs/roles/maintainer.md` exists; explicit assignment (e.g., "act as DEV") overrides. The shared `AGENTS.md` contract applies in every case.
 
-## Modes
+## Usage
 
-First, install the binary:
+Install the binary:
 
 ```bash
 go install github.com/queone/governa/cmd/governa@latest
 ```
 
-### `sync`
-The one mode. Run from a target repo or empty directory. Governa is read-only source — templates are embedded in the binary.
+### `apply`
 
-`sync` detects whether the target is a new or existing repo and prompts interactively for any missing parameters. All flags still work for fully non-interactive use.
+One-time governance bootstrap. Run from a target repo or empty directory. Governa is read-only source — templates are embedded in the binary. After apply, all files are consumer-owned — modify freely to fit the repo's needs.
 
 **New repo** (empty directory):
 
 ```bash
-governa sync
+governa apply
 ```
 
 Or with flags to skip prompts:
 
 ```bash
-governa sync -k CODE -n my-service -s "Go"
+governa apply -k CODE -n my-service -s "Go"
 ```
 
-**Existing repo** (governance artifacts or manifest found): non-colliding files (new to the target, or identical to the template) are written automatically along with bookkeeping (`TEMPLATE_VERSION`, `.governa/manifest`). Any file whose existing content differs from the template is **not touched** — the collision is recorded in `.governa/sync-review.md` with a diff preview for DEV, QA, and the Director to review. DEV then drafts an AC against the review and either edits adopts manually or re-runs `governa sync --yes` (the escape hatch) to batch-overwrite every collision.
+**Existing repo** (governance artifacts or manifest found): all template files are written directly. Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`.
 
 ```bash
-governa sync
+governa apply
 ```
 
-Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`. On re-sync, stored parameters from the `.governa/manifest` are reused automatically.
+Run `governa help` for available commands, or `governa apply --help` for apply-specific flags.
 
-Run `governa help` for available commands, or `governa sync --help` for sync-specific flags.
+### Self-service updates
 
-### Template improvements
-Template improvements happen out-of-band. DEV/QA agents working on the governa repo read consumer repos (their `AGENTS.md`, recent AC docs, and `.governa/manifest`) to identify portable improvements, then propose changes as regular template PRs through the normal AC workflow. There is no CLI subcommand for this — filesystem access plus the ordinary editor workflow is enough. See `docs/roles/dev.md` for the DEV-side shape.
+To adopt future governa improvements, have a coding agent in the consumer repo read governa's `AGENTS.md`, role files, and `CHANGELOG.md`, then cherry-pick what's useful. There is no re-sync mechanism — improvements are pulled by the consumer, not pushed by the template.
 
 ## Design
 The target repo stays self-contained. The template repo is read-only at bootstrap time and is not imported as a submodule, package, or runtime dependency. The bootstrap tool is Go-based so the template works across macOS, Linux, and Windows without requiring a specific shell.
