@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.58.0 | AC85: consolidate governed sections, override semantics, section-aware sync |
 | 0.57.0 | AC84: governance contract cleanup, drop --purpose flag |
 | 0.56.0 | AC83: governa examples cmd, drop examples/ and prep.sh, slim release docs |
 | 0.55.0 | fix mdcheck crash on deleted files + propagation rule in Project Rules |

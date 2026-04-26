@@ -110,7 +110,7 @@ Removing the existing `CLAUDE.md` without inspection risks discarding the only c
   - business docs
   - CI config
 
-For sync on existing repos, template-owned sections should be narrow and explicit. `AGENTS.md` is the clearest case: it is treated like a governed config file with named sections.
+For sync on existing repos, template-owned sections should be narrow and explicit. `AGENTS.md` is the clearest case: it is treated like a governed config file with named sections. Sync is section-aware for `AGENTS.md`: template-managed sections are compared individually (collisions recorded per-section), while `## Project Rules` is consumer-owned and preserved verbatim across re-syncs.
 
 ## Bootstrap Manifest
 

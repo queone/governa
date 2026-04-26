@@ -11,10 +11,8 @@ Editable sections (fixed set):
 - `Governed Sections`
 - `Interaction Mode`
 - `Approval Boundaries`
-- `Review Style`
 - `File-Change Discipline`
-- `Release Or Publish Triggers`
-- `Documentation Update Expectations`
+- `Review Style`
 - `Base Rules`
 - `Project Rules`
 
@@ -23,6 +21,8 @@ Rules:
 - Preserve each section's semantic intent across edits.
 - Add new rules under the best-fit section. Do not invent top-level sections.
 - Put repo-specific rules under `## Project Rules`. Do not add `## Local Rules` to this file — use it in supplementary docs only.
+- Precedence: `Project Rules` overrides any preceding section when the override is explicit and named (e.g., "**Review Style override:** ..."). Absent an explicit override, preceding sections apply as written. Do not infer overrides from tone, adjacency, or apparent conflict — ask.
+- Overrides are escape hatches, not preferences. Prefer Project Rules additions over Base Rules overrides.
 - Do not reorder sections or rewrite the file unless the user requests a contract change.
 - When updating, name the exact sections to change and keep edits local.
 - Treat this file as a governed config artifact, not freeform prose.
@@ -48,12 +48,29 @@ Rules:
 - Require explicit approval for: governance files, CI/release config, secrets handling, external integrations.
 - In-scope edits to existing files are allowed once the user has authorized implementation.
 - Stop and ask when a request is ambiguous and the change is hard to reverse.
-- Never run the release command. Present it for the user to run.
+- Do not prepare, execute, publish, deploy, or distribute without explicit user request.
+- Do not start release-prep bookkeeping early. Begin only when the user asks to prep for release.
+- Never run the release command. Present it for the user to run. Follow the Pre-Release Checklist in `docs/build-release.md`.
 - **AC-first workflow** (non-trivial changes):
   - Draft `docs/ac<N>-<slug>.md` before implementation, using `docs/ac-template.md` if available. Define scope, out-of-scope, objective fit, required tests.
   - Objective Fit must answer: (1) what outcome this serves, (2) why this beats competing work, (3) what decisions/constraints it depends on, (4) direct roadmap work or intentional pivot.
   - Do not implement until the AC is critiqued and the user confirms it is implementation-ready.
 - **AC critique gate:** After drafting, ask the user to initiate external critique. Proceed only when (1) findings are integrated into `## Critique` (QA content transcribed by DEV; DEV responses become AC revisions + `### Disposition Log` entries), and (2) the user explicitly confirms ready. See `docs/critique-protocol.md`.
+
+## File-Change Discipline
+
+- Prefer targeted edits over broad rewrites.
+- Preserve user changes and unrelated local modifications.
+- Update only files required for the task, plus directly affected docs. Keep docs current in the same pass — no silent drift, no deferral.
+- When a change adds a file, command, flag, or major decision, update affected docs in the same pass.
+- When a decision changes mid-implementation, complete the migration in one pass: files, docs, tests together. No half-migrated states.
+- Update user-facing docs when commands, setup, workflows, outputs, published structure, or operating instructions change.
+- Update architecture, planning, or style docs only when materially affected.
+- Every AC doc ends with `## Status`. Valid states: `PENDING`, `IN PROGRESS`, `DEFERRED` (with reason). Use per-phase status for partial completion. Do not set DONE — completed ACs are deleted per the development cycle.
+- Record follow-on improvements in `plan.md` or the repo's planning artifact. If neither exists, note them to the user. Do not expand scope ad hoc.
+- Do not commit personal absolute filesystem paths. Use repo-relative paths or placeholders like `<project-root>`.
+- **Code changes are not complete without accompanying tests. No exceptions for "small" changes, CLI output, or formatting.**
+- **Codify corrections about repo behavior in the appropriate governance doc — not in agent-local memory. Refine existing rules in place; add new ones to the best-fit section. Agent memory is not a shadow governance system.**
 
 ## Review Style
 
@@ -64,32 +81,6 @@ Rules:
 - Prefer plain text and simple bullets. Use tables or richer structure only when content clearly benefits.
 - Do not note skipped checks unless the omission is unusual or affects confidence.
 - Architectural decisions to the director: present two bounded options plus a recommendation. One viable option → state as recommendation. More than two → name the best two, note the rest in one sentence.
-
-## File-Change Discipline
-
-- Prefer targeted edits over broad rewrites.
-- Preserve user changes and unrelated local modifications.
-- Update only files required for the task, plus directly affected docs. Keep docs current in the same pass — do not defer.
-- When a change adds a file, command, flag, or major decision, update affected docs in the same pass.
-- When a decision changes mid-implementation, complete the migration in one pass: files, docs, tests together. No half-migrated states.
-- Record follow-on improvements in `plan.md` or the repo's planning artifact. If neither exists, note them to the user. Do not expand scope ad hoc.
-- Do not commit personal absolute filesystem paths. Use repo-relative paths or placeholders like `<template-root>`.
-- Keep generated repos self-contained. No runtime dependence on this template repo.
-- **Code changes are not complete without accompanying tests. No exceptions for "small" changes, CLI output, or formatting.**
-- **Codify corrections about repo behavior in the appropriate governance doc — not in agent-local memory. Refine existing rules in place; add new ones to the best-fit section. Agent memory is not a shadow governance system.**
-
-## Release Or Publish Triggers
-
-- Do not prepare, execute, publish, deploy, or distribute without explicit user request.
-- Do not start release-prep bookkeeping early. Begin only when the user asks to prep for release.
-- Follow the Pre-Release Checklist in `docs/build-release.md`.
-
-## Documentation Update Expectations
-
-- Update docs in the same change that introduces the behavior. No silent drift.
-- Update user-facing docs when commands, setup, workflows, outputs, published structure, or operating instructions change.
-- Update architecture, planning, or style docs only when materially affected.
-- Every AC doc ends with `## Status`. Valid states: `PENDING`, `IN PROGRESS`, `DEFERRED` (with reason). Use per-phase status for partial completion. Do not set DONE — completed ACs are deleted per the development cycle.
 
 ## Base Rules
 
@@ -104,3 +95,5 @@ Rules:
 - Comment public functions.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace), `sqlite-utils` (SQLite), `ast-grep` (structural). Batch independent shell calls. Do not re-read files already in context.
 - Follow existing repo patterns unless an approved improvement says otherwise.
+
+## Project Rules

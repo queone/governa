@@ -510,8 +510,22 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 				default:
 					existing := string(existingBytes)
 					if existing != op.content {
-						if cfg.AssumeYes {
-							// overwrite — fall through to append
+						if op.note == "base governance contract" {
+							merged, sectionCollisions := mergeAgentsSections(op.content, existing, cfg.AssumeYes)
+							rel := displayPath(targetAbs, op.path)
+							for i := range sectionCollisions {
+								sectionCollisions[i].path = rel + " § " + sectionCollisions[i].path
+							}
+							collisions = append(collisions, sectionCollisions...)
+							op.content = merged
+							if len(sectionCollisions) > 0 && !cfg.AssumeYes {
+								resolved = append(resolved, op)
+								continue
+							}
+							if cfg.AssumeYes {
+								fmt.Printf("overwrite (--yes): %s (section-aware)\n", displayPath(targetAbs, op.path))
+							}
+						} else if cfg.AssumeYes {
 							fmt.Printf("overwrite (--yes): %s\n", displayPath(targetAbs, op.path))
 						} else {
 							collisions = append(collisions, collisionRecord{
@@ -1236,4 +1250,111 @@ func joinOrNone(items []string) string {
 		return "none"
 	}
 	return strings.Join(items, ", ")
+}
+
+// agentsSection is one `## Heading` block parsed from an AGENTS.md file.
+type agentsSection struct {
+	heading string // e.g. "Governed Sections"
+	body    string // full text including the `## ` line and trailing content
+}
+
+// parseAgentsSections splits AGENTS.md content into a preamble (everything
+// before the first `## `) and an ordered slice of sections keyed by heading.
+func parseAgentsSections(content string) (preamble string, sections []agentsSection) {
+	lines := strings.SplitAfter(content, "\n")
+	var cur *agentsSection
+	for _, line := range lines {
+		trimmed := strings.TrimRight(line, "\n")
+		if strings.HasPrefix(trimmed, "## ") {
+			if cur != nil {
+				sections = append(sections, *cur)
+			}
+			heading := strings.TrimSpace(trimmed[3:])
+			cur = &agentsSection{heading: heading, body: line}
+			continue
+		}
+		if cur != nil {
+			cur.body += line
+		} else {
+			preamble += line
+		}
+	}
+	if cur != nil {
+		sections = append(sections, *cur)
+	}
+	return preamble, sections
+}
+
+// mergeAgentsSections performs section-aware merge for AGENTS.md. Project Rules
+// is consumer-owned and always preserved. All other sections are template-managed.
+func mergeAgentsSections(templateContent, existingContent string, assumeYes bool) (merged string, collisions []collisionRecord) {
+	tPreamble, tSections := parseAgentsSections(templateContent)
+	ePreamble, eSections := parseAgentsSections(existingContent)
+
+	eByHeading := make(map[string]agentsSection, len(eSections))
+	for _, s := range eSections {
+		eByHeading[s.heading] = s
+	}
+
+	tHeadings := make(map[string]bool, len(tSections))
+	for _, s := range tSections {
+		tHeadings[s.heading] = true
+	}
+
+	var out strings.Builder
+
+	// Preamble: template-managed.
+	if ePreamble != tPreamble {
+		if assumeYes {
+			out.WriteString(tPreamble)
+		} else {
+			out.WriteString(ePreamble)
+			collisions = append(collisions, collisionRecord{
+				path:     "preamble",
+				existing: ePreamble,
+				proposed: tPreamble,
+			})
+		}
+	} else {
+		out.WriteString(tPreamble)
+	}
+
+	// Template-managed sections in template order.
+	for _, ts := range tSections {
+		if ts.heading == "Project Rules" {
+			// Consumer-owned: preserve existing content.
+			if es, ok := eByHeading[ts.heading]; ok {
+				out.WriteString(es.body)
+			} else {
+				out.WriteString(ts.body)
+			}
+			continue
+		}
+		es, exists := eByHeading[ts.heading]
+		if !exists || es.body == ts.body {
+			out.WriteString(ts.body)
+			continue
+		}
+		// Consumer edited a template-managed section.
+		if assumeYes {
+			out.WriteString(ts.body)
+		} else {
+			out.WriteString(es.body)
+			collisions = append(collisions, collisionRecord{
+				path:     ts.heading,
+				existing: es.body,
+				proposed: ts.body,
+			})
+		}
+	}
+
+	// Preserve unknown consumer sections not in the template.
+	for _, es := range eSections {
+		if !tHeadings[es.heading] {
+			out.WriteString(es.body)
+		}
+	}
+
+	merged = out.String()
+	return merged, collisions
 }

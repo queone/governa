@@ -304,6 +304,118 @@ func TestUnifiedDiffPreviewTruncation(t *testing.T) {
 	}
 }
 
+// --- AC85 Part E: section-aware AGENTS.md merge ---
+
+func TestMergeAgentsSectionsPreservesProjectRules(t *testing.T) {
+	t.Parallel()
+	template := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n"
+	existing := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n\n- my custom rule\n"
+	merged, collisions := mergeAgentsSections(template, existing, false)
+	if len(collisions) != 0 {
+		t.Errorf("expected 0 collisions; got %d", len(collisions))
+	}
+	if !strings.Contains(merged, "- my custom rule") {
+		t.Errorf("merged content must preserve consumer Project Rules; got:\n%s", merged)
+	}
+}
+
+func TestMergeAgentsSectionsDetectsBaseRulesCollision(t *testing.T) {
+	t.Parallel()
+	template := "# AGENTS.md\n\n## Base Rules\n\n- template rule\n\n## Project Rules\n"
+	existing := "# AGENTS.md\n\n## Base Rules\n\n- consumer edited rule\n\n## Project Rules\n"
+	_, collisions := mergeAgentsSections(template, existing, false)
+	if len(collisions) == 0 {
+		t.Fatal("expected collision for edited Base Rules; got none")
+	}
+	found := false
+	for _, c := range collisions {
+		if c.path == "Base Rules" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("collision path should be 'Base Rules'; got paths: %v", collisions)
+	}
+}
+
+func TestMergeAgentsSectionsAssumeYesOverwritesManaged(t *testing.T) {
+	t.Parallel()
+	template := "# AGENTS.md\n\n## Base Rules\n\n- template rule\n\n## Project Rules\n"
+	existing := "# AGENTS.md\n\n## Base Rules\n\n- consumer edited rule\n\n## Project Rules\n\n- my custom rule\n"
+	merged, collisions := mergeAgentsSections(template, existing, true)
+	if len(collisions) != 0 {
+		t.Errorf("assumeYes should produce 0 collisions; got %d", len(collisions))
+	}
+	if !strings.Contains(merged, "- template rule") {
+		t.Errorf("assumeYes should overwrite managed sections with template content; got:\n%s", merged)
+	}
+	if strings.Contains(merged, "- consumer edited rule") {
+		t.Errorf("assumeYes should not preserve consumer edits to managed sections; got:\n%s", merged)
+	}
+	if !strings.Contains(merged, "- my custom rule") {
+		t.Errorf("assumeYes must still preserve Project Rules; got:\n%s", merged)
+	}
+}
+
+func TestMergeAgentsSectionsNewConsumerSections(t *testing.T) {
+	t.Parallel()
+	template := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n"
+	existing := "# AGENTS.md\n\n## Base Rules\n\n- rule one\n\n## Project Rules\n\n## Custom\n\n- custom content\n"
+	merged, collisions := mergeAgentsSections(template, existing, false)
+	if len(collisions) != 0 {
+		t.Errorf("expected 0 collisions; got %d", len(collisions))
+	}
+	if !strings.Contains(merged, "## Custom") {
+		t.Errorf("merged must preserve unknown consumer sections; got:\n%s", merged)
+	}
+	if !strings.Contains(merged, "- custom content") {
+		t.Errorf("merged must preserve unknown consumer section content; got:\n%s", merged)
+	}
+}
+
+func TestSyncPreservesProjectRulesEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+
+	// First sync: bootstrap a new repo.
+	cfg := Config{
+		Mode:      ModeSync,
+		Target:    dir,
+		Type:      RepoTypeCode,
+		RepoName:  "test-repo",
+		Stack:     "Go",
+		AssumeYes: true,
+	}
+	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+
+	// Add consumer content to Project Rules.
+	agentsPath := filepath.Join(dir, "AGENTS.md")
+	content, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	modified := string(content) + "\n- My repo-specific rule\n"
+	if err := os.WriteFile(agentsPath, []byte(modified), 0o644); err != nil {
+		t.Fatalf("write modified AGENTS.md: %v", err)
+	}
+
+	// Re-sync with --yes.
+	cfg.AssumeYes = true
+	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
+		t.Fatalf("re-sync: %v", err)
+	}
+
+	// Verify Project Rules content survived.
+	result, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read post-sync AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(result), "- My repo-specific rule") {
+		t.Errorf("Project Rules content lost after re-sync; got:\n%s", string(result))
+	}
+}
+
 // Helper that calls t.Errorf with the full string if assertion fails.
 func mustContain(t *testing.T, haystack, needle string) {
 	t.Helper()
