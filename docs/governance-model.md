@@ -28,8 +28,8 @@ Single entry point for both new and existing repos. Detection order:
 
 ### New-repo behavior
 
-- prompt for missing parameters interactively (repo type, name, purpose, stack/platform)
-- all flags (`-n`, `-y`, `-p`, `-s`, `-u`, `-v`) bypass individual prompts
+- prompt for missing parameters interactively (repo type, name, stack)
+- all flags (`-n`, `-y`, `-s`) bypass individual prompts
 - copy base files, apply the selected overlay, fill placeholders
 - create `CLAUDE.md → AGENTS.md` symlink
 - write `TEMPLATE_VERSION`
@@ -68,10 +68,7 @@ Flag mapping (mode is determined by the `sync` subcommand):
 -t, --target
 -y, --type
 -n, --repo-name
--p, --purpose
 -s, --stack
--u, --publishing-platform
--v, --style
 -g, --init-git
     --yes
 ```
@@ -98,11 +95,9 @@ Removing the existing `CLAUDE.md` without inspection risks discarding the only c
   - `TEMPLATE_VERSION` — records the last governa template version this repo was synced against; updated automatically by `governa sync` on every run
   - `.governa/manifest`
 - overlay-owned by default when newly created:
-  - `README.md`
-  - `arch.md`
+  - `README.md` (CODE only)
+  - `arch.md` (CODE only)
   - `plan.md`
-  - `style.md` or `voice.md`
-  - `content-plan.md` or `calendar.md`
   - `docs/roles/` (DEV, QA, director reference, and custom role docs)
 - user-owned unless explicitly mapped:
   - source code
@@ -117,6 +112,6 @@ For sync on existing repos, template-owned sections should be narrow and explici
 During `sync`, governa writes a `.governa/manifest` file into the generated repo recording:
 
 - the template version used at bootstrap time (updated on every sync)
-- adopt parameters (repo name, purpose, type, stack, and DOC-specific fields) so subsequent sync runs can reuse them without flags
+- adopt parameters (repo name, type, and stack) so subsequent sync runs can reuse them without flags
 
 The manifest is intentionally minimal — no per-file checksums, no acknowledged-drift ledger, no source-sha tracking. Pre-AC78 manifests carrying those fields parse cleanly; the data is ignored and dropped when the manifest is rewritten on the next sync.

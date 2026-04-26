@@ -40,15 +40,13 @@ const (
 var ErrConflictsPresent = errors.New("sync completed with conflicts requiring manual resolution")
 
 type Config struct {
-	Mode               Mode
-	Target             string
-	Type               RepoType
-	RepoName           string
-	Stack              string
-	PublishingPlatform string
-	Style              string
-	InitGit            bool
-	AssumeYes          bool // AC79 Part B: --yes — batch-overwrite all colliding files; skip the review-doc workflow.
+	Mode      Mode
+	Target    string
+	Type      RepoType
+	RepoName  string
+	Stack     string
+	InitGit   bool
+	AssumeYes bool // AC79 Part B: --yes — batch-overwrite all colliding files; skip the review-doc workflow.
 }
 
 type Assessment struct {
@@ -95,14 +93,12 @@ type conflict struct {
 }
 
 type flagValues struct {
-	target             string
-	repoType           string
-	repoName           string
-	stack              string
-	publishingPlatform string
-	style              string
-	initGit            bool
-	assumeYes          bool
+	target    string
+	repoType  string
+	repoName  string
+	stack     string
+	initGit   bool
+	assumeYes bool
 }
 
 // RunWithFS dispatches the one supported mode (sync) against the template FS.
@@ -131,10 +127,6 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	fset.StringVar(&values.repoName, "repo-name", "", "repo name")
 	fset.StringVar(&values.stack, "s", "", "stack or platform for CODE repos")
 	fset.StringVar(&values.stack, "stack", "", "stack or platform for CODE repos")
-	fset.StringVar(&values.publishingPlatform, "u", "", "publishing platform for DOC repos")
-	fset.StringVar(&values.publishingPlatform, "publishing-platform", "", "publishing platform for DOC repos")
-	fset.StringVar(&values.style, "v", "", "style or voice for DOC repos")
-	fset.StringVar(&values.style, "style", "", "style or voice for DOC repos")
 	fset.StringVar(&values.repoType, "y", "", "repo type: CODE|DOC")
 	fset.StringVar(&values.repoType, "type", "", "repo type: CODE|DOC")
 	fset.BoolVar(&values.initGit, "g", false, "initialize git if target is not already a repo")
@@ -162,15 +154,13 @@ func parseFlags(mode Mode, args []string) (Config, bool, error) {
 	}
 
 	cfg := Config{
-		Mode:               mode,
-		Target:             target,
-		Type:               RepoType(strings.ToUpper(strings.TrimSpace(values.repoType))),
-		RepoName:           strings.TrimSpace(values.repoName),
-		Stack:              strings.TrimSpace(values.stack),
-		PublishingPlatform: strings.TrimSpace(values.publishingPlatform),
-		Style:              strings.TrimSpace(values.style),
-		InitGit:            values.initGit,
-		AssumeYes:          values.assumeYes,
+		Mode:      mode,
+		Target:    target,
+		Type:      RepoType(strings.ToUpper(strings.TrimSpace(values.repoType))),
+		RepoName:  strings.TrimSpace(values.repoName),
+		Stack:     strings.TrimSpace(values.stack),
+		InitGit:   values.initGit,
+		AssumeYes: values.assumeYes,
 	}
 	// Validation is deferred to runSync (after prompts) for ModeSync.
 	return cfg, false, nil
@@ -184,8 +174,6 @@ func ModeHelp(mode Mode) string {
 			{Flag: "-n, --repo-name", Desc: "repo name"},
 			{Flag: "-y, --type", Desc: "repo type: CODE or DOC"},
 			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos)"},
-			{Flag: "-u, --publishing-platform", Desc: "publishing platform (DOC repos)"},
-			{Flag: "-v, --style", Desc: "style or voice (DOC repos)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
 			{Flag: "-g, --init-git", Desc: "initialize git if target is not a repo"},
 			{Flag: "    --yes", Desc: "batch-overwrite all colliding files; skip the review-doc workflow"},
@@ -265,16 +253,6 @@ func resolveAdoptParams(cfg Config, targetDir string) (Config, []paramSource) {
 		sources = append(sources, paramSource{"type", string(cfg.Type), "manifest"})
 	}
 
-	if cfg.PublishingPlatform == "" && hasManifest && manifest.Params.PublishingPlatform != "" {
-		cfg.PublishingPlatform = manifest.Params.PublishingPlatform
-		sources = append(sources, paramSource{"publishing-platform", cfg.PublishingPlatform, "manifest"})
-	}
-
-	if cfg.Style == "" && hasManifest && manifest.Params.Style != "" {
-		cfg.Style = manifest.Params.Style
-		sources = append(sources, paramSource{"style", cfg.Style, "manifest"})
-	}
-
 	return cfg, sources
 }
 
@@ -305,14 +283,6 @@ func validateConfig(cfg Config) error {
 		}
 		if cfg.Type == RepoTypeCode && cfg.Stack == "" {
 			return errors.New("stack/platform is required for CODE repos: use -s or --stack")
-		}
-		if cfg.Type == RepoTypeDoc {
-			if cfg.PublishingPlatform == "" {
-				return errors.New("publishing platform is required for DOC repos: use -u or --publishing-platform")
-			}
-			if cfg.Style == "" {
-				return errors.New("style is required for DOC repos: use -v or --style")
-			}
 		}
 	default:
 		return errors.New("unsupported mode")
@@ -394,14 +364,6 @@ func promptMissing(cfg *Config, targetDir string) {
 		cfg.Stack = promptParam("Stack (Go, Node, Rust, Python, Java): ", "", sc)
 	}
 
-	if cfg.Type == RepoTypeDoc {
-		if cfg.PublishingPlatform == "" {
-			cfg.PublishingPlatform = promptParam("Publishing platform: ", "", sc)
-		}
-		if cfg.Style == "" {
-			cfg.Style = promptParam("Style or voice: ", "", sc)
-		}
-	}
 }
 
 // collisionRecord captures one file whose existing content differs from the
@@ -471,11 +433,9 @@ func runSync(tfs fs.FS, repoRoot string, cfg Config) error {
 
 	templateVersion := readTemplateVersion(repoRoot)
 	params := ManifestParams{
-		RepoName:           cfg.RepoName,
-		Type:               string(cfg.Type),
-		Stack:              cfg.Stack,
-		PublishingPlatform: cfg.PublishingPlatform,
-		Style:              cfg.Style,
+		RepoName: cfg.RepoName,
+		Type:     string(cfg.Type),
+		Stack:    cfg.Stack,
 	}
 	manifest := buildManifest(templateVersion, params)
 	manifestOp := operation{
@@ -775,7 +735,7 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 		case "go.mod", "package.json", "pyproject.toml", "Cargo.toml", "pom.xml", "build.gradle", "Makefile", "Dockerfile":
 			codeSignals += 3
 			hasCodeManifest = true
-		case "style.md", "voice.md", "content-plan.md", "calendar.md", "mkdocs.yml", "mkdocs.yaml":
+		case "mkdocs.yml", "mkdocs.yaml":
 			docSignals += 3
 			hasDocPlanningMarker = true
 		case "README.md", "AGENTS.md", "CLAUDE.md", "arch.md", "plan.md":
@@ -912,11 +872,12 @@ func isGovernaOwnedPath(rel string) bool {
 }
 
 func expectedArtifactPaths(repoType RepoType) []string {
-	base := []string{"AGENTS.md", "CLAUDE.md", "TEMPLATE_VERSION", "README.md"}
+	base := []string{"AGENTS.md", "CLAUDE.md", "TEMPLATE_VERSION"}
 	switch repoType {
 	case RepoTypeCode:
 		return append(
 			base,
+			"README.md",
 			"arch.md",
 			"plan.md",
 			"CHANGELOG.md",
@@ -926,7 +887,7 @@ func expectedArtifactPaths(repoType RepoType) []string {
 			filepath.Join("docs", "build-release.md"),
 		)
 	case RepoTypeDoc:
-		return append(base, "style.md", "content-plan.md", "publishing-workflow.md")
+		return append(base, "plan.md")
 	default:
 		return base
 	}
@@ -979,11 +940,9 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 		modulePath = cfg.RepoName
 	}
 	placeholders := map[string]string{
-		"{{REPO_NAME}}":           cfg.RepoName,
-		"{{STACK_OR_PLATFORM}}":   valueOrDefault(cfg.Stack, "TBD"),
-		"{{PUBLISHING_PLATFORM}}": valueOrDefault(cfg.PublishingPlatform, "TBD"),
-		"{{DOC_STYLE}}":           valueOrDefault(cfg.Style, "TBD"),
-		"{{MODULE_PATH}}":         modulePath,
+		"{{REPO_NAME}}":         cfg.RepoName,
+		"{{STACK_OR_PLATFORM}}": valueOrDefault(cfg.Stack, "TBD"),
+		"{{MODULE_PATH}}":       modulePath,
 	}
 
 	agentsContent, err := readAndRender(tfs, "base/AGENTS.md", placeholders)

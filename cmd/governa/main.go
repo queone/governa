@@ -18,7 +18,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.58.0"
+const programVersion = "0.59.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -146,12 +146,10 @@ func runExamples() error {
 		{
 			subdir: "doc",
 			cfg: governance.Config{
-				Mode:               governance.ModeSync,
-				RepoName:           "example-doc",
-				Type:               governance.RepoTypeDoc,
-				PublishingPlatform: "Hugo",
-				Style:              "house voice",
-				AssumeYes:          true,
+				Mode:      governance.ModeSync,
+				RepoName:  "example-doc",
+				Type:      governance.RepoTypeDoc,
+				AssumeYes: true,
 			},
 			module: "github.com/queone/governa/examples/doc",
 		},

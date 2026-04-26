@@ -129,7 +129,7 @@ func TestFormatManifestOmitsEmptyParams(t *testing.T) {
 	if !strings.Contains(out, "repo-name: x") {
 		t.Errorf("formatted manifest missing repo-name line; got:\n%s", out)
 	}
-	for _, absent := range []string{"purpose:", "type:", "stack:", "publishing-platform:", "style:"} {
+	for _, absent := range []string{"purpose:", "type:", "stack:"} {
 		if strings.Contains(out, absent) {
 			t.Errorf("formatted manifest contains unexpected line %q; got:\n%s", absent, out)
 		}

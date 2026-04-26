@@ -77,5 +77,3 @@ The base template emits rendered files with several prose-content placeholders. 
 
 - `{{REPO_NAME}}` — the repo identifier; use the same form as the module path's final component (e.g., `skout`, not `Skout Baseball`).
 - `{{STACK_OR_PLATFORM}}` — the primary language or runtime stack for CODE repos (e.g., `Go`, `Python`, `Node`). Inferred from manifest files when not supplied.
-- `{{PUBLISHING_PLATFORM}}` — for DOC repos only; the platform the docs publish to (e.g., `Hugo`, `MkDocs`, `docs.example.com`).
-- `{{DOC_STYLE}}` — for DOC repos only; the editorial voice or style guide reference (e.g., `Microsoft Writing Style Guide`, `house voice`).

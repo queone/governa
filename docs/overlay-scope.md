@@ -11,8 +11,6 @@ Keep only cross-repo governance here:
 - approval boundaries
 - review style
 - file-change discipline
-- release or publish trigger rules
-- doc-update expectations
 - governed-edit rules for `AGENTS.md`
 
 ## CODE Only
@@ -32,19 +30,15 @@ These rules and files are code-repo specific and should not appear in the base c
 
 ## DOC Only
 
-These rules and files are documentation-repo specific and should not appear in the base contract:
+Governance + planning + release tooling for documentation repos. Editorial structure (voice guides, style guides, publishing workflows) is the repo owner's domain.
 
-- simpler `README.md` focused on purpose, audience, and contribution path
-- `style.md` or `voice.md` for editorial standards
-- `content-plan.md`, `calendar.md`, or equivalent publishing plan
-- publishing cadence and update workflow
+- `plan.md` for content direction, editorial goals, and ideas to explore
+- release tooling (`rel.sh`, `cmd/rel/main.go`, `internal/reltool/`)
 - review rules for editorial quality, accuracy, consistency, and source handling
-- content inventory, taxonomy, and information-architecture notes
-- platform-specific publishing instructions for the target CMS, site, or channel
 
 ## Boundary Rules
 
 - If a rule mentions build tools, tests, packages, migrations, binaries, deployments, or shipped software behavior, it belongs in `CODE`.
-- If a rule mentions voice, tone, style guide, editorial calendar, publishing cadence, or channel-specific content workflow, it belongs in `DOC`.
+- If a rule mentions content planning, editorial review standards, or doc-specific release tooling, it belongs in `DOC`.
 - If a rule is about how the agent should operate in any repo, it belongs in the base contract.
 - If a rule is only true for one project, keep it in that generated repo's concrete files, not in the template base.
