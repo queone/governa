@@ -46,6 +46,7 @@ Rules:
 - In-scope edits to existing files are allowed once the user has authorized implementation.
 - Stop and ask when a request is ambiguous and the change is hard to reverse.
 - Do not prepare, execute, publish, deploy, or distribute without explicit user request.
+- **Never run `git commit`. Draft the message; present the command for the user to run.** No EXCEPTION.
 - Do not start release-prep bookkeeping early. Begin only when the user asks to prep for release.
 - Never run the release command. Present it for the user to run. Follow the Pre-Release Checklist in `docs/build-release.md`.
 - **AC-first workflow** (non-trivial changes):
