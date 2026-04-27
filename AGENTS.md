@@ -88,8 +88,8 @@ Rules:
 - Wrap user-facing errors with operation context and recovery guidance.
 - Every AC labels each acceptance test `[Automated]` or `[Manual]`. See `docs/ac-template.md`.
 - New CLI flags pair a one-letter short form (standard, leads help output) with a long-form alias. Migrate existing flags when their code is next touched.
+- Follow existing repo patterns unless an approved improvement says otherwise.
 - Comment public functions.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace), `sqlite-utils` (SQLite), `ast-grep` (structural). Batch independent shell calls. Do not re-read files already in context.
-- Follow existing repo patterns unless an approved improvement says otherwise.
 - Every source-level change to `internal/` must propagate to two sites in the same pass: (1) the source file and (2) the overlay template under `internal/templates/overlays/`. Run `./build.sh` to validate — it renders examples to a temp dir and runs `go vet`/`go test` against them. A change is not done until both sites are consistent.
 - Keep generated repos self-contained. No runtime dependence on this template repo.
