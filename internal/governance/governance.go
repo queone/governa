@@ -217,7 +217,7 @@ func resolveAdoptParams(cfg Config, targetDir string) (Config, []paramSource) {
 type paramSource struct {
 	name   string
 	value  string
-	source string // "flag", "manifest", "inferred"
+	source string // "flag", "inferred"
 }
 
 func printParamSources(sources []paramSource) {
@@ -283,7 +283,7 @@ func promptParam(prompt string, defaultVal string, sc *bufio.Scanner) string {
 }
 
 // promptMissing fills in any missing Config fields by prompting interactively.
-// Fields already set (via flags, manifest, or inference) are not prompted.
+// Fields already set (via flags or inference) are not prompted.
 func promptMissing(cfg *Config, targetDir string) {
 	sc := bufio.NewScanner(os.Stdin)
 
@@ -494,8 +494,7 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 
 	// Resolve an empty caller-provided type from the detected shape so the
 	// expected-artifacts check uses the same repo type regardless of whether
-	// cfg.Type was pre-populated from a manifest. Without this, first-sync
-	// and re-sync on the same on-disk state produce different assessments.
+	// cfg.Type was pre-populated from flags or inference.
 	resolvedType := repoType
 	if resolvedType == "" {
 		resolvedType = deriveTypeFromShape(repoShape)

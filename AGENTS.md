@@ -13,6 +13,7 @@ Sections (fixed set):
 - `Approval Boundaries`
 - `File-Change Discipline`
 - `Review Style`
+- `Base Rules`
 - `Project Rules`
 
 Rules:
@@ -78,7 +79,7 @@ Rules:
 - Do not note skipped checks unless the omission is unusual or affects confidence.
 - Architectural decisions to the director: present two bounded options plus a recommendation. One viable option → state as recommendation. More than two → name the best two, note the rest in one sentence.
 
-## Project Rules
+## Base Rules
 
 - Use the repo's canonical build command (`./build.sh` or equivalent). Never run individual tool commands directly. See `docs/build-release.md`.
 - For single-utility smoke tests, use `go run ./cmd/<tool>/` or `go build -o /tmp/<name> ./cmd/<tool>/`. Do not `go build ./cmd/<tool>/` from repo root — drops a stray binary.
@@ -91,5 +92,8 @@ Rules:
 - Follow existing repo patterns unless an approved improvement says otherwise.
 - Comment public functions.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace), `sqlite-utils` (SQLite), `ast-grep` (structural). Batch independent shell calls. Do not re-read files already in context.
+
+## Project Rules
+
 - Every source-level change to `internal/` must propagate to two sites in the same pass: (1) the source file and (2) the overlay template under `internal/templates/overlays/`. Run `./build.sh` to validate — it renders examples to a temp dir and runs `go vet`/`go test` against them. A change is not done until both sites are consistent.
 - Keep generated repos self-contained. No runtime dependence on this template repo.

@@ -13,6 +13,7 @@ Sections (fixed set):
 - `Approval Boundaries`
 - `File-Change Discipline`
 - `Review Style`
+- `Base Rules`
 - `Project Rules`
 
 Rules:
@@ -78,7 +79,7 @@ Rules:
 - Do not note skipped checks unless the omission is unusual or affects confidence.
 - Architectural decisions to the director: present two bounded options plus a recommendation. One viable option → state as recommendation. More than two → name the best two, note the rest in one sentence.
 
-## Project Rules
+## Base Rules
 
 - Use the repo's canonical build command (`./build.sh` or equivalent). Never run individual tool commands directly. See `docs/build-release.md`.
 - For single-utility smoke tests, use `go run ./cmd/<tool>/` or `go build -o /tmp/<name> ./cmd/<tool>/`. Do not `go build ./cmd/<tool>/` from repo root — drops a stray binary.
@@ -88,6 +89,10 @@ Rules:
 - Wrap user-facing errors with operation context and recovery guidance.
 - Every AC labels each acceptance test `[Automated]` or `[Manual]`. See `docs/ac-template.md`.
 - New CLI flags pair a one-letter short form (standard, leads help output) with a long-form alias. Migrate existing flags when their code is next touched.
+- Follow existing repo patterns unless an approved improvement says otherwise.
 - Comment public functions.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace), `sqlite-utils` (SQLite), `ast-grep` (structural). Batch independent shell calls. Do not re-read files already in context.
+
+## Project Rules
+
 - Follow existing repo patterns unless an approved improvement says otherwise.
