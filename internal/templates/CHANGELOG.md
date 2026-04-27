@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.62.0 | AC89: stateless apply — drop manifest, version-check, consumer bookkeeping |
 | 0.61.0 | AC88: apply-once pivot — sync→apply, drop collision/review machinery |
 | 0.60.0 | AC87: DOC role templates (Operator/Editor) + flag short-form audit |
 | 0.59.0 | AC86: slim DOC overlay — drop editorial templates and flags |

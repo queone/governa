@@ -123,7 +123,7 @@ func TestModeHelpRemovedModes(t *testing.T) {
 
 func TestRunWithFSRejectsUnsupportedMode(t *testing.T) {
 	t.Parallel()
-	err := RunWithFS(templates.EmbeddedFS, "", Config{Mode: Mode("enhance")})
+	err := RunWithFS(templates.EmbeddedFS, Config{Mode: Mode("enhance")})
 	if err == nil || !strings.Contains(err.Error(), "unsupported mode") {
 		t.Fatalf("expected unsupported-mode error; got %v", err)
 	}
@@ -147,24 +147,14 @@ func TestDetectApplyModeNewRepo(t *testing.T) {
 	}
 }
 
-func TestDetectApplyModeReApply(t *testing.T) {
+// AC89: detectApplyMode returns "existing" when AGENTS.md is present.
+func TestDetectApplyModeExisting(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
-		".governa/manifest": "governa-manifest-v1\ntemplate-version: 0.50.0\n",
+		"AGENTS.md": "# AGENTS.md\n",
 	})
-	if got := detectApplyMode(dir); got != "re-apply" {
-		t.Errorf("detectApplyMode with manifest = %q; want re-apply", got)
-	}
-}
-
-func TestBuildManifestMinimalShape(t *testing.T) {
-	t.Parallel()
-	m := buildManifest("1.2.3", ManifestParams{RepoName: "x", Type: "CODE"})
-	if m.TemplateVersion != "1.2.3" {
-		t.Errorf("TemplateVersion = %q; want 1.2.3", m.TemplateVersion)
-	}
-	if m.Params.RepoName != "x" {
-		t.Errorf("Params.RepoName = %q; want x", m.Params.RepoName)
+	if got := detectApplyMode(dir); got != "existing" {
+		t.Errorf("detectApplyMode with AGENTS.md = %q; want existing", got)
 	}
 }
 
@@ -177,19 +167,9 @@ func TestAC79RemovedSymbols(t *testing.T) {
 	t.Parallel()
 }
 
-// AC88 AT1: TEMPLATE_VERSION is always overwritten on apply.
-func TestRunApplyAlwaysWritesTemplateVersion(t *testing.T) {
+// AC89: apply no longer writes TEMPLATE_VERSION or .governa/ to consumer repos.
+func TestRunApplyStateless(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "TEMPLATE_VERSION"), []byte("0.0.1\n"), 0o644); err != nil {
-		t.Fatalf("seed TEMPLATE_VERSION: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, ".governa"), 0o755); err != nil {
-		t.Fatalf("mkdir .governa: %v", err)
-	}
-	manifestContent := "governa-manifest-v1\ntemplate-version: 0.0.1\nrepo-name: x\ntype: CODE\nstack: Go\n"
-	if err := os.WriteFile(filepath.Join(dir, ".governa", "manifest"), []byte(manifestContent), 0o644); err != nil {
-		t.Fatalf("seed manifest: %v", err)
-	}
 
 	cfg := Config{
 		Mode:     ModeApply,
@@ -198,16 +178,15 @@ func TestRunApplyAlwaysWritesTemplateVersion(t *testing.T) {
 		RepoName: "x",
 		Stack:    "Go",
 	}
-	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
 		t.Fatalf("RunWithFS: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "TEMPLATE_VERSION"))
-	if err != nil {
-		t.Fatalf("read post-apply TEMPLATE_VERSION: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "TEMPLATE_VERSION")); err == nil {
+		t.Error("TEMPLATE_VERSION should not be written to consumer repos")
 	}
-	if strings.TrimSpace(string(got)) != strings.TrimSpace(templates.TemplateVersion) {
-		t.Errorf("TEMPLATE_VERSION = %q; want %q", string(got), templates.TemplateVersion)
+	if _, err := os.Stat(filepath.Join(dir, ".governa")); err == nil {
+		t.Error(".governa/ directory should not be created in consumer repos")
 	}
 }
 
@@ -222,7 +201,7 @@ func TestRunApplyProducesAdoptionAC(t *testing.T) {
 		RepoName: "test-repo",
 		Stack:    "Go",
 	}
-	if err := RunWithFS(templates.EmbeddedFS, "", cfg); err != nil {
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
 		t.Fatalf("RunWithFS: %v", err)
 	}
 

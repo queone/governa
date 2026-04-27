@@ -16,8 +16,8 @@ The agent runs in the target repo, not in this template repo. This template repo
 
 1. open the target directory (new or existing)
 2. run `governa apply`
-3. governa detects whether this is a new repo or an existing one (with or without a manifest)
-4. prompts for any missing parameters (or uses flags/manifest/inference)
+3. governa detects whether this is a new repo or an existing one
+4. prompts for any missing parameters (or uses flags/inference)
 5. renders all files directly into the target repo — no collision negotiation
 6. writes `docs/ac1-governa-apply.md` as an adoption record
 
@@ -25,9 +25,8 @@ The agent runs in the target repo, not in this template repo. This template repo
 
 Single entry point for both new and existing repos. Detection order:
 
-1. `.governa/manifest` (or pre-AC55 `.governa-manifest`, or pre-governa `.repokit-manifest`) found → **re-apply** (existing repo with stored params)
-2. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/roles/) → **existing** (no stored params)
-3. Otherwise → **new repo** bootstrap
+1. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/roles/) → **existing**
+2. Otherwise → **new repo** bootstrap
 
 ### New-repo behavior
 
@@ -35,16 +34,14 @@ Single entry point for both new and existing repos. Detection order:
 - all flags (`-n`, `-k`, `-s`) bypass individual prompts
 - copy base files, apply the selected overlay, fill placeholders
 - create `CLAUDE.md → AGENTS.md` symlink
-- write `TEMPLATE_VERSION`
 - write `docs/ac1-governa-apply.md` (adoption record)
 - optionally initialize git if the target is not already a repo
 
 ### Existing-repo behavior
 
-- inspect current files before writing anything
-- resolve metadata via priority: (1) explicit flag, (2) stored manifest params, (3) inference from target directory, (4) interactive prompt
+- warn that existing governance files will be overwritten
+- resolve metadata via priority: (1) explicit flag, (2) inference from target directory, (3) interactive prompt
 - all template files are written directly
-- always write `TEMPLATE_VERSION` and `.governa/manifest`
 - symlinks: if a regular file blocks a planned symlink, warn on stderr and skip; otherwise create if missing
 - write `docs/ac1-governa-apply.md` (adoption record)
 
@@ -85,16 +82,4 @@ During apply, if a regular file exists where a symlink is planned, governa warns
 
 ## Ownership Model
 
-After apply, all files are consumer-owned. The consumer repo can freely modify any file governa produced. Bookkeeping files record provenance but impose no constraints:
-
-- `TEMPLATE_VERSION` — records the governa template version used at apply time
-- `.governa/manifest` — records apply parameters (repo name, type, stack) for re-apply inference
-
-## Bootstrap Manifest
-
-During `apply`, governa writes a `.governa/manifest` file into the generated repo recording:
-
-- the template version used at apply time
-- apply parameters (repo name, type, and stack) so subsequent apply runs can reuse them without flags
-
-The manifest is intentionally minimal — no per-file checksums, no acknowledged-drift ledger, no source-sha tracking. Pre-AC78 manifests carrying those fields parse cleanly; the data is ignored and dropped when the manifest is rewritten on the next apply.
+After apply, all files are consumer-owned. The consumer repo can freely modify any file governa produced. Apply is stateless — no bookkeeping directory, no persistent metadata. Provenance is recorded in `docs/ac1-governa-apply.md`.

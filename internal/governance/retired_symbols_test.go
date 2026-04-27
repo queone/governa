@@ -54,6 +54,18 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		"ErrConflictsPresent",
 		"syncReviewFile",
 		"detectSyncMode",
+		// AC89 — manifest/version-check/ownership machinery retired
+		"migrateGovernaLegacyPaths",
+		"readManifest",
+		"buildManifest",
+		"formatManifest",
+		"parseManifest",
+		"ManifestParams",
+		"governaOwnedPaths",
+		"isGovernaOwnedPath",
+		"readTemplateVersion",
+		"checkLatestVersion",
+		"parseSemver",
 	}
 
 	// Compile one pattern that matches any of the retired symbols as whole
@@ -193,6 +205,8 @@ func TestRetiredProseNotPresent(t *testing.T) {
 		"governa sync",
 		"sync-review.md",
 		".governa/sync-review",
+		// AC89 — manifest/bookkeeping prose retired.
+		".governa/manifest",
 	}
 
 	// Word-boundary patterns. Use these for phrases generic enough that a

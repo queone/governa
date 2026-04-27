@@ -80,10 +80,10 @@ type flagValues struct {
 }
 
 // RunWithFS dispatches the one supported mode (apply) against the template FS.
-func RunWithFS(tfs fs.FS, repoRoot string, cfg Config) error {
+func RunWithFS(tfs fs.FS, cfg Config) error {
 	switch cfg.Mode {
 	case ModeApply:
-		return runApply(tfs, repoRoot, cfg)
+		return runApply(tfs, cfg)
 	default:
 		return fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}
@@ -190,41 +190,25 @@ func inferStack(targetDir string) string {
 }
 
 // resolveAdoptParams fills in missing adopt config fields using the priority:
-// explicit flag > manifest params > inference from target directory.
+// explicit flag > inference from target directory.
 // It returns the resolved config and a list of source annotations for display.
 func resolveAdoptParams(cfg Config, targetDir string) (Config, []paramSource) {
-	manifest, hasManifest, _ := readManifest(targetDir)
 	var sources []paramSource
 
 	if cfg.RepoName == "" {
-		if hasManifest && manifest.Params.RepoName != "" {
-			cfg.RepoName = manifest.Params.RepoName
-			sources = append(sources, paramSource{"repo-name", cfg.RepoName, "manifest"})
-		} else {
-			cfg.RepoName = inferRepoName(targetDir)
-			sources = append(sources, paramSource{"repo-name", cfg.RepoName, "inferred"})
-		}
+		cfg.RepoName = inferRepoName(targetDir)
+		sources = append(sources, paramSource{"repo-name", cfg.RepoName, "inferred"})
 	} else {
 		sources = append(sources, paramSource{"repo-name", cfg.RepoName, "flag"})
 	}
 
 	if cfg.Stack == "" {
-		if hasManifest && manifest.Params.Stack != "" {
-			cfg.Stack = manifest.Params.Stack
-			sources = append(sources, paramSource{"stack", cfg.Stack, "manifest"})
-		} else {
-			cfg.Stack = inferStack(targetDir)
-			if cfg.Stack != "" {
-				sources = append(sources, paramSource{"stack", cfg.Stack, "inferred"})
-			}
+		cfg.Stack = inferStack(targetDir)
+		if cfg.Stack != "" {
+			sources = append(sources, paramSource{"stack", cfg.Stack, "inferred"})
 		}
 	} else {
 		sources = append(sources, paramSource{"stack", cfg.Stack, "flag"})
-	}
-
-	if cfg.Type == "" && hasManifest && manifest.Params.Type != "" {
-		cfg.Type = RepoType(manifest.Params.Type)
-		sources = append(sources, paramSource{"type", string(cfg.Type), "manifest"})
 	}
 
 	return cfg, sources
@@ -265,15 +249,9 @@ func validateConfig(cfg Config) error {
 }
 
 // detectApplyMode inspects the target directory and returns one of:
-//   - "re-apply" — manifest found (previously governed repo)
-//   - "existing" — governance artifacts found but no manifest
+//   - "existing" — governance artifacts found
 //   - "new"      — fresh directory
 func detectApplyMode(targetDir string) string {
-	for _, name := range []string{manifestFileName, legacyPreAC55ManifestFile, legacyManifestFileName} {
-		if _, err := os.Stat(filepath.Join(targetDir, name)); err == nil {
-			return "re-apply"
-		}
-	}
 	for _, artifact := range []string{"AGENTS.md", "CLAUDE.md"} {
 		if _, err := os.Stat(filepath.Join(targetDir, artifact)); err == nil {
 			return "existing"
@@ -338,7 +316,7 @@ func promptMissing(cfg *Config, targetDir string) {
 // runApply writes the base template + overlay files to the target directory.
 // All planned operations apply directly — there is no collision negotiation.
 // After apply, all files are consumer-owned.
-func runApply(tfs fs.FS, repoRoot string, cfg Config) error {
+func runApply(tfs fs.FS, cfg Config) error {
 	targetAbs, err := filepath.Abs(cfg.Target)
 	if err != nil {
 		return fmt.Errorf("resolve target path: %w", err)
@@ -347,22 +325,14 @@ func runApply(tfs fs.FS, repoRoot string, cfg Config) error {
 		return fmt.Errorf("create target directory: %w", err)
 	}
 
-	if err := migrateGovernaLegacyPaths(targetAbs); err != nil {
-		return fmt.Errorf("migrate legacy governa paths: %w", err)
-	}
-
 	applyMode := detectApplyMode(targetAbs)
 	existing := applyMode != "new"
 
 	if existing {
+		fmt.Fprintln(os.Stderr, "existing governance files detected; apply will overwrite them")
 		resolved, sources := resolveAdoptParams(cfg, targetAbs)
 		cfg = resolved
 		printParamSources(sources)
-	}
-
-	oldManifest, hasOldManifest, _ := readManifest(targetAbs)
-	if hasOldManifest && oldManifest.TemplateVersion != "" {
-		fmt.Fprintf(os.Stderr, "re-applying to previously-governed repo (last applied: v%s); governance files will be overwritten\n", oldManifest.TemplateVersion)
 	}
 
 	assessment, err := AssessTarget(targetAbs, cfg.Type)
@@ -385,23 +355,9 @@ func runApply(tfs fs.FS, repoRoot string, cfg Config) error {
 		fmt.Printf("type: %s (inferred)\n", cfg.Type)
 	}
 
-	canonical, err := planCanonical(tfs, repoRoot, cfg, targetAbs)
+	canonical, err := planCanonical(tfs, cfg, targetAbs)
 	if err != nil {
 		return err
-	}
-
-	templateVersion := readTemplateVersion(repoRoot)
-	params := ManifestParams{
-		RepoName: cfg.RepoName,
-		Type:     string(cfg.Type),
-		Stack:    cfg.Stack,
-	}
-	manifest := buildManifest(templateVersion, params)
-	manifestOp := operation{
-		kind:    "write",
-		path:    filepath.Join(targetAbs, manifestFileName),
-		content: formatManifest(manifest),
-		note:    "bootstrap manifest",
 	}
 
 	resolved := make([]operation, 0, len(canonical))
@@ -421,14 +377,13 @@ func runApply(tfs fs.FS, repoRoot string, cfg Config) error {
 	}
 
 	ops := compactOperations(resolved)
-	ops = append(ops, manifestOp)
 	if err := applyOperations(ops); err != nil {
 		return err
 	}
 
 	// Write adoption AC
 	applyACPath := filepath.Join(targetAbs, "docs", "ac1-governa-apply.md")
-	applyACContent := renderApplyAC(templateVersion, cfg, canonical)
+	applyACContent := renderApplyAC(templates.TemplateVersion, cfg, canonical)
 	if err := os.MkdirAll(filepath.Dir(applyACPath), 0o755); err != nil {
 		return fmt.Errorf("create docs/: %w", err)
 	}
@@ -477,22 +432,6 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 			}
 			return nil
 		}
-		// .governa/ is governa-managed metadata; not repo content.
-		if rel == governaDir || strings.HasPrefix(rel, governaDir+string(os.PathSeparator)) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		// Legacy pre-AC55 layout (.governa-proposed/). Kept for repos that haven't
-		// re-synced since migration lands — migrateGovernaLegacyPaths removes it,
-		// but AssessTarget may run from test harnesses that bypass runSync.
-		if rel == legacyPreAC55ProposedDir || strings.HasPrefix(rel, legacyPreAC55ProposedDir+string(os.PathSeparator)) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
 		files = append(files, rel)
 		return nil
 	})
@@ -514,19 +453,6 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 		base := filepath.Base(rel)
 		ext := strings.ToLower(filepath.Ext(rel))
 		topLevel := strings.Split(rel, string(os.PathSeparator))[0]
-		// Governa-owned paths (generated by sync itself) must not contribute
-		// to signal counts. Otherwise re-sync inflates docSignals vs
-		// first-sync for the same underlying repo content. Scope is
-		// signal-counting only — files remain in `files` for other uses
-		// (collision detection, structural analysis, etc.) and
-		// expectedArtifactPaths/ExistingArtifacts are unchanged.
-		if isGovernaOwnedPath(rel) {
-			switch topLevel {
-			case "cmd", "internal", "pkg", "src":
-				hasCodeLayout = true
-			}
-			continue
-		}
 		switch ext {
 		case ".go", ".py", ".js", ".ts", ".tsx", ".jsx", ".rs", ".java", ".kt", ".swift", ".c", ".cc", ".cpp", ".cs":
 			codeSignals++
@@ -617,40 +543,8 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 	}, nil
 }
 
-// governaOwnedPaths are exact repo-relative paths that governa writes.
-// Files at these paths must not contribute to codeSignals or docSignals —
-// they are bookkeeping/generated content, not repo-authored signals.
-var governaOwnedPaths = map[string]bool{
-	manifestFileName:                 true,
-	legacyPreAC55ManifestFile:        true,
-	legacyManifestFileName:           true,
-	"TEMPLATE_VERSION":               true,
-	"AGENTS.md":                      true,
-	"CLAUDE.md":                      true,
-	"arch.md":                        true,
-	"plan.md":                        true,
-	"docs/README.md":                 true,
-	"docs/development-cycle.md":      true,
-	"docs/development-guidelines.md": true,
-	"docs/build-release.md":          true,
-	"docs/ac-template.md":            true,
-}
-
-// isGovernaOwnedPath reports whether a repo-relative path is governa-owned.
-// Used by AssessTarget to skip signal increments for such paths.
-func isGovernaOwnedPath(rel string) bool {
-	norm := filepath.ToSlash(rel)
-	if governaOwnedPaths[norm] {
-		return true
-	}
-	if strings.HasPrefix(norm, "docs/roles/") {
-		return true
-	}
-	return false
-}
-
 func expectedArtifactPaths(repoType RepoType) []string {
-	base := []string{"AGENTS.md", "CLAUDE.md", "TEMPLATE_VERSION"}
+	base := []string{"AGENTS.md", "CLAUDE.md"}
 	switch repoType {
 	case RepoTypeCode:
 		return append(
@@ -711,7 +605,7 @@ func readModulePath(targetRoot string) string {
 	return ""
 }
 
-func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([]operation, error) {
+func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error) {
 	modulePath := readModulePath(targetRoot)
 	if modulePath == "" {
 		// New repos don't have go.mod yet; use repo name as placeholder
@@ -734,15 +628,6 @@ func planCanonical(tfs fs.FS, repoRoot string, cfg Config, targetRoot string) ([
 		note:    "base governance contract",
 		source:  "base/AGENTS.md",
 	}}
-
-	versionContent := []byte(readTemplateVersion(repoRoot))
-	ops = append(ops, operation{
-		kind:    "write",
-		path:    filepath.Join(targetRoot, "TEMPLATE_VERSION"),
-		content: string(versionContent),
-		note:    "template version marker",
-		source:  "TEMPLATE_VERSION",
-	})
 
 	ops = append(ops, operation{
 		kind:   "symlink",
@@ -900,24 +785,6 @@ func skipIfExists(op operation) operation {
 		return operation{kind: "skip"}
 	}
 	return op
-}
-
-// readTemplateOrRoot reads a file from the template FS first; if not found,
-// falls back to the repo root. This handles files like TEMPLATE_VERSION that
-// live at the repo root rather than inside internal/templates/.
-// readTemplateVersion returns the template version string. When repoRoot is
-// set (test harnesses passing an explicit repo root), it reads from the
-// TEMPLATE_VERSION file on disk. When repoRoot is empty (installed binary,
-// consumer modes), it falls back to the compiled-in templates.TemplateVersion
-// constant.
-func readTemplateVersion(repoRoot string) string {
-	if repoRoot != "" {
-		content, err := os.ReadFile(filepath.Join(repoRoot, "TEMPLATE_VERSION"))
-		if err == nil {
-			return strings.TrimSpace(string(content))
-		}
-	}
-	return templates.TemplateVersion
 }
 
 func readAndRender(tfs fs.FS, path string, placeholders map[string]string) (string, error) {

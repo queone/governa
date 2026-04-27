@@ -1,23 +1,18 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/queone/governa/internal/color"
 	"github.com/queone/governa/internal/governance"
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.61.0"
+const programVersion = "0.62.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -79,10 +74,6 @@ func main() {
 		return
 	}
 
-	// Start version check in background.
-	versionNotice := make(chan string, 1)
-	go checkLatestVersion(versionNotice)
-
 	// Fail-safe: refuse to apply into the governa repo itself.
 	if target, _ := filepath.Abs(cfg.Target); target != "" {
 		if _, err := detectGovernaCheckoutAt(target); err == nil {
@@ -92,14 +83,9 @@ func main() {
 	}
 
 	var tfs fs.FS = templates.EmbeddedFS
-	if err := governance.RunWithFS(tfs, "", cfg); err != nil {
+	if err := governance.RunWithFS(tfs, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
-	}
-
-	// Wait for version check (bounded by the 2-second HTTP timeout).
-	if notice := <-versionNotice; notice != "" {
-		fmt.Fprintln(os.Stderr, notice)
 	}
 }
 
@@ -162,7 +148,7 @@ func runExamples() error {
 		}
 
 		t.cfg.Target = dir
-		if err := governance.RunWithFS(tfs, "", t.cfg); err != nil {
+		if err := governance.RunWithFS(tfs, t.cfg); err != nil {
 			return fmt.Errorf("render %s overlay: %w", t.subdir, err)
 		}
 	}
@@ -172,7 +158,7 @@ func runExamples() error {
 }
 
 // detectGovernaCheckoutAt reports whether `dir` looks like a governa checkout.
-// Used by the sync fail-safe to refuse writing the template over its own
+// Used by the apply fail-safe to refuse writing the template over its own
 // source.
 func detectGovernaCheckoutAt(dir string) (string, error) {
 	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
@@ -186,69 +172,4 @@ func detectGovernaCheckoutAt(dir string) (string, error) {
 		return "", fmt.Errorf("internal/templates/base not found")
 	}
 	return dir, nil
-}
-
-var semverRe = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)
-
-type semver struct {
-	major, minor, patch int
-}
-
-func parseSemver(s string) (semver, bool) {
-	m := semverRe.FindStringSubmatch(strings.TrimSpace(s))
-	if m == nil {
-		return semver{}, false
-	}
-	major, _ := strconv.Atoi(m[1])
-	minor, _ := strconv.Atoi(m[2])
-	patch, _ := strconv.Atoi(m[3])
-	return semver{major, minor, patch}, true
-}
-
-func (a semver) newerThan(b semver) bool {
-	if a.major != b.major {
-		return a.major > b.major
-	}
-	if a.minor != b.minor {
-		return a.minor > b.minor
-	}
-	return a.patch > b.patch
-}
-
-func checkLatestVersion(result chan<- string) {
-	defer close(result)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://raw.githubusercontent.com/queone/governa/main/TEMPLATE_VERSION", nil)
-	if err != nil {
-		return
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return
-	}
-
-	buf := make([]byte, 64)
-	n, _ := resp.Body.Read(buf)
-	remote, ok := parseSemver(string(buf[:n]))
-	if !ok {
-		return
-	}
-	local, ok := parseSemver(templates.TemplateVersion)
-	if !ok {
-		return
-	}
-
-	if remote.newerThan(local) {
-		remoteStr := fmt.Sprintf("%d.%d.%d", remote.major, remote.minor, remote.patch)
-		result <- fmt.Sprintf("%s governa v%s available (you have v%s) — go install %s/cmd/governa@latest",
-			color.Yel("notice:"), remoteStr, templates.TemplateVersion, sourceRepo)
-	}
 }

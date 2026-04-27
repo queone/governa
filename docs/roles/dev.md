@@ -40,7 +40,7 @@ The governa repo itself improves the template through an **out-of-band review wo
 
 ### Template Improvement (governa repo only)
 
-Template improvements originate in the governa repo, not in consumer repos. DEV (or QA, when acting on the template) proposes them by reviewing consumer repos directly — reading the consumer's `AGENTS.md`, recent AC docs, and `.governa/manifest` — to identify patterns worth upstreaming. Each proposed change goes through the normal AC workflow (draft AC → critique → implement → release) as a regular template PR. There is no CLI subcommand for this; filesystem access plus the ordinary editor workflow is enough.
+Template improvements originate in the governa repo, not in consumer repos. DEV (or QA, when acting on the template) proposes them by reviewing consumer repos directly — reading the consumer's `AGENTS.md` and recent AC docs — to identify patterns worth upstreaming. Each proposed change goes through the normal AC workflow (draft AC → critique → implement → release) as a regular template PR. There is no CLI subcommand for this; filesystem access plus the ordinary editor workflow is enough.
 
 - Read consumer governance files and recent AC history to find portable patterns (rules that every governed repo should benefit from, not project-specific local choices).
 - Draft an AC in `docs/` scoping the template edit.
