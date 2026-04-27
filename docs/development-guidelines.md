@@ -11,13 +11,13 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 
 ## Schema And Data Migrations
 
-- Overlay templates are versioned through `TEMPLATE_VERSION`; when template structure changes, bump the version
+- When template structure changes, propagate to both source and overlay in the same pass
 - When renaming a module or import path, audit all Go source and overlay templates in a single pass
 
 ## External Integration Patterns
 
 - Generated repos must be fully self-contained with no runtime dependence on governa
-- When bootstrap reads a target repo, it treats the target as read-only input; all output goes to the target's own tree
+- When apply reads a target repo, it treats the target as read-only input; all output goes to the target's own tree
 
 ## Generated Artifact Propagation
 
@@ -37,7 +37,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 ## Error Handling And Validation
 
 - `go vet` and `staticcheck` errors are build failures, not warnings — use fail-hard checks
-- Validate bootstrap config at entry (mode, repo type, required fields) before rendering any files
+- Validate apply config at entry (mode, repo type, required fields) before rendering any files
 - Prefer explicit error returns over silent fallbacks; a clear failure is better than wrong output
 
 ## Testing Expectations
