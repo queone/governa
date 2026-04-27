@@ -83,5 +83,3 @@ CHANGELOG row shape (enforced by prep's insertion code and by convention):
 - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
 
 Flags: `--dry-run` (or `-n`) prints intended writes without touching the working tree; `--no-build` skips phases 3 and 8. Both are for power users or tests — the common path is plain `go run ./cmd/prep/ vX.Y.Z "message"`.
-
-Keep `TEMPLATE_VERSION` aligned with the released template version unless there is a deliberate reason to version them separately.
