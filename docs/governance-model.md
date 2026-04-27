@@ -6,7 +6,7 @@ governa ships one command:
 
 After apply, all files are consumer-owned. Future governa improvements are adopted by having a coding agent in the consumer repo read governa's source, then cherry-pick what's useful. There is no re-sync mechanism.
 
-Template improvements to the governa repo itself happen out-of-band through the normal AC workflow; there is no CLI subcommand for reviewing consumer repos. See `docs/roles/dev.md` § Template Improvement.
+Template improvements to the governa repo itself happen out-of-band through the normal AC workflow; there is no CLI subcommand for reviewing consumer repos. See `docs/role-dev.md` § Template Improvement.
 
 ## Core Principle
 
@@ -25,7 +25,7 @@ The agent runs in the target repo, not in this template repo. This template repo
 
 Single entry point for both new and existing repos. Detection order:
 
-1. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/roles/) → **existing**
+1. Governance artifacts found (AGENTS.md, CLAUDE.md, docs/role-*.md) → **existing**
 2. Otherwise → **new repo** bootstrap
 
 ### New-repo behavior

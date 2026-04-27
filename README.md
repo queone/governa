@@ -20,7 +20,7 @@ governa ships with a small role split so agent sessions have a predictable start
 - **Maintainer** — default if none is assigned; handles broad repo upkeep.
 - **Director** — human role; owns intent, priorities, and irreversible decisions. Not assignable to an agent.
 
-Role definitions live in [`docs/roles/`](docs/roles/). By default, sessions run as Maintainer when `docs/roles/maintainer.md` exists; explicit assignment (e.g., "act as DEV") overrides. The shared `AGENTS.md` contract applies in every case.
+Role definitions live in `docs/role-*.md` (see [`docs/roles.md`](docs/roles.md) for the delivery-model overview). By default, sessions run as Maintainer when `docs/role-maintainer.md` exists; explicit assignment (e.g., "act as DEV") overrides. The shared `AGENTS.md` contract applies in every case.
 
 ## Usage
 
@@ -79,7 +79,7 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 - [`plan.md`](plan.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/README.md`](docs/README.md)
-- [`docs/roles/`](docs/roles/)
+- [`docs/roles.md`](docs/roles.md)
 
 ## Rendered Examples
 

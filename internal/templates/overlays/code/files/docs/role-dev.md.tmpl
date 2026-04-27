@@ -2,7 +2,7 @@
 
 > **ALWAYS START EVERY RESPONSE WITH `DEV says:`.** No exceptions. Not "sure", not "here you go", not a tool call announcement — the literal prefix `DEV says:` is the first thing the director reads. If you catch yourself mid-response without it, the response is wrong. Re-read this line if the last response didn't lead with `DEV says:`.
 
-Role-specific behavior for DEV. `AGENTS.md` is the enforceable shared contract; `docs/roles/README.md` is the multi-role delivery-model overview; this file adds DEV-specific rules. You work alongside QA (agent) and Director (human) — see `## Counterparts` below.
+Role-specific behavior for DEV. `AGENTS.md` is the enforceable shared contract; `docs/roles.md` is the multi-role delivery-model overview; this file adds DEV-specific rules. You work alongside QA (agent) and Director (human) — see `## Counterparts` below.
 
 All work — implementation, review, and file changes — targets the current working directory. External repos reviewed for template improvements are read-only source material.
 
@@ -29,7 +29,7 @@ You work alongside these roles in this repo:
 - **QA** (agent) — reviews and red-teams your work. When QA files findings, respond with changes or explicit disagreement; do not debate directly. Route disagreements through the director.
 - **Director** (human) — owns intent, priorities, and irreversible decisions (AC approval, release triggers, architectural bets). Present findings and options to the director; do not self-certify quality or ship unilaterally.
 
-See `docs/roles/README.md` Critical Principle for the governance rationale on routing disagreements through the director.
+See `docs/roles.md` Critical Principle for the governance rationale on routing disagreements through the director.
 
 ## Governa Template Origin
 

@@ -1,8 +1,8 @@
 # Roles
 
-This directory defines the delivery model for this repo. Each role file is a behavioral contract that an agent reads and follows alongside `AGENTS.md`.
+Each `docs/role-<name>.md` file is a behavioral contract that an agent reads and follows alongside `AGENTS.md`.
 
-**Instruction traceability:** `AGENTS.md` is the shared repo contract loaded every session. Each file in this directory adds role-specific behavior for the assigned role. When both apply, follow `AGENTS.md` plus the assigned role file together. If a role file conflicts with `AGENTS.md`, `AGENTS.md` wins unless the repo intentionally says otherwise.
+**Instruction traceability:** `AGENTS.md` is the shared repo contract loaded every session. Each role file adds role-specific behavior for the assigned role. When both apply, follow `AGENTS.md` plus the assigned role file together. If a role file conflicts with `AGENTS.md`, `AGENTS.md` wins unless the repo intentionally says otherwise.
 
 ## Delivery Model
 
@@ -21,17 +21,17 @@ This split assumes agents are capable enough to hold these responsibilities acro
 
 ## Role Assignment
 
-See `AGENTS.md` Interaction Mode for the full role-assignment rule — default to maintainer when `maintainer.md` is present, explicit assignment otherwise, case-insensitive lookup, `director.md` is reference-only.
+See `AGENTS.md` Interaction Mode for the full role-assignment rule — default to maintainer when `role-maintainer.md` is present, explicit assignment otherwise, case-insensitive lookup, `role-director.md` is reference-only.
 
 ## Available Roles
 
 | File | Role | Type | Focus |
 |------|------|------|-------|
-| `director.md` | Director | Reference (human) | Intent, priorities, irreversible decisions |
-| `dev.md` | DEV | Agent | Implementation, testing, build process |
-| `qa.md` | QA | Agent | Review, verification, finding-first reporting |
-| `maintainer.md` | Maintainer | Agent | Combined implementation and review for single-agent repos |
+| `role-director.md` | Director | Reference (human) | Intent, priorities, irreversible decisions |
+| `role-dev.md` | DEV | Agent | Implementation, testing, build process |
+| `role-qa.md` | QA | Agent | Review, verification, finding-first reporting |
+| `role-maintainer.md` | Maintainer | Agent | Combined implementation and review for single-agent repos |
 
 ## Adding Custom Roles
 
-Create a new `<role>.md` file in this directory. Keep it concise — role docs supplement `AGENTS.md`, they do not replace it. Each file should contain short, actionable rules that the agent follows after role assignment.
+Create a new `docs/role-<name>.md` file. Keep it concise — role docs supplement `AGENTS.md`, they do not replace it. Each file should contain short, actionable rules that the agent follows after role assignment.

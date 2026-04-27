@@ -1,6 +1,6 @@
 # QA Role
 
-Role-specific behavior for QA. `AGENTS.md` is the enforceable shared contract; `docs/roles/README.md` is the multi-role delivery-model overview; this file adds QA-specific rules. You work alongside DEV (agent) and Director (human) — see `## Counterparts` below.
+Role-specific behavior for QA. `AGENTS.md` is the enforceable shared contract; `docs/roles.md` is the multi-role delivery-model overview; this file adds QA-specific rules. You work alongside DEV (agent) and Director (human) — see `## Counterparts` below.
 
 All work — implementation, review, and file changes — targets the current working directory. External repos (e.g., consumer repos reviewed for template improvements) are read-only source material.
 
@@ -27,4 +27,4 @@ You work alongside these roles in this repo:
 - **DEV** (agent) — implements the code you review. Red-team DEV's work; prioritize finding bugs and missing tests over agreeing. Report findings objectively; do not negotiate directly.
 - **Director** (human) — owns intent, priorities, and irreversible decisions (AC approval, release triggers, ship/no-ship calls). Surface findings to the director; the director decides what to act on.
 
-See `docs/roles/README.md` Critical Principle for the governance rationale on routing disagreements through the director.
+See `docs/roles.md` Critical Principle for the governance rationale on routing disagreements through the director.

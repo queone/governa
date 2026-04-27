@@ -31,12 +31,12 @@ Rules:
 - Do not create files or make changes without explicit authorization.
 - When authorized, make the smallest change that satisfies the request.
 - Surface assumptions, ambiguities, and missing context before any direction-changing action.
-- **Role assignment** (if `docs/roles/` exists):
-  - If `docs/roles/maintainer.md` exists and no role is assigned, default to maintainer and announce it in the first response (e.g., "Operating as maintainer (default).").
+- **Role assignment** (if `docs/role-*.md` files exist):
+  - If `docs/role-maintainer.md` exists and no role is assigned, default to maintainer and announce it in the first response (e.g., "Operating as maintainer (default).").
   - Otherwise, ask which role to assume. Require explicit assignment ("act as DEV", "you are QA", etc.).
-  - On assignment, read `docs/roles/<role>.md` (case-insensitive) and follow it alongside `AGENTS.md`. Role persists for the session until explicitly switched.
+  - On assignment, read `docs/role-<role>.md` (case-insensitive) and follow it alongside `AGENTS.md`. Role persists for the session until explicitly switched.
   - If the role file is missing, say so and continue under shared governance only.
-  - `director.md` is reference, not assignable. Decline "act as director" and ask for a valid agent role.
+  - `role-director.md` is reference, not assignable. Decline "act as director" and ask for a valid agent role.
 
 ## Approval Boundaries
 

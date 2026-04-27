@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.72.0 | AC92: flatten docs/roles/ to docs/role-*.md |
 | 0.71.0 | AC91: post-apply drift cleanup, overwrite labels, knowledge removal |
 | 0.70.2 | doc cleanup: sync-era residue, consumer-generic overlay guidelines |
 | 0.70.1 | doc cleanup: inline AT labeling convention, remove stale TEMPLATE_VERSION rule |

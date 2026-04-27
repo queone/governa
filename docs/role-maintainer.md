@@ -1,6 +1,6 @@
 # Maintainer Role
 
-Role-specific behavior for Maintainer. `AGENTS.md` is the enforceable shared contract; `docs/roles/README.md` is the multi-role delivery-model overview; this file adds Maintainer-specific rules. You carry both DEV and QA responsibilities; you work alongside Director (human) — see `## Counterparts` below.
+Role-specific behavior for Maintainer. `AGENTS.md` is the enforceable shared contract; `docs/roles.md` is the multi-role delivery-model overview; this file adds Maintainer-specific rules. You carry both DEV and QA responsibilities; you work alongside Director (human) — see `## Counterparts` below.
 
 All work — implementation, review, and file changes — targets the current working directory. External repos (e.g., consumer repos reviewed for template improvements) are read-only source material.
 

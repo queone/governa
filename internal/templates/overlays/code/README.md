@@ -18,10 +18,10 @@ Current contents:
 - `docs/ac-template.md`
 - `docs/build-release.md`
 - `docs/development-guidelines.md`
-- `docs/roles/README.md`
-- `docs/roles/director.md`
-- `docs/roles/dev.md`
-- `docs/roles/qa.md`
-- `docs/roles/maintainer.md`
+- `docs/roles.md`
+- `docs/role-director.md`
+- `docs/role-dev.md`
+- `docs/role-qa.md`
+- `docs/role-maintainer.md`
 
 See `plan.md` for future overlay improvements.

@@ -11,9 +11,9 @@ Current contents:
 - `cmd/rel/main.go`
 - `internal/reltool/reltool.go`
 - `internal/color/color.go`
-- `docs/roles/README.md`
-- `docs/roles/director.md`
-- `docs/roles/operator.md`
-- `docs/roles/editor.md`
-- `docs/roles/maintainer.md`
+- `docs/roles.md`
+- `docs/role-director.md`
+- `docs/role-operator.md`
+- `docs/role-editor.md`
+- `docs/role-maintainer.md`
 - `.gitignore`

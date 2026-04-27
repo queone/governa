@@ -8,5 +8,6 @@ Index for repo-level workflow and maintenance docs.
 - `ac-template.md`: acceptance-criteria template
 - `overlay-scope.md`: `CODE` versus `DOC` boundaries
 - `development-guidelines.md`: durable engineering guidance for any agent or contributor
-- `roles/`: role-specific behavior docs (DEV, QA, director reference) that supplement AGENTS.md
+- `roles.md`: delivery model and role index
+- `role-*.md`: role-specific behavior docs (DEV, QA, director reference) that supplement AGENTS.md
 - `ac<N>-<slug>.md`: acceptance-criteria docs (working AC files; `ac-template.md` is the keeper)
