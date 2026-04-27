@@ -18,7 +18,6 @@ Current contents:
 - `docs/ac-template.md`
 - `docs/build-release.md`
 - `docs/development-guidelines.md`
-- `docs/knowledge/README.md`
 - `docs/roles/README.md`
 - `docs/roles/director.md`
 - `docs/roles/dev.md`

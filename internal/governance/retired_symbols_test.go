@@ -54,6 +54,9 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		"ErrConflictsPresent",
 		"syncReviewFile",
 		"detectSyncMode",
+		// AC91 — collision/recommendation struct fields retired
+		"CollidingArtifacts",
+		"CollisionRisk",
 		// AC89 — manifest/version-check/ownership machinery retired
 		"migrateGovernaLegacyPaths",
 		"readManifest",

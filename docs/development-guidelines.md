@@ -27,6 +27,18 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
 - Exported functions in template-owned packages (`internal/buildtool`, `internal/reltool`, `internal/color`) carry godoc single-line comments. Consumers that wholesale-adopt these packages inherit a correctly-commented surface.
+- When propagating a `buildtool`/`reltool`/`color` source change, the only edit between source and template copy is the import-path rewrite `github.com/queone/governa/internal/<pkg>` → `{{MODULE_PATH}}/internal/<pkg>`
+
+### Common Propagation Paths
+
+| Source | Template Copy |
+|--------|--------------|
+| `internal/buildtool/buildtool.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/buildtool/buildtool.go.tmpl`, `*_test.go.tmpl` |
+| `internal/reltool/reltool.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/reltool/reltool.go.tmpl`, `*_test.go.tmpl`; same under `overlays/doc/` |
+| `internal/color/color.go` | `internal/templates/overlays/code/files/internal/color/color.go.tmpl`; same under `overlays/doc/` |
+| `cmd/build/main.go` | `internal/templates/overlays/code/files/cmd/build/main.go.tmpl` |
+| `cmd/rel/main.go` | `internal/templates/overlays/code/files/cmd/rel/main.go.tmpl`; same under `overlays/doc/` |
+| `build.sh` | `internal/templates/overlays/code/files/build.sh.tmpl` |
 
 ## Program Version Declaration
 

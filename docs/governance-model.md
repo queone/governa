@@ -47,7 +47,7 @@ Single entry point for both new and existing repos. Detection order:
 
 ## Implementation Constraints
 
-The bootstrap implementation is written in Go, not shell.
+The implementation is written in Go, not shell.
 
 - cross-platform behavior matters
 - Windows support should not depend on a specific shell environment

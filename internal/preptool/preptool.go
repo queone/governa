@@ -158,10 +158,8 @@ func Run(cfg Config) error {
 		return fmt.Errorf("prep: find AC companions: %w", err)
 	}
 
-	// AC78: feedback-credit validation retired along with the `.governa/feedback/`
-	// convention. Release messages no longer carry `(addresses <consumer>
-	// feedback from v<X.Y.Z> syncs)` markers; any such text in historical AC
-	// files (AC74-AC77) is ignored by prep.
+	// AC78: feedback-credit validation retired. Release messages no longer
+	// carry feedback markers; any such text in historical AC files is ignored.
 
 	versionStripped := strings.TrimPrefix(cfg.Version, "v")
 
@@ -346,9 +344,7 @@ func detectVersionTargets(repoRoot string) ([]versionTarget, error) {
 
 	// Template-version targets (TEMPLATE_VERSION + internal/templates/version.go)
 	// are gated on internal/templates/base/ presence. That directory exists only
-	// in governa itself; in consumer repos TEMPLATE_VERSION tracks the governa
-	// baseline the consumer synced from and must NOT change at consumer release
-	// prep. Matches cmd/governa/main.go's detectGovernaCheckout signal. (AC62)
+	// in governa itself; consumer repos do not have this file.
 	if info, err := os.Stat(filepath.Join(repoRoot, "internal", "templates", "base")); err == nil && info.IsDir() {
 		tvPath := filepath.Join(repoRoot, "TEMPLATE_VERSION")
 		if _, err := os.Stat(tvPath); err == nil {

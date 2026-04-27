@@ -40,14 +40,13 @@ type Config struct {
 }
 
 type Assessment struct {
-	RepoShape          string
-	ResolvedType       RepoType // type used to compute expected artifacts; resolved from RepoShape when caller passed ""
-	ExistingArtifacts  []string
-	CollisionRisk      string
-	Recommendation     string
-	CodeSignals        int
-	DocSignals         int
-	CollidingArtifacts []string
+	RepoShape         string
+	ResolvedType      RepoType // type used to compute expected artifacts; resolved from RepoShape when caller passed ""
+	ExistingArtifacts []string
+	OverwriteRisk     string
+	CodeSignals       int
+	DocSignals        int
+	OverwrittenFiles  []string
 }
 
 // deriveTypeFromShape maps RepoShape → RepoType. Returns "" when shape is
@@ -148,7 +147,7 @@ func ModeHelp(mode Mode) string {
 		return color.FormatUsage("governa apply [options]", []color.UsageLine{
 			{Flag: "-n, --repo-name", Desc: "repo name"},
 			{Flag: "-k, --type", Desc: "repo type: CODE or DOC"},
-			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos)"},
+			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos; currently: Go)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
 			{Flag: "-g, --init-git", Desc: "initialize git if target is not a repo"},
 		}, "Apply governance template to a new or existing repo. Detects repo state and prompts for missing parameters. After apply, all files are consumer-owned.")
@@ -314,7 +313,6 @@ func promptMissing(cfg *Config, targetDir string) {
 }
 
 // runApply writes the base template + overlay files to the target directory.
-// All planned operations apply directly — there is no collision negotiation.
 // After apply, all files are consumer-owned.
 func runApply(tfs fs.FS, cfg Config) error {
 	targetAbs, err := filepath.Abs(cfg.Target)
@@ -443,10 +441,9 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 	docSignals := 0
 	if len(files) == 0 {
 		return Assessment{
-			RepoShape:      "empty",
-			ResolvedType:   repoType, // no files to infer from; preserve caller input (possibly "")
-			CollisionRisk:  "low",
-			Recommendation: "safe to apply",
+			RepoShape:     "empty",
+			ResolvedType:  repoType, // no files to infer from; preserve caller input (possibly "")
+			OverwriteRisk: "low",
 		}, nil
 	}
 	for _, rel := range files {
@@ -502,43 +499,34 @@ func AssessTarget(root string, repoType RepoType) (Assessment, error) {
 
 	expected := expectedArtifactPaths(resolvedType)
 	var existing []string
-	var collisions []string
+	var overwrites []string
 	for _, rel := range expected {
 		full := filepath.Join(root, rel)
 		info, err := os.Stat(full)
 		if err == nil {
 			existing = append(existing, rel)
 			if !info.IsDir() && info.Size() > 0 {
-				collisions = append(collisions, rel)
+				overwrites = append(overwrites, rel)
 			}
 		}
 	}
 
-	collisionRisk := "low"
+	overwriteRisk := "low"
 	switch {
-	case len(collisions) >= 3:
-		collisionRisk = "high"
-	case len(collisions) > 0:
-		collisionRisk = "medium"
-	}
-
-	recommendation := "safe to apply"
-	if collisionRisk == "high" || repoShape == "unclear" || repoShape == "mixed" {
-		recommendation = "safe with proposals only"
-	}
-	if repoShape == "unclear" && len(existing) == 0 {
-		recommendation = "needs manual mapping first"
+	case len(overwrites) >= 3:
+		overwriteRisk = "high"
+	case len(overwrites) > 0:
+		overwriteRisk = "medium"
 	}
 
 	return Assessment{
-		RepoShape:          repoShape,
-		ResolvedType:       resolvedType,
-		ExistingArtifacts:  existing,
-		CollisionRisk:      collisionRisk,
-		Recommendation:     recommendation,
-		CodeSignals:        codeSignals,
-		DocSignals:         docSignals,
-		CollidingArtifacts: collisions,
+		RepoShape:         repoShape,
+		ResolvedType:      resolvedType,
+		ExistingArtifacts: existing,
+		OverwriteRisk:     overwriteRisk,
+		CodeSignals:       codeSignals,
+		DocSignals:        docSignals,
+		OverwrittenFiles:  overwrites,
 	}, nil
 }
 
@@ -660,12 +648,6 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 				strings.HasPrefix(rel, "internal/reltool/")) {
 			return nil
 		}
-		// Skip docs/knowledge/README.md if the target doesn't use docs/knowledge/
-		if rel == "docs/knowledge/README.md.tmpl" || rel == "docs/knowledge/README.md" {
-			if _, err := os.Stat(filepath.Join(targetRoot, "docs", "knowledge")); errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-		}
 		targetRel := strings.TrimSuffix(rel, ".tmpl")
 		content, err := readAndRender(tfs, path, placeholders)
 		if err != nil {
@@ -765,17 +747,9 @@ func printAssessment(mode Mode, target string, a Assessment) {
 	fmt.Printf("repo-shape: %s\n", a.RepoShape)
 	fmt.Printf("signals: code=%d doc=%d\n", a.CodeSignals, a.DocSignals)
 	fmt.Printf("existing-artifacts: %s\n", joinOrNone(a.ExistingArtifacts))
-	fmt.Printf("collision-risk: %s\n", a.CollisionRisk)
-	// The `recommendation:` line was dropped in AC46. It was derived from
-	// repo-shape + collision-risk (both still printed) and created perceived
-	// contradiction with the final `disposition:` line when conflicts existed.
-	// The Assessment.Recommendation struct field stays for any programmatic use.
-	//
-	// The `collisions:` line is suppressed when it's redundant with
-	// `existing-artifacts:` (the common case). Only print when the two
-	// differ — e.g., when a file exists at an expected path but is empty.
-	if len(a.CollidingArtifacts) > 0 && !slices.Equal(a.CollidingArtifacts, a.ExistingArtifacts) {
-		fmt.Printf("collisions: %s\n", strings.Join(a.CollidingArtifacts, ", "))
+	fmt.Printf("overwrite-risk: %s\n", a.OverwriteRisk)
+	if len(a.OverwrittenFiles) > 0 && !slices.Equal(a.OverwrittenFiles, a.ExistingArtifacts) {
+		fmt.Printf("overwrites: %s\n", strings.Join(a.OverwrittenFiles, ", "))
 	}
 }
 

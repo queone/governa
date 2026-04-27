@@ -46,6 +46,8 @@ Or with flags to skip prompts:
 governa apply -k CODE -n my-service -s "Go"
 ```
 
+Go is the only stack with full overlay support today. Other values are accepted but produce a generic scaffold.
+
 **Existing repo** (governance artifacts found): all template files are written directly. Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`.
 
 ```bash

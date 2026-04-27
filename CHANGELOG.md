@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.71.0 | AC91: post-apply drift cleanup, overwrite labels, knowledge removal |
 | 0.70.2 | doc cleanup: sync-era residue, consumer-generic overlay guidelines |
 | 0.70.1 | doc cleanup: inline AT labeling convention, remove stale TEMPLATE_VERSION rule |
 | 0.70.0 | AC89+AC90: stateless apply, post-ship drift cleanup |
