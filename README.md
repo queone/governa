@@ -11,16 +11,14 @@ AI-assisted coding is here to stay. Teams that code alone, teams that work entir
 
 The contract covers what humans and agents agree on before work starts: who is authorized to make which changes, how proposals are reviewed, what governance files mean, and how the template itself evolves. File-based and deterministic; nothing depends on transient session context.
 
-## Default Roles
+## Roles
 
-governa ships with a small role split so agent sessions have a predictable starting point:
+governa ships a closed two-role model so agent sessions have a predictable starting point:
 
-- **DEV** — implements approved work, writes tests alongside, keeps docs aligned.
-- **QA** — reviews and red-teams DEV's work, files findings for the director.
-- **Maintainer** — default if none is assigned; handles broad repo upkeep.
-- **Director** — human role; owns intent, priorities, and irreversible decisions. Not assignable to an agent.
+- **Operator** — LLM agent role. Owns implementation, tests, doc alignment, and mandatory self-review. Automatic and unannounced; it is the only agent role.
+- **Director** — human role. Owns intent, priorities, irreversible decisions (releases, architectural bets, scope), and the meta-loop. Not assignable to an agent.
 
-Role definitions live in `docs/role-*.md` (see [`docs/roles.md`](docs/roles.md) for the delivery-model overview). By default, sessions run as Maintainer when `docs/role-maintainer.md` exists; explicit assignment (e.g., "act as DEV") overrides. The shared `AGENTS.md` contract applies in every case.
+Full role definitions and the self-review contract live in [`docs/roles.md`](docs/roles.md). The shared `AGENTS.md` contract applies in every case.
 
 ## Usage
 
