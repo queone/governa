@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.90.0 | AC93: DOC overlay supporting docs, AGENTS.md override, Operator/Editor swap |
 | 0.80.0 | overlay build-release.md: pipeline steps, AT section, consumer-generic prep |
 | 0.72.0 | AC92: flatten docs/roles/ to docs/role-*.md |
 | 0.71.0 | AC91: post-apply drift cleanup, overwrite labels, knowledge removal |
