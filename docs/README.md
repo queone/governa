@@ -9,9 +9,5 @@ Index for repo-level workflow and maintenance docs.
 - [overlay-scope.md](overlay-scope.md): `CODE` versus `DOC` boundaries
 - [critique-protocol.md](critique-protocol.md): AC critique round structure and integration
 - [ac-template.md](ac-template.md): acceptance-criteria template
-- [roles.md](roles.md): delivery model and role index
-- [role-dev.md](role-dev.md): DEV role
-- [role-qa.md](role-qa.md): QA role
-- [role-maintainer.md](role-maintainer.md): Maintainer role
-- [role-director.md](role-director.md): Director reference (human, not assignable)
+- [roles.md](roles.md): two-role model (Operator, Director)
 - `ac<N>-<slug>.md`: acceptance-criteria docs (working AC files; `ac-template.md` is the keeper)

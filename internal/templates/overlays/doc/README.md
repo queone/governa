@@ -19,8 +19,4 @@ Current contents:
 - `docs/editing-guidelines.md`
 - `docs/release.md`
 - `docs/roles.md`
-- `docs/role-director.md`
-- `docs/role-operator.md`
-- `docs/role-editor.md`
-- `docs/role-maintainer.md`
 - `.gitignore`

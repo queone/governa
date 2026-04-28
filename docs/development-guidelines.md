@@ -23,7 +23,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 
 - Source-of-truth code lives in `internal/`; overlay templates under `internal/templates/overlays/` carry standalone copies of the same logic
 - Fixes to `internal/buildtool`, `internal/reltool`, or `build.sh` must propagate to the overlay template copies
-- Overlay role-doc templates are consumer-facing — they are not copies of root. When root role docs evolve, update overlays with targeted edits that filter governa-specific content. Do not `cp` root role docs to overlays.
+- Overlay copies of `roles.md` and `critique-protocol.md` are consumer-facing. When root governance docs evolve, propagate to overlay copies with targeted edits that filter governa-specific content. The DOC overlay `roles.md` references `docs/release.md` where the CODE overlay references `docs/build-release.md`.
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
 - Exported functions in template-owned packages (`internal/buildtool`, `internal/reltool`, `internal/color`) carry godoc single-line comments. Consumers that wholesale-adopt these packages inherit a correctly-commented surface.

@@ -6,7 +6,7 @@ The AC is the implementation contract for one approved roadmap item. The full de
 
 ## Companion Artifacts
 
-Critique lives inside the AC itself, not in a companion file. The AC carries a `## Critique` section (typically above `## Status`); QA findings per round land there. DEV transcribes QA's findings verbatim; DEV's responses land as AC revisions + `### Disposition Log` entries under `## Implementation Notes`. See `docs/critique-protocol.md` for round-append structure (`### Round N` / `#### F<N>`), `F-new-N` monotonic numbering across subsequent rounds, and the five-field terminator shape. Delete this `## Companion Artifacts` section when copying the template into a real AC.
+Critique lives inside the AC itself, not in a companion file. The AC carries a `## Critique` section (typically above `## Status`); Director findings per round land there. The Operator transcribes the Director's conversational findings; the Director may also edit the AC file directly. The Operator's responses land as AC revisions + `### Disposition Log` entries under `## Implementation Notes`. See `docs/critique-protocol.md` for round-append structure (`### Round N` / `#### F<N>`), `F-new-N` monotonic numbering across subsequent rounds, and the four-field terminator shape. Delete this `## Companion Artifacts` section when copying the template into a real AC.
 
 # AC<N> Title
 
@@ -78,9 +78,9 @@ List the docs that must be updated as part of this AC. If a change touches code 
 
 ## Director Review
 
-List every scope or wording trade-off chosen between two or more viable options during the DEV/QA cycle. Each entry names the option taken and a one-line why. Empty is allowed — write `None` when the AC has no judgment calls worth surfacing.
+List every scope or wording trade-off chosen between two or more viable options during the Operator/Director cycle. Each entry names the option taken and a one-line why. Empty is allowed — write `None` when the AC has no judgment calls worth surfacing.
 
-QA's final-round terminator cross-checks that this list is exhaustive (not just the calls DEV feels uncertain about). Omissions surfaced by QA land in the round's `Director attention` field inside the AC's `## Critique` section.
+The Director validates this list during critique rounds.
 
 - Decision X: option taken (alternatives considered: A, B). Why: <one-line>.
 

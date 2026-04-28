@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.91.0 | AC94: 2-role consolidation — Operator+Director, mandatory self-review |
 | 0.90.0 | AC93: DOC overlay supporting docs, AGENTS.md override, Operator/Editor swap |
 | 0.80.0 | overlay build-release.md: pipeline steps, AT section, consumer-generic prep |
 | 0.72.0 | AC92: flatten docs/roles/ to docs/role-*.md |

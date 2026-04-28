@@ -15,13 +15,10 @@ Current contents:
 - `internal/color/color.go` shared color package
 - `docs/README.md`
 - `docs/development-cycle.md`
+- `docs/development-guidelines.md`
 - `docs/ac-template.md`
 - `docs/build-release.md`
-- `docs/development-guidelines.md`
+- `docs/critique-protocol.md`
 - `docs/roles.md`
-- `docs/role-director.md`
-- `docs/role-dev.md`
-- `docs/role-qa.md`
-- `docs/role-maintainer.md`
 
 See `plan.md` for future overlay improvements.

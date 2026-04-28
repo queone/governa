@@ -32,14 +32,14 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 
 A user runs `governa apply` from inside a target repo or empty directory. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output. All files are written directly — after apply, the consumer repo owns everything and evolves independently. Apply is fully stateless: no network call, no bookkeeping directory, no persistent metadata beyond the rendered files themselves.
 
-Template improvements flow in the opposite direction through an out-of-band workflow documented in `docs/role-dev.md`: DEV/QA agents reviewing the governa repo read consumer repos' governance files and AC history directly, then propose template changes as regular PRs through the normal AC workflow. There is no CLI subcommand for this.
+Template improvements flow in the opposite direction through an out-of-band workflow documented in `docs/governance-model.md`: the Operator reviewing the governa repo reads consumer repos' governance files and AC history directly, then proposes template changes through the normal AC workflow. There is no CLI subcommand for this.
 
 ## Architecture Notes
 
 - generated repos must remain self-contained and must not depend on this repo at runtime
 - this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `apply`
 - shell wrappers are conveniences only; the canonical implementation lives in Go
-- `docs/role-*.md` provides role-specific behavior docs (director reference, DEV, QA, maintainer) that supplement the shared governance contract; role selection is instruction-driven and defined in `Interaction Mode`
+- `docs/roles.md` defines the two-role model (Operator, Director) that supplements the shared governance contract
 - apply is stateless: no `.governa/` directory, no manifest, no `TEMPLATE_VERSION` file in consumer repos. Provenance is recorded in `docs/ac1-governa-apply.md`.
 - pure stdlib; no external Go dependencies (verified via `go.mod`)
 - templates use `{{PLACEHOLDER}}` substitution, not a templating engine (text/template intentionally not used)

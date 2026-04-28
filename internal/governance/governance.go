@@ -256,9 +256,6 @@ func detectApplyMode(targetDir string) string {
 			return "existing"
 		}
 	}
-	if matches, _ := filepath.Glob(filepath.Join(targetDir, "docs", "role-*.md")); len(matches) > 0 {
-		return "existing"
-	}
 	return "new"
 }
 
@@ -827,7 +824,7 @@ func renderApplyAC(templateVersion string, cfg Config, ops []operation) string {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "**AT1** [Manual] — Verify AGENTS.md exists and sections match repo needs.")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "**AT2** [Manual] — Verify role files in docs/role-*.md reflect the repo's delivery model.")
+	fmt.Fprintln(&b, "**AT2** [Manual] — Verify docs/roles.md reflects the repo's delivery model (Operator + Director).")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "**AT3** [Manual] — Verify CLAUDE.md is a symlink to AGENTS.md.")
 	fmt.Fprintln(&b)
