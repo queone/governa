@@ -6,17 +6,19 @@ Current concrete templates live under `files/`.
 
 Current contents:
 
+- `.gitignore`
 - `AGENTS.md`
-- `plan.md`
-- `rel.sh`
 - `cmd/rel/main.go`
-- `internal/reltool/reltool.go`
-- `internal/color/color.go`
-- `docs/README.md`
 - `docs/ac-template.md`
 - `docs/critique-protocol.md`
 - `docs/editing-cycle.md`
 - `docs/editing-guidelines.md`
+- `docs/README.md`
 - `docs/release.md`
 - `docs/roles.md`
-- `.gitignore`
+- `internal/color/color.go`
+- `internal/color/color_test.go`
+- `internal/reltool/reltool.go`
+- `internal/reltool/reltool_test.go`
+- `plan.md`
+- `rel.sh`

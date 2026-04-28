@@ -6,19 +6,31 @@ Current concrete templates live under `files/`.
 
 Current contents:
 
-- `README.md`
+- `.gitignore`
 - `arch.md`
-- `plan.md`
-- `build.sh` for Go-based repos only
-- `cmd/build/main.go` for Go-based repos only
-- `cmd/rel/main.go` for Go-based repos only
-- `internal/color/color.go` shared color package
-- `docs/README.md`
-- `docs/development-cycle.md`
-- `docs/development-guidelines.md`
+- `build.sh`
+- `CHANGELOG.md`
+- `cmd/build/main.go`
+- `cmd/prep/main.go`
+- `cmd/rel/main.go`
 - `docs/ac-template.md`
 - `docs/build-release.md`
 - `docs/critique-protocol.md`
+- `docs/development-cycle.md`
+- `docs/development-guidelines.md`
+- `docs/README.md`
 - `docs/roles.md`
+- `internal/buildtool/buildtool.go`
+- `internal/buildtool/buildtool_test.go`
+- `internal/color/color.go`
+- `internal/color/color_test.go`
+- `internal/preptool/preptool.go`
+- `internal/preptool/preptool_test.go`
+- `internal/reltool/reltool.go`
+- `internal/reltool/reltool_test.go`
+- `plan.md`
+- `README.md`
+
+Go-stack packages (`cmd/build`, `cmd/prep`, `cmd/rel`, `internal/buildtool`, `internal/preptool`, `internal/reltool`, `internal/color`) are included only when the stack suggests Go.
 
 See `plan.md` for future overlay improvements.

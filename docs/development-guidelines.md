@@ -21,24 +21,30 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 
 ## Generated Artifact Propagation
 
+Overlay templates are shipped snapshots: the propagation discipline below ensures governa ships correct templates at adoption time. After `governa apply`, the consumer repo owns all files and evolves them independently — there is no ongoing sync.
+
 - Source-of-truth code lives in `internal/`; overlay templates under `internal/templates/overlays/` carry standalone copies of the same logic
-- Fixes to `internal/buildtool`, `internal/reltool`, or `build.sh` must propagate to the overlay template copies
+- Fixes to `internal/buildtool`, `internal/preptool`, `internal/reltool`, or `build.sh` must propagate to the overlay template copies
 - Overlay copies of `roles.md` and `critique-protocol.md` are consumer-facing. When root governance docs evolve, propagate to overlay copies with targeted edits that filter governa-specific content. The DOC overlay `roles.md` references `docs/release.md` where the CODE overlay references `docs/build-release.md`.
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
-- Exported functions in template-owned packages (`internal/buildtool`, `internal/reltool`, `internal/color`) carry godoc single-line comments. Consumers that wholesale-adopt these packages inherit a correctly-commented surface.
-- When propagating a `buildtool`/`reltool`/`color` source change, the only edit between source and template copy is the import-path rewrite `github.com/queone/governa/internal/<pkg>` → `{{MODULE_PATH}}/internal/<pkg>`
+- Exported functions in template-owned packages (`internal/buildtool`, `internal/preptool`, `internal/reltool`, `internal/color`) carry godoc single-line comments. Consumers that wholesale-adopt these packages inherit a correctly-commented surface.
+- When propagating a source change, the only edit between source and template copy is the import-path rewrite `github.com/queone/governa/internal/<pkg>` → `{{MODULE_PATH}}/internal/<pkg>`, except where a documented standing divergence applies (see table notes below)
 
 ### Common Propagation Paths
 
 | Source | Template Copy |
 |--------|--------------|
-| `internal/buildtool/buildtool.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/buildtool/buildtool.go.tmpl`, `*_test.go.tmpl` |
+| `internal/buildtool/buildtool.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/buildtool/buildtool.go.tmpl`, `*_test.go.tmpl` (\*) |
+| `internal/preptool/preptool.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/preptool/preptool.go.tmpl`, `*_test.go.tmpl` |
 | `internal/reltool/reltool.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/reltool/reltool.go.tmpl`, `*_test.go.tmpl`; same under `overlays/doc/` |
-| `internal/color/color.go` | `internal/templates/overlays/code/files/internal/color/color.go.tmpl`; same under `overlays/doc/` |
+| `internal/color/color.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/color/color.go.tmpl`, `*_test.go.tmpl`; same under `overlays/doc/` |
 | `cmd/build/main.go` | `internal/templates/overlays/code/files/cmd/build/main.go.tmpl` |
+| `cmd/prep/main.go` | `internal/templates/overlays/code/files/cmd/prep/main.go.tmpl` |
 | `cmd/rel/main.go` | `internal/templates/overlays/code/files/cmd/rel/main.go.tmpl`; same under `overlays/doc/` |
 | `build.sh` | `internal/templates/overlays/code/files/build.sh.tmpl` |
+
+(\*) Standing divergence: the overlay `buildtool.go.tmpl` omits the example-rendering block and its helper functions (`runCapturedCheckInDir`, `runStreamingInDir`). Consumer repos do not ship governa examples, so example validation is not part of the consumer build pipeline.
 
 ## Program Version Declaration
 

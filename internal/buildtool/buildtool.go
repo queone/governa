@@ -218,6 +218,21 @@ func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 	if err := runStreamingInDir(exCodeDir, out, errOut, "go", exTestArgs...); err != nil {
 		return fmt.Errorf("go test failed on rendered code example: %w", err)
 	}
+	exDocDir := filepath.Join(exDir, "doc")
+	if output, failed := runCapturedCheckInDir(exDocDir, "go", "vet", "./..."); failed {
+		writeIndented(out, output)
+		return fmt.Errorf("go vet failed on rendered doc example")
+	} else {
+		fmt.Fprintln(out, "    go vet examples/doc: ok")
+	}
+	exDocTestArgs := []string{"test"}
+	if cfg.Verbose {
+		exDocTestArgs = append(exDocTestArgs, "-v")
+	}
+	exDocTestArgs = append(exDocTestArgs, "./...")
+	if err := runStreamingInDir(exDocDir, out, errOut, "go", exDocTestArgs...); err != nil {
+		return fmt.Errorf("go test failed on rendered doc example: %w", err)
+	}
 	os.RemoveAll(exDir)
 	fmt.Fprintln(out, "    example validation passed; cleaned up "+exDir)
 

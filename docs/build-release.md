@@ -73,7 +73,7 @@ Present only the release command after prep; do not add trailing commentary abou
 6. **Parse AC refs.** `AC[0-9]+` scan on the release message; composites like `AC60+AC61` yield multiple refs.
 7. **Apply writes.** Version bumps (per-file idempotent no-op when the file already has the target value); CHANGELOG row insertion under `| Unreleased | |`; AC file deletions plus `-critique.md` companion deletions. Skipped when `--dry-run`.
 8. **Post-check build.** `./build.sh` run after writes; skipped with `--no-build` or `--dry-run`.
-9. **Print release command.** Exactly `./build.sh vX.Y.Z "message"` — nothing else.
+9. **Print release command.** Labeled block: `release command:` followed by the indented command `./build.sh vX.Y.Z "message"`.
 
 CHANGELOG row shape (enforced by prep's insertion code and by convention):
 

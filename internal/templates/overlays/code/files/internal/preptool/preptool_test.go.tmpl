@@ -444,6 +444,17 @@ func TestPrepPrintsReleaseCommand(t *testing.T) {
 	}
 }
 
+// AC95 AT2: exact labeled-block shape emitted by emitReleaseCommand.
+func TestEmitReleaseCommandExactShape(t *testing.T) {
+	var buf bytes.Buffer
+	emitReleaseCommand(&buf, "v1.2.3", "AC95: template integrity")
+	got := buf.String()
+	want := "\nrelease command:\n  ./build.sh v1.2.3 \"AC95: template integrity\"\n"
+	if got != want {
+		t.Fatalf("emitReleaseCommand shape mismatch\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
 // AT13: --no-build skips phases 3 and 8.
 func TestPrepNoBuildFlagSkipsBuilds(t *testing.T) {
 	dir := t.TempDir()
