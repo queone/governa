@@ -124,40 +124,123 @@ func TestPrepErrorsOnExistingTag(t *testing.T) {
 	}
 }
 
-// AT5: programVersion detection covers single-binary and multi-binary cases
-// and ignores binaries without a programVersion constant.
+// AT5: programVersion detection covers single-utility and multi-utility cases.
+// Single-utility (1 target) is bumped (repo-tracked). Multi-utility (>1 targets)
+// is skipped per the safe auto-detect: per-utility independence is the default
+// when ambiguous, avoiding the clobber risk of bumping every utility to the
+// repo release version. Binaries without a programVersion constant are ignored.
 func TestPrepDetectsProgramVersionConstants(t *testing.T) {
-	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
-		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
-	mustWrite(t, filepath.Join(dir, "cmd", "bar", "main.go"),
-		"package main\n\nfunc main() {}\n") // no programVersion
-	mustWrite(t, filepath.Join(dir, "cmd", "baz", "main.go"),
-		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+	t.Run("single utility is bumped", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
+			"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+		mustWrite(t, filepath.Join(dir, "cmd", "bar", "main.go"),
+			"package main\n\nfunc main() {}\n") // no programVersion
 
-	targets, err := detectVersionTargets(dir)
-	if err != nil {
-		t.Fatalf("detectVersionTargets: %v", err)
-	}
-	var paths []string
-	for _, tgt := range targets {
-		if tgt.kind == "programVersion" {
-			paths = append(paths, tgt.path)
+		targets, warning, err := detectVersionTargets(dir)
+		if err != nil {
+			t.Fatalf("detectVersionTargets: %v", err)
 		}
-	}
-	want := []string{
-		filepath.Join(dir, "cmd", "baz", "main.go"),
-		filepath.Join(dir, "cmd", "foo", "main.go"),
-	}
-	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
-		t.Fatalf("programVersion targets = %v, want %v (bar/main.go must not appear)", paths, want)
-	}
+		if warning != "" {
+			t.Errorf("single-utility case: unexpected warning %q", warning)
+		}
+		var paths []string
+		for _, tgt := range targets {
+			if tgt.kind == "programVersion" {
+				paths = append(paths, tgt.path)
+			}
+		}
+		want := []string{filepath.Join(dir, "cmd", "foo", "main.go")}
+		if len(paths) != 1 || paths[0] != want[0] {
+			t.Fatalf("programVersion targets = %v, want %v (bar/main.go must not appear)", paths, want)
+		}
+	})
+
+	t.Run("multi-utility is skipped with warning", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
+			"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+		mustWrite(t, filepath.Join(dir, "cmd", "baz", "main.go"),
+			"package main\n\nconst programVersion = \"0.2.0\"\n\nfunc main() {}\n")
+
+		targets, warning, err := detectVersionTargets(dir)
+		if err != nil {
+			t.Fatalf("detectVersionTargets: %v", err)
+		}
+		for _, tgt := range targets {
+			if tgt.kind == "programVersion" {
+				t.Errorf("multi-utility case: programVersion target %s leaked through (must be skipped)", tgt.path)
+			}
+		}
+		if !strings.Contains(warning, "multi-utility") {
+			t.Errorf("multi-utility case: warning must mention multi-utility; got %q", warning)
+		}
+	})
+
+	t.Run("grouped const form is matched", func(t *testing.T) {
+		dir := t.TempDir()
+		groupedSrc := "package main\n\nconst (\n" +
+			"\tprogramName    = \"foo\"\n" +
+			"\tprogramVersion = \"1.0.0\"\n" +
+			")\n\nfunc main() {}\n"
+		mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"), groupedSrc)
+
+		targets, warning, err := detectVersionTargets(dir)
+		if err != nil {
+			t.Fatalf("detectVersionTargets: %v", err)
+		}
+		if warning != "" {
+			t.Errorf("single-utility grouped form: unexpected warning %q", warning)
+		}
+		var found bool
+		for _, tgt := range targets {
+			if tgt.kind == "programVersion" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("grouped const form: programVersion target not detected (regex must match block form)")
+		}
+	})
+
+	t.Run("grouped const form is bumped end-to-end", func(t *testing.T) {
+		dir := t.TempDir()
+		mainPath := filepath.Join(dir, "cmd", "foo", "main.go")
+		groupedSrc := "package main\n\nconst (\n" +
+			"\tprogramName    = \"foo\"\n" +
+			"\tprogramVersion = \"1.0.0\"\n" +
+			")\n\nfunc main() {}\n"
+		mustWrite(t, mainPath, groupedSrc)
+
+		targets, _, err := detectVersionTargets(dir)
+		if err != nil {
+			t.Fatalf("detectVersionTargets: %v", err)
+		}
+		for _, tgt := range targets {
+			if tgt.kind != "programVersion" {
+				continue
+			}
+			if err := applyVersionBump(tgt, "9.9.9"); err != nil {
+				t.Fatalf("applyVersionBump: %v", err)
+			}
+		}
+		updated, err := os.ReadFile(mainPath)
+		if err != nil {
+			t.Fatalf("read after bump: %v", err)
+		}
+		if !strings.Contains(string(updated), `programVersion = "9.9.9"`) {
+			t.Errorf("grouped const not bumped: %s", string(updated))
+		}
+		if strings.Contains(string(updated), `programVersion = "1.0.0"`) {
+			t.Errorf("old version still present: %s", string(updated))
+		}
+	})
 }
 
 // AT6: TEMPLATE_VERSION + TemplateVersion detection is presence-gated.
 func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 	dir := t.TempDir()
-	targets, err := detectVersionTargets(dir)
+	targets, _, err := detectVersionTargets(dir)
 	if err != nil {
 		t.Fatalf("detectVersionTargets (empty): %v", err)
 	}
@@ -172,7 +255,7 @@ func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 	// This fixture represents the governa-the-template-repo path.
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 
-	targets, err = detectVersionTargets(dir)
+	targets, _, err = detectVersionTargets(dir)
 	if err != nil {
 		t.Fatalf("detectVersionTargets: %v", err)
 	}
@@ -198,7 +281,7 @@ func TestPrepSkipsTemplateVersionOnConsumerRepo(t *testing.T) {
 		"package templates\n\nconst TemplateVersion = \"0.38.0\"\n")
 	// Consumer scenario: no internal/templates/base/ directory.
 
-	targets, err := detectVersionTargets(dir)
+	targets, _, err := detectVersionTargets(dir)
 	if err != nil {
 		t.Fatalf("detectVersionTargets: %v", err)
 	}
@@ -221,7 +304,7 @@ func TestPrepDetectsTemplateVersionOnTemplateRepo(t *testing.T) {
 		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 
-	targets, err := detectVersionTargets(dir)
+	targets, _, err := detectVersionTargets(dir)
 	if err != nil {
 		t.Fatalf("detectVersionTargets: %v", err)
 	}
@@ -244,7 +327,7 @@ func TestPrepDetectsProgramVersionBothRepoKinds(t *testing.T) {
 		dir := t.TempDir()
 		mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
 			"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
-		targets, _ := detectVersionTargets(dir)
+		targets, _, _ := detectVersionTargets(dir)
 		found := false
 		for _, tgt := range targets {
 			if tgt.kind == "programVersion" {
@@ -260,7 +343,7 @@ func TestPrepDetectsProgramVersionBothRepoKinds(t *testing.T) {
 		mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
 			"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
 		mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
-		targets, _ := detectVersionTargets(dir)
+		targets, _, _ := detectVersionTargets(dir)
 		found := false
 		for _, tgt := range targets {
 			if tgt.kind == "programVersion" {
@@ -286,7 +369,7 @@ func TestPrepBumpsVersionConstants(t *testing.T) {
 	// AC62: template-version detection gated on internal/templates/base/ presence.
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 
-	targets, _ := detectVersionTargets(dir)
+	targets, _, _ := detectVersionTargets(dir)
 	for _, t2 := range targets {
 		if err := applyVersionBump(t2, "0.2.0"); err != nil {
 			t.Fatalf("applyVersionBump %s: %v", t2.path, err)

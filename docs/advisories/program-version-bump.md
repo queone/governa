@@ -1,6 +1,15 @@
 # Advisory: programVersion Bump Regex + Semantics
 
-**Status:** Archived in governa as the canonical record. Origin: surfaced in the `utils` consumer repo during AC25 release prep on 2026-04-28. Tracked in `utils` as IE9 / AC26. This advisory is design input for governa AC96 (the library policy) and the downstream preptool-extraction AC that will ship `governa-preptool` under that policy. AC96 itself does not ship the library; the canonical fix venue is the library, designed under AC96 and landed via the extraction AC. This advisory is also forwardable to other consumer repos that applied governa before the structural pivot away from sync.
+**Status: RESOLVED.** governa AC100 landed the in-place dual-form regex + safe auto-detect fix in `internal/preptool/`. preptool stays template (the convention-coupling test rejected library extraction); consumer repos that want the fix pull it manually by reading the updated source on their own AC. Origin: surfaced in the `utils` consumer repo during AC25 release prep on 2026-04-28. Tracked in `utils` as IE9 / AC26.
+
+## Two valid mitigation patterns
+
+Both patterns are recorded for future readers facing this issue. Pick whichever fits.
+
+- **In-place patch** (the AC100 shape): single regex matches both inline `const programVersion = "..."` and grouped `const ( ... programVersion = "..." ... )` forms. Auto-detect skips bumps when more than one `programVersion` target is present (multi-utility repo → per-utility-independent default). For governa's source patch, see git history at AC100 commit; for application in a consumer repo, copy the regex change + the auto-detect filter from `internal/preptool/preptool.go` onto the consumer's local copy.
+- **Doctrine + guard** (the utils AC26 shape): codify per-utility independence in the consumer's release docs (e.g. `docs/build-release.md`); add a guard test that asserts `cmd/*/main.go` bytes do not change after a prep dry-run with a sentinel target version. No preptool code change. Functionally equivalent for multi-utility consumers — the buggy single-regex silently skips the grouped form, which is correct-by-accident for utils-style repos. The guard test prevents anyone from "fixing" the regex naively and triggering a mass downgrade.
+
+Consumers facing this issue pick whichever pattern fits — neither requires steward coordination. governa does not track adoption.
 
 ## Symptom
 
@@ -32,30 +41,11 @@ Do not land a regex-only fix without first deciding bump semantics.
 1. **Regex layer:** `programVersionRe` does not match the grouped `const ( ... )` form, even though that form is idiomatic Go and widely used in consumer repos.
 2. **Semantics layer:** preptool implicitly assumes per-utility `programVersion` should track the repo release version. That assumption is wrong for multi-utility repos where each utility evolves on its own SemVer line.
 
-## Canonical Fix (governa-side)
+## Resolution (governa AC100)
 
-The `governa-preptool` library, when designed under AC96, should distinguish two modes and let consumers select per-repo:
+The full library extraction (`governa-preptool`) was attempted under AC100 and rejected per the convention-coupling test in `docs/library-policy.md`: preptool encodes too much governance (AC file shape, CHANGELOG row format, `internal/templates/base/` detection, critique-companion shape) for a clean library API to exist. preptool stays template; the IE9 fix landed in-place in `internal/preptool/preptool.go`:
 
-- **Repo-tracked mode** — `programVersion` is bumped to the repo release version at prep time. Suitable for single-utility repos where `programVersion == repo tag` is the convention.
-- **Per-utility-independent mode** — `programVersion` is owned by each utility's own AC; prep does not touch `cmd/*/main.go`. Suitable for multi-utility repos.
+- **Single regex** matching both inline and grouped const forms: `(programVersion\s*(?:string\s*)?=\s*)"([^"]*)"`. The `const` keyword is intentionally not required by the regex — the grouped form has it on a different line.
+- **Safe auto-detect filter** in `detectVersionTargets`: count `programVersion` matches across `cmd/*/main.go`. Exactly 1 → bump (single-utility, repo-tracked). >1 → drop all targets, log a multi-utility warning (per-utility-independent, each utility owns its own version per its own AC). The skip avoids the clobber risk that broadening the regex without mode handling would have introduced.
 
-Mode selection options (open question, to be decided in the preptool-extraction AC):
-
-- Auto-detect: one `cmd/*/main.go` → repo-tracked; multiple → per-utility-independent.
-- Explicit config: a flag in a repo-level governa/preptool config file.
-- Hybrid: auto-detect with explicit override.
-
-Whichever mode is active, the regex must support both inline and grouped const forms — `internal/buildtool/buildtool.go` already demonstrates the dual-regex pattern (`programVersionInlineRe` + `programVersionBlockRe`) and is a clean reference.
-
-## Per-Consumer Guidance
-
-- **Single-utility repos:** likely affected only if the utility uses the grouped const form. If on inline form, the bug never triggers. Verify by grepping `cmd/*/main.go` for the grouped form. Recommended posture: repo-tracked mode (status quo intent), pick up the dual-regex fix when `governa-preptool` ships.
-- **Multi-utility repos:** affected. Current silent-skip behavior is correct-by-accident; do not "fix" the regex locally without first removing the bump path or selecting per-utility-independent mode. Recommended posture: codify per-utility-independent doctrine in repo's release docs, add a guard test that pins the silent-skip behavior, then either (a) wait for `governa-preptool` and adopt per-utility-independent at migration time, or (b) remove the `cmd/*/main.go` scan from local preptool now (note: any local code change is throwaway when migrating to the library).
-
-## Recommended Steward Actions
-
-1. Fold this advisory into the design work for `governa-preptool` extraction. The library is the canonical-fix venue; the dual-regex + mode-contract decision is a design input there, not a patch to governa's current monolith preptool.
-2. Decide and document mode selection in `governa-preptool` (auto-detect via `cmd/*/main.go` count vs. explicit per-repo config vs. hybrid).
-3. Once `governa-preptool` ships, each former-governa consumer drafts its own AC to migrate from the locally-owned preptool copy to the imported library, picking the mode that matches its shape (single-utility → repo-tracked; multi-utility → per-utility-independent).
-4. Maintain a steward-side ledger of which consumer repos have migrated and which still carry the broken regex in their local copy.
-5. Until the library ships, consumer repos discovering this trap should land doctrine + a guard test only (see `utils` AC26 for the reference shape) and avoid local code changes that will be discarded at migration time.
+Auto-detect was chosen over explicit-config override because it produces correct behavior for both known consumer shapes (single-utility repos including governa = bump; multi-utility repos like `utils` = skip) without configuration. Explicit override may be added later as a minor preptool change if a consumer surfaces a need.

@@ -30,7 +30,16 @@ type Config struct {
 
 var (
 	semverTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
-	programVersionRe = regexp.MustCompile(`(const\s+programVersion\s*=\s*)"([^"]+)"`)
+	// programVersionRe matches the `programVersion = "x.y.z"` assignment line
+	// regardless of whether it appears in the inline form (`const programVersion = "..."`)
+	// or the grouped form (`const ( ... programVersion = "..." ... )`). The
+	// preceding `const` keyword is intentionally NOT required by the regex:
+	// the grouped form has it on a different line. preptool only scans
+	// cmd/*/main.go files, where the convention restricts programVersion to a
+	// const declaration in one of those two forms; false positives (e.g. a
+	// `var programVersion` or a string literal containing this pattern) are
+	// vanishingly unlikely in practice.
+	programVersionRe = regexp.MustCompile(`(programVersion\s*(?:string\s*)?=\s*)"([^"]*)"`)
 	templateConstRe  = regexp.MustCompile(`(const\s+TemplateVersion\s*=\s*)"([^"]+)"`)
 	acRefRe          = regexp.MustCompile(`AC[0-9]+`)
 	// acFileRe matches docs/ac<N>-<slug>.md and any companion suffix; we split
@@ -140,9 +149,12 @@ func Run(cfg Config) error {
 	}
 
 	// Phase 4: detect version targets.
-	versionTargets, err := detectVersionTargets(cfg.RepoRoot)
+	versionTargets, multiUtilityWarning, err := detectVersionTargets(cfg.RepoRoot)
 	if err != nil {
 		return fmt.Errorf("prep: detect version targets: %w", err)
+	}
+	if multiUtilityWarning != "" {
+		fmt.Fprintln(cfg.Out, multiUtilityWarning)
 	}
 
 	// Phase 5: detect CHANGELOG targets + fail-fast idempotency guard.
@@ -319,11 +331,22 @@ type versionTarget struct {
 	kind string // "programVersion", "TemplateVersion", "TEMPLATE_VERSION"
 }
 
-func detectVersionTargets(repoRoot string) ([]versionTarget, error) {
+// detectVersionTargets scans the repo for programVersion declarations and
+// template-version targets. The programVersion scan applies a safe auto-detect
+// filter: if exactly one cmd/*/main.go declares programVersion, it is bumped
+// (single-utility repo, repo-tracked behavior). If multiple declare it, all
+// are dropped from the target list (multi-utility repo, per-utility-independent
+// behavior — each utility owns its own version per its own AC). The skip is
+// announced via the returned warning, which the caller logs.
+func detectVersionTargets(repoRoot string) ([]versionTarget, string, error) {
 	var targets []versionTarget
+	var warning string
 
 	// cmd/*/main.go scan for programVersion. Legitimate in both template and
-	// consumer repos — always scanned.
+	// consumer repos — always scanned. The programVersionRe regex matches
+	// both inline (`const programVersion = "..."`) and grouped
+	// (`const ( ... programVersion = "..." ... )`) forms.
+	var pvTargets []versionTarget
 	cmdDir := filepath.Join(repoRoot, "cmd")
 	entries, err := os.ReadDir(cmdDir)
 	if err == nil {
@@ -337,9 +360,23 @@ func detectVersionTargets(repoRoot string) ([]versionTarget, error) {
 				continue
 			}
 			if programVersionRe.Match(content) {
-				targets = append(targets, versionTarget{path: mainPath, kind: "programVersion"})
+				pvTargets = append(pvTargets, versionTarget{path: mainPath, kind: "programVersion"})
 			}
 		}
+	}
+	// Safe auto-detect: 1 target → bump (repo-tracked); >1 targets → skip all
+	// (multi-utility repo, per-utility-independent default). The skip avoids
+	// the clobber risk of bumping every utility to the repo release version.
+	switch {
+	case len(pvTargets) == 1:
+		targets = append(targets, pvTargets[0])
+	case len(pvTargets) > 1:
+		paths := make([]string, len(pvTargets))
+		for i, t := range pvTargets {
+			paths[i] = t.path
+		}
+		warning = fmt.Sprintf("multi-utility repo detected (%d programVersion targets): per-utility programVersion bumps skipped (each utility owns its own version per its own AC). Skipped: %s",
+			len(pvTargets), strings.Join(paths, ", "))
 	}
 
 	// Template-version targets (TEMPLATE_VERSION + internal/templates/version.go)
@@ -359,7 +396,7 @@ func detectVersionTargets(repoRoot string) ([]versionTarget, error) {
 	}
 
 	sort.SliceStable(targets, func(i, j int) bool { return targets[i].path < targets[j].path })
-	return targets, nil
+	return targets, warning, nil
 }
 
 func detectChangelogTargets(repoRoot, version string) ([]string, error) {
