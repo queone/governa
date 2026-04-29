@@ -79,6 +79,10 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 - [`docs/README.md`](docs/README.md)
 - [`docs/roles.md`](docs/roles.md)
 
+## Library Family
+
+governa is shifting from a single one-off-applied template to a layered model: convention applied once + code distributed as separate-repo libraries (`governa-<x>`). This section lists the library family as extractions land. Currently empty — extractions are gated by [`docs/library-policy.md`](docs/library-policy.md). See also [`docs/advisories/`](docs/advisories/) for portable advisories surfaced from consumer repos.
+
 ## Rendered Examples
 
 Run `governa examples` to render both CODE and DOC overlays to `/tmp/governa-examples/` for inspection or testing.

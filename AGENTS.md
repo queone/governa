@@ -94,3 +94,4 @@ Rules:
 
 - Every source-level change to `internal/` must propagate to two sites in the same pass: (1) the source file and (2) the overlay template under `internal/templates/overlays/`. Run `./build.sh` to validate — it renders examples to a temp dir and runs `go vet`/`go test` against them. A change is not done until both sites are consistent.
 - Keep generated repos self-contained. No runtime dependence on this template repo.
+- Track forward-looking work in `plan.md` only via IE entries (shapes (a) and (b) defined in `plan.md`'s docstring). Do not invent top-level sections (e.g. `## <Name> Track`) to track work. For multi-AC tracks, draft skeleton AC stubs first, then register one IE (shape (b)) per stub pointing to its AC file.
