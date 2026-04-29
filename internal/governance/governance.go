@@ -632,17 +632,7 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 		rel := strings.TrimPrefix(path, overlayPrefix+"/")
 		if cfg.Type == RepoTypeCode && !stackSuggestsGo(cfg.Stack) &&
 			(rel == "cmd/rel/main.go.tmpl" ||
-				rel == "cmd/build/main.go.tmpl" ||
-				strings.HasPrefix(rel, "internal/color/") ||
-				strings.HasPrefix(rel, "internal/buildtool/") ||
-				strings.HasPrefix(rel, "internal/reltool/")) {
-			return nil
-		}
-		// Skip Go internal packages when module path is unknown (adopt without go.mod)
-		if modulePath == "" &&
-			(strings.HasPrefix(rel, "internal/color/") ||
-				strings.HasPrefix(rel, "internal/buildtool/") ||
-				strings.HasPrefix(rel, "internal/reltool/")) {
+				rel == "cmd/build/main.go.tmpl") {
 			return nil
 		}
 		targetRel := strings.TrimSuffix(rel, ".tmpl")

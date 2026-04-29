@@ -33,7 +33,7 @@ These rules and files are code-repo specific and should not appear in the base c
 Governance + planning + release tooling for documentation repos. Editorial structure (voice guides, style guides, publishing workflows) is the repo owner's domain.
 
 - `plan.md` for content direction, editorial goals, and ideas to explore
-- release tooling (`rel.sh`, `cmd/rel/main.go`, `internal/reltool/`)
+- release tooling (`rel.sh`, `cmd/rel/main.go`, importing `github.com/queone/governa-reltool`)
 - review rules for editorial quality, accuracy, consistency, and source handling
 
 ## Boundary Rules

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.97.1 | AC101: governa shrinkage — dead governance.go guards + doc cleanup |
 | 0.97.0 | AC100: preptool stays template; in-place programVersion fix |
 | 0.96.0 | AC99: extract internal/buildtool to governa-buildtool v0.1.0 |
 | 0.95.0 | AC98: extract internal/reltool to governa-reltool v0.1.0 |
