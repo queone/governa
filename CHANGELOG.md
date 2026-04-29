@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.95.0 | AC98: extract internal/reltool to governa-reltool v0.1.0 |
 | 0.94.0 | AC97: extract internal/color to governa-color v0.1.2 |
 | 0.93.0 | AC96: library extraction policy + advisory archive bootstrap |
 | 0.92.0 | AC95: template integrity — DOC validation, color_test overlay, doc alignment |

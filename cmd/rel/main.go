@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/queone/governa/internal/reltool"
+	"github.com/queone/governa-reltool"
 )
 
 func main() {

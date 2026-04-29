@@ -84,6 +84,7 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 governa is shifting from a single one-off-applied template to a layered model: convention applied once + code distributed as separate-repo libraries (`governa-<x>`). Extractions are gated by [`docs/library-policy.md`](docs/library-policy.md). See also [`docs/advisories/`](docs/advisories/) for portable advisories surfaced from consumer repos.
 
 - [`governa-color`](https://github.com/queone/governa-color) — ANSI terminal color helpers for CLI output.
+- [`governa-reltool`](https://github.com/queone/governa-reltool) — Git tag, commit, and push orchestration for release flows.
 
 ## Rendered Examples
 

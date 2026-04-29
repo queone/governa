@@ -16,7 +16,7 @@ Current contents:
 - `docs/README.md`
 - `docs/release.md`
 - `docs/roles.md`
-- `internal/reltool/reltool.go`
-- `internal/reltool/reltool_test.go`
 - `plan.md`
 - `rel.sh`
+
+Color helpers and release orchestration come from `github.com/queone/governa-color` and `github.com/queone/governa-reltool`, imported by the rendered `cmd/rel`.

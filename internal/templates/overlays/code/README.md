@@ -24,11 +24,9 @@ Current contents:
 - `internal/buildtool/buildtool_test.go`
 - `internal/preptool/preptool.go`
 - `internal/preptool/preptool_test.go`
-- `internal/reltool/reltool.go`
-- `internal/reltool/reltool_test.go`
 - `plan.md`
 - `README.md`
 
-Go-stack packages (`cmd/build`, `cmd/prep`, `cmd/rel`, `internal/buildtool`, `internal/preptool`, `internal/reltool`) are included only when the stack suggests Go. Color helpers come from the `github.com/queone/governa-color` library, imported by the rendered `buildtool` and `reltool` packages.
+Go-stack packages (`cmd/build`, `cmd/prep`, `cmd/rel`, `internal/buildtool`, `internal/preptool`) are included only when the stack suggests Go. Color helpers come from the `github.com/queone/governa-color` library, imported by the rendered `buildtool` package and by the rendered `cmd/rel`. Release orchestration (semver tag + git push) comes from the `github.com/queone/governa-reltool` library, imported by the rendered `cmd/rel`.
 
 See `plan.md` for future overlay improvements.
