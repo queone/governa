@@ -85,6 +85,7 @@ governa is shifting from a single one-off-applied template to a layered model: c
 
 - [`governa-color`](https://github.com/queone/governa-color) — ANSI terminal color helpers for CLI output.
 - [`governa-reltool`](https://github.com/queone/governa-reltool) — Git tag, commit, and push orchestration for release flows.
+- [`governa-buildtool`](https://github.com/queone/governa-buildtool) — Build pipeline orchestration: programVersion validation, vet/test, build/install, next-tag suggestion.
 
 ## Rendered Examples
 

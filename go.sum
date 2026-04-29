@@ -1,3 +1,5 @@
+github.com/queone/governa-buildtool v0.1.0 h1:NAv5jMr8eDB6zcBTZlnTbBmybbfUpQ0lVUE9PrD/r70=
+github.com/queone/governa-buildtool v0.1.0/go.mod h1:Joix/tV0qwPUK55Ko+T/n5L1Rl13lWYf2uLz5GtytfI=
 github.com/queone/governa-color v0.1.2 h1:6dYRRCRcyUKtP1aeAupaJ4J7cqMX8PAqGVzYnR8ztVY=
 github.com/queone/governa-color v0.1.2/go.mod h1:hQRFFa1Ko11gJl8iUe2EzFG75cfWBCSSb+aoTUAy9UY=
 github.com/queone/governa-reltool v0.1.0 h1:BrbPlLfbL4Tpq/aw4iNF6wilnEgYW5HFcccLP0nn0XM=
