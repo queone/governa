@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/queone/governa/internal/color"
+	"github.com/queone/governa-color"
 	"github.com/queone/governa/internal/governance"
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.93.0"
+const programVersion = "0.94.0"
 
 const sourceRepo = "github.com/queone/governa"
 

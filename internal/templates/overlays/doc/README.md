@@ -16,8 +16,6 @@ Current contents:
 - `docs/README.md`
 - `docs/release.md`
 - `docs/roles.md`
-- `internal/color/color.go`
-- `internal/color/color_test.go`
 - `internal/reltool/reltool.go`
 - `internal/reltool/reltool_test.go`
 - `plan.md`

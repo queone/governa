@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/queone/governa/internal/color"
+	"github.com/queone/governa-color"
 )
 
 var semverTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)

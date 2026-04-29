@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/queone/governa/internal/color"
+	"github.com/queone/governa-color"
 	"github.com/queone/governa/internal/templates"
 )
 

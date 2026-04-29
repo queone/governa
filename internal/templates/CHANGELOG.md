@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.94.0 | AC97: extract internal/color to governa-color v0.1.2 |
 | 0.93.0 | AC96: library extraction policy + advisory archive bootstrap |
 | 0.92.0 | AC95: template integrity — DOC validation, color_test overlay, doc alignment |
 | 0.91.0 | AC94: 2-role consolidation — Operator+Director, mandatory self-review |

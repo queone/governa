@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/queone/governa/internal/color"
+	"github.com/queone/governa-color"
 )
 
 type Config struct {
@@ -202,6 +202,9 @@ func Run(cfg Config, out io.Writer, errOut io.Writer) error {
 		subDir := filepath.Join(exDir, sub)
 		if _, err := os.Stat(subDir); err != nil {
 			return fmt.Errorf("example dir missing: %s", subDir)
+		}
+		if err := runStreamingInDir(subDir, out, errOut, "go", "mod", "tidy"); err != nil {
+			return fmt.Errorf("go mod tidy in %s: %w", subDir, err)
 		}
 	}
 	if output, failed := runCapturedCheckInDir(exCodeDir, "go", "vet", "./..."); failed {

@@ -33,9 +33,10 @@ Each library README contains the following sections in order:
 
 1. `# governa-<x>` (title).
 2. One-paragraph purpose statement — what the library does, in convention-free terms.
-3. `## Install` — one-line `go get github.com/queone/governa-<x>` snippet.
-4. `## Usage` — minimum-viable example showing the most common entry point.
-5. `## Versioning` — the back-reference clause: "This library follows the policy in [governa/docs/library-policy.md](https://github.com/queone/governa/blob/main/docs/library-policy.md). See `CHANGELOG.md` for version history and deprecations."
+3. `## Why` — short explanation of why this library exists in the governa family: the problem it solves, who uses it, why it lives in a separate repo rather than embedded in each consumer. Mirrors governa's own README pattern. Two short paragraphs is plenty.
+4. `## Install` — one-line `go get github.com/queone/governa-<x>` snippet.
+5. `## Usage` — minimum-viable example showing the most common entry point.
+6. `## Versioning` — the back-reference clause: "This library follows the policy in [governa/docs/library-policy.md](https://github.com/queone/governa/blob/main/docs/library-policy.md). See `CHANGELOG.md` for version history and deprecations."
 
 Boilerplate template (copy-paste starting point):
 
@@ -43,6 +44,10 @@ Boilerplate template (copy-paste starting point):
 # governa-<x>
 
 <one-paragraph purpose statement>
+
+## Why
+
+<two-paragraph explanation of why the library exists, the problem it solves, and how it fits into the governa family>
 
 ## Install
 
@@ -59,21 +64,16 @@ This library follows the policy in [governa/docs/library-policy.md](https://gith
 
 ## CHANGELOG Format
 
-Per-library CHANGELOG follows Keep-a-Changelog conventions.
+Per-library CHANGELOG follows the same shape as governa's CHANGELOG. Canonical spec lives in [`docs/build-release.md`](build-release.md#pre-release-checklist) under "CHANGELOG row shape." Summary:
 
-File header:
+- `# Changelog` heading.
+- 2-column markdown table: `| Version | Summary |` with a `|---|---|` separator.
+- First data row: `| Unreleased | |`.
+- One row per release: `| <version> | <one-line summary> |`. Versions are unprefixed (`0.1.0`, not `v0.1.0`).
+- Summaries are single-line, ≤ 500 characters; lead with a short tag (`fix:`, `doc:`, AC ref) when applicable.
+- **No dates.** **No Keep-a-Changelog sub-sections** (`### Added` etc.) — the per-row summary is the entire entry.
 
-```markdown
-# Changelog
-
-All notable changes to this project are documented in this file.
-
-The format is based on Keep a Changelog and this project adheres to Semantic Versioning.
-```
-
-Per-version section: `## [<version>] - <YYYY-MM-DD>` with sub-sections in this order: `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`. Omit empty sub-sections.
-
-The first entry of any library's CHANGELOG is `## [0.1.0] - <YYYY-MM-DD>` for the initial extraction. Pre-1.0 versions follow standard SemVer pre-1.0 conventions (anything may change; minor bumps for breaking changes are allowed but discouraged once consumers exist).
+The first row of any library's CHANGELOG is `| 0.1.0 | initial extraction from governa internal/<x> |`. Pre-1.0 versions follow standard SemVer pre-1.0 conventions (anything may change; minor bumps for breaking changes are allowed but discouraged once consumers exist).
 
 ## Semver and Deprecation
 
@@ -118,6 +118,17 @@ When a library is extracted, governa's own CLI (`cmd/governa/main.go`) becomes t
 **Rule:** an extraction is incomplete until governa's CLI imports the new library and the build (`./build.sh`) passes.
 
 **Diagnostic value:** if the library API cannot be imported cleanly into governa's own CLI — if the import requires shims, type adapters, or convention-specific glue — the split is wrong before any external consumer sees it. The First-Consumer Self-Test is the tight feedback loop that catches a bad split at extraction time, not at first-consumer-migration time.
+
+### Automated convention-coupling recheck
+
+Each extraction AC MUST include an **automated** acceptance test that re-applies the convention-coupling test against the published library source (not just against the planned API). Pattern:
+
+```bash
+src=$(go list -m -json github.com/queone/governa-<x> | jq -r .Dir)
+! rg -i 'AGENTS|CLAUDE|CHANGELOG|critique|governed|governance|ac[0-9]+|docs/' "$src"/<src files>
+```
+
+Returns clean if no governance terms slipped through extraction. A match (e.g., a stray AC reference in a code comment that came along with a verbatim copy) is a finding — clean it up and bump the library to a patch version. The recheck must remain automated; it is not a Director-eyeball task. The `rg` term list is the policy's enumerated governance touch-points (kept in sync with the Convention-Coupling Test section above).
 
 ## Pivot-Period Consumer Guidance
 

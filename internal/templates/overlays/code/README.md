@@ -22,8 +22,6 @@ Current contents:
 - `docs/roles.md`
 - `internal/buildtool/buildtool.go`
 - `internal/buildtool/buildtool_test.go`
-- `internal/color/color.go`
-- `internal/color/color_test.go`
 - `internal/preptool/preptool.go`
 - `internal/preptool/preptool_test.go`
 - `internal/reltool/reltool.go`
@@ -31,6 +29,6 @@ Current contents:
 - `plan.md`
 - `README.md`
 
-Go-stack packages (`cmd/build`, `cmd/prep`, `cmd/rel`, `internal/buildtool`, `internal/preptool`, `internal/reltool`, `internal/color`) are included only when the stack suggests Go.
+Go-stack packages (`cmd/build`, `cmd/prep`, `cmd/rel`, `internal/buildtool`, `internal/preptool`, `internal/reltool`) are included only when the stack suggests Go. Color helpers come from the `github.com/queone/governa-color` library, imported by the rendered `buildtool` and `reltool` packages.
 
 See `plan.md` for future overlay improvements.
