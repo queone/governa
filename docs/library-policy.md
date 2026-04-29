@@ -111,6 +111,10 @@ The gating check applied during each extraction AC's drafting. It determines whe
 
 This test is applied as a checklist during each extraction AC's drafting, not as a one-time judgment about all packages at once. It is also re-applied if the API surface grows during implementation.
 
+### Convention-coupled boilerplate stays in-tree
+
+The convention-coupling test identifies code that extracts cleanly. Its corollary: code that doesn't pass the test stays where it is. This includes thin Go cmd wrappers around extracted libraries when the wrapper is invoked via `go run ./cmd/<x>` from a project-local script (`build.sh`). Extracting such wrappers to the library's own `cmd/` works mechanically but trades inert ~20-line boilerplate for live version-pin propagation in non-Go scripts (`build.sh`, `build.sh.tmpl`), lacking compiler verification. When you find boilerplate that looks extractable, ask: is this a generic CLI anyone outside the family would invoke? If no, it stays in-tree; encode the reasoning at the call site (load-bearing comment) so the next pass doesn't re-litigate. AC102 set the precedent for `cmd/rel` and `cmd/build`.
+
 ## First-Consumer Self-Test
 
 When a library is extracted, governa's own CLI (`cmd/governa/main.go`) becomes the first consumer of it.

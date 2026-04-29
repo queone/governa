@@ -1,5 +1,12 @@
 // build is based on an original build.sh Bash script from the source project
 // that inspired this template.
+//
+// Thin wrapper. Logic lives in github.com/queone/governa-buildtool.
+// governa's local copy registers a PostInstallHook for example-rendering
+// (renderAndValidateExamples below); the consumer-facing overlay does NOT
+// register a hook. Kept in-tree (not extracted to the library's cmd/) for the
+// same reason as cmd/rel: extraction would move version pinning into build.sh
+// files. See AC102 reasoning.
 package main
 
 import (
