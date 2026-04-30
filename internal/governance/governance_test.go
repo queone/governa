@@ -216,23 +216,37 @@ func TestRunApplyProducesAdoptionAC(t *testing.T) {
 	mustContain(t, text, "## In Scope")
 	mustContain(t, text, "## Status")
 	mustContain(t, text, "consumer-owned")
+	// AC103 Part A AT2: nested files appear as repo-relative slash paths
+	// in the In Scope list, not as bare basenames.
+	mustContain(t, text, "- `docs/development-cycle.md`")
 }
 
 // AC88: renderApplyAC lists files from operations and marks consumer ownership.
+// AC103 Part A: list entries use repo-relative slash paths, not basenames.
 func TestRenderApplyACShape(t *testing.T) {
 	t.Parallel()
+	const targetAbs = "/tmp/t"
 	ops := []operation{
-		{kind: "write", path: "/tmp/t/AGENTS.md", note: "governance contract"},
-		{kind: "symlink", path: "/tmp/t/CLAUDE.md", linkTo: "AGENTS.md"},
+		{kind: "write", path: filepath.Join(targetAbs, "AGENTS.md"), note: "governance contract"},
+		{kind: "symlink", path: filepath.Join(targetAbs, "CLAUDE.md"), linkTo: "AGENTS.md"},
+		{kind: "write", path: filepath.Join(targetAbs, "docs", "roles.md"), note: "overlay file"},
 		{kind: "skip"},
 	}
-	out := renderApplyAC("0.60.0", Config{Type: RepoTypeCode, RepoName: "x"}, ops)
+	out := renderApplyAC("0.60.0", Config{Type: RepoTypeCode, RepoName: "x"}, ops, targetAbs)
 	mustContain(t, out, "# AC1 Governa Apply")
 	mustContain(t, out, "0.60.0")
 	mustContain(t, out, "AGENTS.md")
 	mustContain(t, out, "CLAUDE.md")
 	mustContain(t, out, "consumer-owned")
 	mustContain(t, out, "## Acceptance Tests")
+	// AC103 Part A AT1: nested files render as repo-relative slash paths,
+	// never as basename-only.
+	mustContain(t, out, "- `docs/roles.md`")
+	for line := range strings.SplitSeq(out, "\n") {
+		if line == "- `roles.md`" || strings.HasPrefix(line, "- `roles.md` (") {
+			t.Errorf("nested entry should not render as basename-only; got line: %q", line)
+		}
+	}
 	if strings.Count(out, "skip") > 0 {
 		lines := strings.SplitSeq(out, "\n")
 		for l := range lines {

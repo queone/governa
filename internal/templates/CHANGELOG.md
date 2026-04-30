@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.98.0 | AC103: repo-relative paths in adoption AC In Scope list |
 | 0.97.2 | AC102: in-tree wrapper rationale — comments + policy corollary |
 | 0.97.1 | AC101: governa shrinkage — dead governance.go guards + doc cleanup |
 | 0.97.0 | AC100: preptool stays template; in-place programVersion fix |

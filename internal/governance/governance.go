@@ -378,7 +378,7 @@ func runApply(tfs fs.FS, cfg Config) error {
 
 	// Write adoption AC
 	applyACPath := filepath.Join(targetAbs, "docs", "ac1-governa-apply.md")
-	applyACContent := renderApplyAC(templates.TemplateVersion, cfg, canonical)
+	applyACContent := renderApplyAC(templates.TemplateVersion, cfg, canonical, targetAbs)
 	if err := os.MkdirAll(filepath.Dir(applyACPath), 0o755); err != nil {
 		return fmt.Errorf("create docs/: %w", err)
 	}
@@ -779,7 +779,9 @@ func joinOrNone(items []string) string {
 }
 
 // renderApplyAC produces the docs/ac1-governa-apply.md adoption record.
-func renderApplyAC(templateVersion string, cfg Config, ops []operation) string {
+// targetAbs is the absolute path of the apply target; it is used to render
+// each op's path as a repo-relative slash path in the In Scope list.
+func renderApplyAC(templateVersion string, cfg Config, ops []operation, targetAbs string) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, "# AC1 Governa Apply")
 	fmt.Fprintln(&b)
@@ -797,7 +799,7 @@ func renderApplyAC(templateVersion string, cfg Config, ops []operation) string {
 		if op.kind == "skip" {
 			continue
 		}
-		fmt.Fprintf(&b, "- `%s`", filepath.Base(op.path))
+		fmt.Fprintf(&b, "- `%s`", displayPath(targetAbs, op.path))
 		if op.note != "" {
 			fmt.Fprintf(&b, " (%s)", op.note)
 		}
