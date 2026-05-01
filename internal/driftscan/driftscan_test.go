@@ -94,9 +94,9 @@ func TestStagingHappy(t *testing.T) {
 		"# AC1 Drift-Scan from governa @",
 		"## Summary\n\n<!-- TBD by Operator -->",
 		"## Objective Fit\n\n<!-- TBD by Operator -->",
-		"## Director Review\n\nNone.",
 		"## Status\n\n`PENDING` — awaiting Director critique.",
 		"### Post-merge coherence audit\n\n<!-- TBD by Operator -->",
+		"Counts: ",
 	} {
 		if !strings.Contains(acContent, want) {
 			t.Errorf("AC content missing %q", want)
@@ -114,7 +114,8 @@ func TestStagingHappy(t *testing.T) {
 		t.Errorf("plan.md must not carry shape-(a) ambiguity IEs, got:\n%s", plan)
 	}
 	// AT count: exactly one IE-grep AT (the shape-(b) one); no per-ambiguity ATs.
-	atIECount := strings.Count(acContent, "rg -q '^- IE")
+	// AT shape post-AC4 fixes: literal-string match (`rg -qF`) on the full IE entry.
+	atIECount := strings.Count(acContent, "rg -qF -- '- IE")
 	if atIECount != 1 {
 		t.Errorf("expected exactly 1 IE-grep AT in AC, got %d:\n%s", atIECount, acContent)
 	}
@@ -442,16 +443,16 @@ func TestNonexistentTarget(t *testing.T) {
 }
 
 // H2 regression: plan.md content divergence is expected and must classify
-// as match (not ambiguity / clear-sync).
-func TestPlanMdAlwaysMatches(t *testing.T) {
+// as expected-divergence (not ambiguity / clear-sync, and not the misleading
+// `match` label used pre-AC4-fixes).
+func TestPlanMdExpectedDivergence(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
 	out := captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	// plan.md should appear with classification `match` (per-repo content).
-	if !strings.Contains(out, "### `plan.md` — match") {
-		t.Errorf("expected plan.md classified as match, got:\n%s", out)
+	if !strings.Contains(out, "### `plan.md` — expected-divergence") {
+		t.Errorf("expected plan.md classified as expected-divergence, got:\n%s", out)
 	}
 }
 
@@ -474,5 +475,164 @@ func TestReportShape(t *testing.T) {
 	buf.Write(data)
 	if !strings.HasPrefix(buf.String(), "# Drift-Scan Report") {
 		t.Errorf("expected report header, got: %s", buf.String()[:50])
+	}
+}
+
+// Counts: "X expected-divergence, Y ambiguity, Z missing-in-target" tally line
+// must appear in both the terminal report header and the AC's Implementation Notes.
+func TestCountsTallyLine(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+
+	out := captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	if !strings.Contains(out, "- Counts: ") {
+		t.Errorf("terminal report missing Counts line, got:\n%s", out)
+	}
+
+	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 staged AC, got %d", len(matches))
+	}
+	ac := mustRead(t, matches[0])
+	if !strings.Contains(ac, "Counts: ") {
+		t.Errorf("AC missing Counts line in Implementation Notes, got:\n%s", ac)
+	}
+	if !strings.Contains(ac, "missing-in-target") {
+		t.Errorf("AC Counts line missing missing-in-target, got:\n%s", ac)
+	}
+}
+
+// Pure-function test for tallyClassifications.
+func TestTallyClassifications(t *testing.T) {
+	files := []FileResult{
+		{Classification: ClassMatch},
+		{Classification: ClassMatch},
+		{Classification: ClassPreserve},
+		{Classification: ClassAmbiguity},
+	}
+	got := tallyClassifications(files)
+	want := "2 match, 1 preserve, 1 ambiguity"
+	if got != want {
+		t.Errorf("tally got %q, want %q", got, want)
+	}
+	if tallyClassifications(nil) != "0 files" {
+		t.Errorf("empty tally should be %q, got %q", "0 files", tallyClassifications(nil))
+	}
+}
+
+// Pure-function test for previewCanonContent.
+func TestPreviewCanonContent(t *testing.T) {
+	short := "a\nb\nc\n"
+	if got := previewCanonContent(short, 30); got != "a\nb\nc" {
+		t.Errorf("short preview should be returned unchanged, got %q", got)
+	}
+	long := strings.Repeat("x\n", 50)
+	got := previewCanonContent(long, 10)
+	if !strings.Contains(got, "[... 40 more lines truncated ...]") {
+		t.Errorf("long preview missing truncation marker, got %q", got)
+	}
+	if got, want := strings.Count(got, "x"), 10; got != want {
+		t.Errorf("long preview should have %d kept lines, got %d", want, got)
+	}
+}
+
+// annotateCommit suffixes adoption-style commits with `(adoption)`.
+func TestAnnotateCommit(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"abc1234 AC1: adopt Governa v0.90.0 DOC overlay", "abc1234 AC1: adopt Governa v0.90.0 DOC overlay (adoption)"},
+		{"def5678 govern tips repo and add about + new entries", "def5678 govern tips repo and add about + new entries (adoption)"},
+		{"ghi9012 AC3: cmd/rel limit 60→80", "ghi9012 AC3: cmd/rel limit 60→80"},
+	}
+	for _, c := range cases {
+		if got := annotateCommit(c.in); got != c.want {
+			t.Errorf("annotateCommit(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// Missing-in-target with non-empty canon must route into ## In Scope as
+// `create from canon`, AND get a detail subsection with content preview.
+func TestMissingInTargetCreateRouting(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	ac := mustRead(t, matches[0])
+
+	// .gitignore is in canon (non-empty) but not in the docFixture target —
+	// must be routed into In Scope as a create candidate.
+	if !strings.Contains(ac, "- `.gitignore` — create from canon") {
+		t.Errorf("expected .gitignore in In Scope as create-from-canon, got:\n%s", ac)
+	}
+	if !strings.Contains(ac, "### Missing in target (create candidates)") {
+		t.Errorf("expected Missing-in-target subsection, got:\n%s", ac)
+	}
+	if !strings.Contains(ac, "Canon content (preview):") {
+		t.Errorf("expected canon content preview block, got:\n%s", ac)
+	}
+}
+
+// Ambiguities must auto-populate Director Review with one numbered routing
+// question per file. No ambiguities → Director Review stays as `None.`.
+func TestDirectorReviewAutoPopulate(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	ac := mustRead(t, matches[0])
+
+	// docFixture's AGENTS.md and docs/ac-template.md exist with stub content +
+	// one commit → both classify as ambiguity. Plus plan.md is expected-divergence
+	// (no Director Review entry). So Director Review should have 2 numbered entries.
+	if !strings.Contains(ac, "## Director Review\n\n1. Should `") {
+		t.Errorf("expected Director Review to start with numbered routing question, got:\n%s", ac)
+	}
+	if !strings.Contains(ac, "synced to canon, preserved with a marker") {
+		t.Errorf("expected sync/preserve/defer routing prompt, got:\n%s", ac)
+	}
+}
+
+// AT regex strengthening: AT for preserve marker uses literal-string match
+// on the FULL marker line (not just the short phrase prefix).
+func TestATFullMarkerLine(t *testing.T) {
+	dir := docFixture(t)
+	// Add a preserve marker for an existing canon file (docs/ac-template.md).
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
+		"# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.2.0 | AC2: did things; preserve docs/ac-template.md customization |\n",
+	)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	ac := mustRead(t, matches[0])
+
+	// AT must rg -qF the FULL marker line, not just `preserve docs/ac-template.md`.
+	wantAT := "rg -qF -- '| 0.2.0 | AC2: did things; preserve docs/ac-template.md customization |' CHANGELOG.md"
+	if !strings.Contains(ac, wantAT) {
+		t.Errorf("AT must use full marker line; want %q in:\n%s", wantAT, ac)
+	}
+}
+
+// canonSHAFromSourceCheckout returns the short SHA of HEAD when the source
+// file is in a git worktree. Smoke test — runs against the live repo.
+func TestCanonSHAFromSourceCheckout(t *testing.T) {
+	sha, err := canonSHAFromSourceCheckout()
+	if err != nil {
+		t.Fatalf("canonSHAFromSourceCheckout failed in source tree: %v", err)
+	}
+	if len(sha) != 7 {
+		t.Errorf("expected 7-char SHA, got %q", sha)
 	}
 }

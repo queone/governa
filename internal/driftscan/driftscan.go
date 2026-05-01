@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -43,12 +44,13 @@ const (
 type Classification string
 
 const (
-	ClassMatch         Classification = "match"
-	ClassPreserve      Classification = "preserve"
-	ClassAmbiguity     Classification = "ambiguity"
-	ClassClearSync     Classification = "clear-sync"
-	ClassMissingTarget Classification = "missing-in-target"
-	ClassTargetNoCanon Classification = "target-has-no-canon" // reserved; not currently emitted
+	ClassMatch              Classification = "match"
+	ClassPreserve           Classification = "preserve"
+	ClassAmbiguity          Classification = "ambiguity"
+	ClassClearSync          Classification = "clear-sync"
+	ClassMissingTarget      Classification = "missing-in-target"
+	ClassTargetNoCanon      Classification = "target-has-no-canon"
+	ClassExpectedDivergence Classification = "expected-divergence" // per-repo content files (e.g., plan.md)
 )
 
 // Config holds drift-scan invocation parameters.
@@ -311,21 +313,50 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	return ExitOK, nil
 }
 
-// canonSHA reads the build-time vcs.revision and truncates to 7 chars.
+// canonSHA returns the 7-char canon SHA. Tries (in order) the build-time
+// vcs.revision setting (works for `go build` / `go install`), then a
+// runtime.Caller-based git rev-parse fallback (works for `go run` from a
+// source checkout). The fallback exists because `go run` defaults to
+// -buildvcs=auto which silently omits VCS info — without the fallback,
+// `go run ./cmd/governa drift-scan ...` would always fail.
 func canonSHA() (string, error) {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "", fmt.Errorf("vcs.revision unavailable: BuildInfo missing — rebuild governa from a git checkout")
-	}
-	for _, s := range info.Settings {
-		if s.Key == "vcs.revision" && s.Value != "" {
-			if len(s.Value) >= 7 {
-				return s.Value[:7], nil
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && s.Value != "" {
+				if len(s.Value) >= 7 {
+					return s.Value[:7], nil
+				}
+				return s.Value, nil
 			}
-			return s.Value, nil
 		}
 	}
-	return "", fmt.Errorf("vcs.revision unavailable: not embedded in binary — rebuild governa from a git checkout")
+	if sha, err := canonSHAFromSourceCheckout(); err == nil {
+		return sha, nil
+	}
+	return "", fmt.Errorf("vcs.revision unavailable: BuildInfo lacks vcs.revision and source-checkout fallback failed — `go build` / `go install` from a git checkout, or pass `-buildvcs=true` to `go run`")
+}
+
+// canonSHAFromSourceCheckout uses runtime.Caller to locate this source file
+// on disk and runs `git rev-parse HEAD` from its directory. Works when the
+// binary is invoked from a source checkout (`go run` or any source-tree
+// build); fails when the source is in a Go module cache or the source dir
+// is not a git worktree.
+func canonSHAFromSourceCheckout() (string, error) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok || file == "" {
+		return "", fmt.Errorf("runtime.Caller unavailable")
+	}
+	dir := filepath.Dir(file)
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(string(out))
+	if len(sha) >= 7 {
+		return sha[:7], nil
+	}
+	return sha, nil
 }
 
 func detectFlavor(target string) (string, error) {
@@ -352,6 +383,12 @@ type FileResult struct {
 	Markers        []string       `json:"preserve_markers,omitempty"`
 	CanonRef       string         `json:"canon_ref,omitempty"`
 	CompareCommand string         `json:"compare_command,omitempty"`
+	// CanonContent is the rendered canon file body. Populated for files that
+	// have a canon (every class except ClassTargetNoCanon). Used by the AC
+	// stub to render content previews for missing-in-target files and to
+	// detect empty-canon edge cases. Not serialized to JSON to keep reports
+	// small; the canon SHA + path identify the source.
+	CanonContent string `json:"-"`
 }
 
 // ReportHeader is the report's self-identifying header.
@@ -389,8 +426,9 @@ var expectedDivergencePaths = map[string]bool{
 func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 	targetPath := filepath.Join(cfg.Target, relpath)
 	fr := FileResult{
-		Relpath:  relpath,
-		CanonRef: fmt.Sprintf("governa @ %s: internal/templates/overlays/<flavor>/files/%s", sha, relpath),
+		Relpath:      relpath,
+		CanonRef:     fmt.Sprintf("governa @ %s: internal/templates/overlays/<flavor>/files/%s", sha, relpath),
+		CanonContent: canon,
 	}
 	targetBytes, err := os.ReadFile(targetPath)
 	if err != nil {
@@ -403,9 +441,12 @@ func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 		fr.CompareCommand = fmt.Sprintf("byte-equal (canon @ %s vs %s)", sha, relpath)
 		return fr
 	}
-	// H2: per-repo content files always diverge from the canon stub.
+	// H2: per-repo content files always diverge from the canon stub. Use
+	// ClassExpectedDivergence (not ClassMatch) so the AC stub renders them
+	// in their own subsection — listing them under "Match evidence" misled
+	// readers into thinking content equality was verified.
 	if expectedDivergencePaths[relpath] {
-		fr.Classification = ClassMatch
+		fr.Classification = ClassExpectedDivergence
 		fr.CompareCommand = fmt.Sprintf("expected per-repo divergence (canon @ %s is a content stub; %s carries repo-specific content)", sha, relpath)
 		return fr
 	}
@@ -806,10 +847,35 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 
 	fmt.Fprintf(&b, "# AC%d Drift-Scan from governa @ %s\n\n", acN, sha)
 
+	clearSync := filterByClass(report.Files, ClassClearSync)
+	preserves := filterByClass(report.Files, ClassPreserve)
+	ambiguities := filterByClass(report.Files, ClassAmbiguity)
+	matches := filterByClass(report.Files, ClassMatch)
+	expectedDiv := filterByClass(report.Files, ClassExpectedDivergence)
+	missing := filterByClass(report.Files, ClassMissingTarget)
+	noCanon := filterByClass(report.Files, ClassTargetNoCanon)
+
+	// Split missing-in-target by canon-emptiness: non-empty canon files are
+	// create candidates that route into ## In Scope; empty-canon files stay
+	// in Warnings as informational.
+	var missingCreate, missingEmpty []FileResult
+	for _, f := range missing {
+		if strings.TrimSpace(f.CanonContent) != "" {
+			missingCreate = append(missingCreate, f)
+		} else {
+			missingEmpty = append(missingEmpty, f)
+		}
+	}
+
+	inScopeEmpty := len(clearSync) == 0 && len(missingCreate) == 0
+
 	// Summary placeholder
 	fmt.Fprintln(&b, "## Summary")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
+	if inScopeEmpty {
+		fmt.Fprintln(&b, "<!-- HINT: `## In Scope` is empty (every divergent file is preserved, pending Director routing, or absent from canon). Per protocol, state explicitly that this AC ships only itself plus the staged plan.md IE entry — no file edits land. -->")
+	}
 	fmt.Fprintln(&b)
 
 	// Objective Fit placeholder
@@ -818,15 +884,17 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
 	fmt.Fprintln(&b)
 
-	// In Scope
+	// In Scope: clear-sync files + missing-in-target with non-empty canon.
 	fmt.Fprintln(&b, "## In Scope")
 	fmt.Fprintln(&b)
-	clearSync := filterByClass(report.Files, ClassClearSync)
-	if len(clearSync) == 0 {
+	if inScopeEmpty {
 		fmt.Fprintln(&b, "None.")
 	} else {
 		for _, f := range clearSync {
 			fmt.Fprintf(&b, "- `%s` — sync to canon\n", f.Relpath)
+		}
+		for _, f := range missingCreate {
+			fmt.Fprintf(&b, "- `%s` — create from canon\n", f.Relpath)
 		}
 	}
 	fmt.Fprintln(&b)
@@ -834,7 +902,6 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	// Out Of Scope
 	fmt.Fprintln(&b, "## Out Of Scope")
 	fmt.Fprintln(&b)
-	preserves := filterByClass(report.Files, ClassPreserve)
 	if len(preserves) == 0 {
 		fmt.Fprintln(&b, "None.")
 	} else {
@@ -852,15 +919,10 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Canon: governa @ %s, flavor `%s`. Comparison: `governa drift-scan` against the embedded canon.\n", sha, report.Header.Flavor)
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Per-file outcomes:")
-	fmt.Fprintln(&b)
-	for _, f := range report.Files {
-		fmt.Fprintf(&b, "- `%s` — %s\n", f.Relpath, f.Classification)
-	}
+	fmt.Fprintf(&b, "Counts: %s.\n", tallyClassifications(report.Files))
 	fmt.Fprintln(&b)
 
-	// Match evidence
-	matches := filterByClass(report.Files, ClassMatch)
+	// Match evidence (true byte-equal only).
 	if len(matches) > 0 {
 		fmt.Fprintln(&b, "### Match evidence")
 		fmt.Fprintln(&b)
@@ -870,13 +932,23 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 		fmt.Fprintln(&b)
 	}
 
-	// Divergent file detail
-	divergent := []FileResult{}
-	for _, f := range report.Files {
-		if f.Classification == ClassPreserve || f.Classification == ClassAmbiguity || f.Classification == ClassClearSync {
-			divergent = append(divergent, f)
+	// Expected per-repo divergence (plan.md and similar). Surfaced separately
+	// from byte-equal matches so the Operator does not misread "match" as
+	// "verified canonical".
+	if len(expectedDiv) > 0 {
+		fmt.Fprintln(&b, "### Expected per-repo divergence")
+		fmt.Fprintln(&b)
+		for _, f := range expectedDiv {
+			fmt.Fprintf(&b, "- `%s` — %s\n", f.Relpath, f.CompareCommand)
 		}
+		fmt.Fprintln(&b)
 	}
+
+	// Divergent file detail (preserve, ambiguity, clear-sync).
+	divergent := []FileResult{}
+	divergent = append(divergent, preserves...)
+	divergent = append(divergent, ambiguities...)
+	divergent = append(divergent, clearSync...)
 	if len(divergent) > 0 {
 		fmt.Fprintln(&b, "### Divergent files")
 		fmt.Fprintln(&b)
@@ -887,7 +959,7 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 				fmt.Fprintln(&b, "Local commits (`git log -n 5 --follow`):")
 				fmt.Fprintln(&b)
 				for _, c := range f.Commits {
-					fmt.Fprintf(&b, "- `%s`\n", c)
+					fmt.Fprintf(&b, "- `%s`\n", annotateCommit(c))
 				}
 				fmt.Fprintln(&b)
 			}
@@ -902,49 +974,83 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 		}
 	}
 
-	// Warnings
-	warnings := filterByClass(report.Files, ClassMissingTarget)
-	if len(warnings) > 0 {
-		fmt.Fprintln(&b, "### Warnings")
+	// Missing in target — create candidates (non-empty canon). Routed to
+	// ## In Scope above; this subsection carries the actionable detail
+	// (canon ref + content preview) so the Operator does not need to leave
+	// the AC to see what would be created.
+	if len(missingCreate) > 0 {
+		fmt.Fprintln(&b, "### Missing in target (create candidates)")
 		fmt.Fprintln(&b)
-		for _, f := range warnings {
+		for _, f := range missingCreate {
+			fmt.Fprintf(&b, "#### `%s` — missing-in-target\n\n", f.Relpath)
+			fmt.Fprintf(&b, "Canon: %s\n\n", f.CanonRef)
+			fmt.Fprintln(&b, "Canon content (preview):")
+			fmt.Fprintln(&b)
+			fmt.Fprintln(&b, "```")
+			fmt.Fprintln(&b, previewCanonContent(f.CanonContent, 30))
+			fmt.Fprintln(&b, "```")
+			fmt.Fprintln(&b)
+		}
+	}
+
+	// Files in target without canon. Previously buried in the per-file flat
+	// list with no signal to the Operator. The walker only surfaces these
+	// when the file IS in the OTHER flavor's canon, so each entry is a
+	// genuine flavor-mismatch hint worth the Director's eye.
+	if len(noCanon) > 0 {
+		fmt.Fprintln(&b, "### Files in target without canon")
+		fmt.Fprintln(&b)
+		fmt.Fprintf(&b, "These files exist in the target but NOT in canon for flavor `%s`. They DO appear in the other flavor's canon — the Director should confirm flavor selection or accept these as legitimate per-repo additions.\n", report.Header.Flavor)
+		fmt.Fprintln(&b)
+		for _, f := range noCanon {
 			fmt.Fprintf(&b, "- `%s` — %s\n", f.Relpath, f.Classification)
 		}
 		fmt.Fprintln(&b)
 	}
 
-	// Post-merge coherence audit placeholder
+	// Warnings: only missing-in-target with empty canon (rare but possible).
+	if len(missingEmpty) > 0 {
+		fmt.Fprintln(&b, "### Warnings")
+		fmt.Fprintln(&b)
+		for _, f := range missingEmpty {
+			fmt.Fprintf(&b, "- `%s` — %s (canon is empty; no action)\n", f.Relpath, f.Classification)
+		}
+		fmt.Fprintln(&b)
+	}
+
+	// Post-merge coherence audit placeholder.
 	fmt.Fprintln(&b, "### Post-merge coherence audit")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
+	if inScopeEmpty {
+		fmt.Fprintln(&b, "<!-- HINT: `## In Scope` is empty, so no canonical text lands in this AC — the audit has nothing to apply. Stating `Not applicable — In Scope is empty.` is sufficient. -->")
+	}
 	fmt.Fprintln(&b)
 
 	// Acceptance Tests
 	fmt.Fprintln(&b, "## Acceptance Tests")
 	fmt.Fprintln(&b)
 	atN := 1
+	// AT per preserve marker: assert the FULL marker line is present in
+	// CHANGELOG.md, not just the short phrase. The full line is unique enough
+	// to survive future edits to other rows that happen to mention the
+	// phrase in passing.
 	for _, f := range preserves {
 		for _, m := range f.Markers {
-			// Find a verbatim short phrase to grep — use the first preserve marker pattern that fits.
-			phrase := firstMatchingPhrase(f.Relpath, m)
-			// H4: use a literal/fixed-string flag so phrases with shell or
-			// regex metacharacters work. -F = literal; -- ends flag parsing.
-			fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -qF -- %s CHANGELOG.md`.\n\n", atN, shellQuote(phrase))
+			fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -qF -- %s CHANGELOG.md`.\n\n", atN, shellQuote(m))
 			atN++
 		}
 	}
-	// Shape-(b) IE assertion. M1: extractIENum returns 0 only on regex miss,
-	// which can't happen for tool-generated lines; guard with a panic-free
-	// fallback that the AT body remains valid even if the format ever changes.
-	if n := extractIENum(shapeBIE); n > 0 {
-		fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -q '^- IE%d: ' plan.md`.\n\n", atN, n)
-		atN++
-	}
-	// M5: clear-sync items get no auto-generated AT — the Operator adds them
-	// when implementing the sync. Note this so the staged AC isn't misread as
-	// "ATs cover everything".
-	if len(clearSync) > 0 {
-		fmt.Fprintf(&b, "<!-- TBD by Operator: add one AT per clear-sync file in `## In Scope` verifying the sync was applied. -->\n\n")
+	// AT for shape-(b) IE: assert the FULL IE line, not just the prefix.
+	// The full line carries the canon SHA and AC filename, so this AT also
+	// verifies the IE wasn't replaced by an unrelated entry sharing the same
+	// IE number.
+	fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -qF -- %s plan.md`.\n\n", atN, shellQuote(shapeBIE))
+	atN++
+	// Operator-add reminder for clear-sync / create candidates: each landed
+	// edit needs its own verification AT.
+	if len(clearSync) > 0 || len(missingCreate) > 0 {
+		fmt.Fprintf(&b, "<!-- TBD by Operator: add one AT per file in `## In Scope` verifying the sync/create was applied (e.g., `rg -qF -- '<canonical line>' <path>`, or `test -f <path>` for create candidates). -->\n\n")
 	}
 
 	// Documentation Updates
@@ -953,10 +1059,28 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	fmt.Fprintln(&b, "- `CHANGELOG.md` — release row added at release prep time per template guidance.")
 	fmt.Fprintln(&b)
 
-	// Director Review
+	// Director Review: auto-populate one routing question per ambiguity. Each
+	// ambiguity is a file the tool cannot route on its own — the Director has
+	// to choose sync vs preserve vs defer. Following the canon ac-template
+	// form: numbered, leads with a question ending in `?`, Operator lean +
+	// one-line why placeholders. When there are no ambiguities, the section
+	// stays as `None.` per protocol.
 	fmt.Fprintln(&b, "## Director Review")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "None.")
+	if len(ambiguities) == 0 {
+		fmt.Fprintln(&b, "None.")
+	} else {
+		dN := 1
+		for _, f := range ambiguities {
+			fmt.Fprintf(&b,
+				"%d. Should `%s` be synced to canon, preserved with a marker (backfill `preserve %s <qualifier>` in CHANGELOG.md), or deferred to a later AC? Operator lean: <TBD>. Why: <TBD>.\n",
+				dN, f.Relpath, f.Relpath,
+			)
+			dN++
+		}
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "<!-- HINT: review for cross-file couplings before answering (e.g., a script + the binary it invokes; a Go file + its test; a doc + the file it references). Coupled files must be routed together. -->")
+	}
 	fmt.Fprintln(&b)
 
 	// Status
@@ -977,23 +1101,64 @@ func filterByClass(files []FileResult, c Classification) []FileResult {
 	return out
 }
 
-func firstMatchingPhrase(relpath, line string) string {
-	for _, pat := range preserveMarkerPatterns {
-		phrase := fmt.Sprintf(pat, relpath)
-		if strings.Contains(line, phrase) {
-			return phrase
+// tallyClassifications returns a comma-separated count of non-zero
+// classifications for the report header, e.g. "5 match, 1 preserve, 4 ambiguity".
+// Stable ordering matches the order classifications are introduced in the AC stub.
+func tallyClassifications(files []FileResult) string {
+	order := []Classification{
+		ClassMatch, ClassExpectedDivergence, ClassPreserve, ClassAmbiguity,
+		ClassClearSync, ClassMissingTarget, ClassTargetNoCanon,
+	}
+	counts := map[Classification]int{}
+	for _, f := range files {
+		counts[f.Classification]++
+	}
+	var parts []string
+	for _, c := range order {
+		if n := counts[c]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, c))
 		}
 	}
-	return relpath
+	if len(parts) == 0 {
+		return "0 files"
+	}
+	return strings.Join(parts, ", ")
 }
 
-func extractIENum(line string) int {
-	m := ieRe.FindStringSubmatch(line)
-	if m == nil {
-		return 0
+// adoptionCommitRe matches commits whose subject signals the file was first
+// brought under governance — initial governa adoption commits, or the catch-all
+// "govern <repo>" commit some adopters use. False-positive risk is low because
+// the regex requires either the literal "governa" token or a sentence-initial
+// "govern" verb.
+var adoptionCommitRe = regexp.MustCompile(`(?i)\bgoverna\b|^govern[a-z]*\b`)
+
+// annotateCommit tags `git log` oneline output with `(adoption)` when the
+// subject matches adoptionCommitRe. The Operator can then ignore those lines
+// at a glance; they are signal-poor (every governed file has them) and
+// crowded out the recent, actionable history.
+func annotateCommit(line string) string {
+	// Oneline format: "<hash> <subject>". Subject starts after the first space.
+	_, subject, ok := strings.Cut(line, " ")
+	if !ok {
+		subject = line
 	}
-	n, _ := strconv.Atoi(m[1])
-	return n
+	if adoptionCommitRe.MatchString(subject) {
+		return line + " (adoption)"
+	}
+	return line
+}
+
+// previewCanonContent truncates s to maxLines, appending a truncation marker
+// when content is dropped. Used in the AC stub's missing-in-target detail
+// section so the Operator can see what the canon would create without
+// leaving the AC.
+func previewCanonContent(s string, maxLines int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if maxLines <= 0 || len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+	extra := len(lines) - maxLines
+	return strings.Join(lines[:maxLines], "\n") + fmt.Sprintf("\n[... %d more lines truncated ...]", extra)
 }
 
 // writeReport emits to out in markdown or JSON.
@@ -1013,6 +1178,7 @@ func writeReport(out io.Writer, r Report, asJSON bool) {
 	fmt.Fprintf(out, "- Repo name: %s\n", r.Header.RepoName)
 	fmt.Fprintf(out, "- Next AC: AC%d\n", r.NextAC)
 	fmt.Fprintf(out, "- Next IE: IE%d\n", r.NextIE)
+	fmt.Fprintf(out, "- Counts: %s\n", tallyClassifications(r.Files))
 	if r.Staging != nil {
 		fmt.Fprintf(out, "- Staged: `%s`\n", r.Staging.ACPath)
 	}

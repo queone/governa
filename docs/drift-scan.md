@@ -13,12 +13,18 @@ When the user invokes `drift-scan <repo-path>`, run `governa drift-scan <repo-pa
 The staged AC arrives with these sections already filled — no Operator action required:
 
 - **Title** — `# AC<N> Drift-Scan from governa @ <short-sha>`.
-- **`## In Scope`** — clear-sync items if any, else `None`.
+- **`## In Scope`** — clear-sync items + missing-in-target files whose canon is non-empty (routed as `create from canon`); else `None`.
 - **`## Out Of Scope`** — preserve-marker citations verbatim from `<target>/CHANGELOG.md` or `<target>/docs/ac*.md`.
-- **`## Implementation Notes`** — per-file outcomes; for divergent files, full `diff -u` hunks, every commit returned by `git log -n 5 --follow`, and SHA-pinned canon refs. Two sub-subsections: `### Match evidence` (one bullet per match-classified file naming the comparison command) and `### Warnings` (`missing-in-target` / `target-has-no-canon` files surfaced by the scan).
-- **`## Acceptance Tests`** — one tool-generated AT per preserve marker (regex check against `CHANGELOG.md`) and one per inserted IE (regex check against `plan.md`).
+- **`## Implementation Notes`** — opens with a `Counts: ...` tally line; for divergent files, full `diff -u` hunks, every commit returned by `git log -n 5 --follow` (adoption-style commits annotated with `(adoption)`), and SHA-pinned canon refs. Sub-subsections (each emitted only when it has content):
+  - `### Match evidence` — one bullet per `match` file naming the comparison command (byte-equal only).
+  - `### Expected per-repo divergence` — files whose canon is a stub by design (e.g., `plan.md`); kept separate from byte-equal matches so the Operator does not misread "match" as "verified canonical".
+  - `### Divergent files` — `preserve` / `ambiguity` / `clear-sync` files with full diff + commit history.
+  - `### Missing in target (create candidates)` — missing-in-target files with non-empty canon; carries canon ref + content preview so the Operator does not need to leave the AC.
+  - `### Files in target without canon` — `target-has-no-canon` files (the file exists in target and in the OTHER flavor's canon — possible flavor mismatch).
+  - `### Warnings` — only missing-in-target with empty canon (rare; informational).
+- **`## Acceptance Tests`** — one tool-generated AT per preserve marker (literal-string check against the FULL marker line in `CHANGELOG.md`, not just the short phrase) and one for the inserted IE (literal-string check against the full shape-(b) line in `plan.md`).
 - **`## Documentation Updates`** — standard `CHANGELOG.md` placeholder line.
-- **`## Director Review`** — body is exactly `None`. The AC carries the per-file divergence detail under `## Implementation Notes`; the Director routes each file from there into `## In Scope` / `## Out Of Scope` / a deferral when reviewing.
+- **`## Director Review`** — when the scan found ambiguities, auto-populated with one numbered routing question per ambiguity (`Should <file> be synced to canon, preserved with a marker, or deferred?` plus Operator-lean placeholder). When there are no ambiguities, body is `None.`.
 - **`## Status`** — body is exactly `` `PENDING` — awaiting Director critique. ``.
 
 `plan.md` arrives with a single shape-(b) IE pointing to the staged AC. Insertion happens after the highest existing `IE<M>` entry, or replaces the `(none active)` placeholder if that's the convention in use. The AC carries the burden of detailing all per-file findings — separate IEs are not emitted per ambiguity.
@@ -33,12 +39,15 @@ Three sections in the staged AC carry `<!-- TBD by Operator -->` placeholders:
 
 ## Divergence classification
 
-The tool emits one of the four classifications below for every file. The Operator can override by editing the staged AC before commit, and should re-route the file in `## In Scope` / `## Out Of Scope` accordingly.
+The tool emits one of the classifications below for every file. The Operator can override by editing the staged AC before commit, and should re-route the file in `## In Scope` / `## Out Of Scope` accordingly.
 
 - **`match`** — canon and target byte-equal. Listed under `### Match evidence`.
+- **`expected-divergence`** — canon is a per-repo stub by design (currently `plan.md`); the tool skips the byte-compare and lists the file under `### Expected per-repo divergence`. Treated as no-action.
 - **`preserve`** — a verbatim preserve-marker phrase was found citing this file in `<target>/CHANGELOG.md` or `<target>/docs/ac*.md`. Routed to `## Out Of Scope` with the marker quoted verbatim.
-- **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. The file's diff and commits appear in `## Implementation Notes`; the Director routes it during critique. Not softened with "could be intentional" in `## Out Of Scope`.
-- **`clear-sync`** — divergent with neither local commits nor preserve marker. Routed to this AC's `## In Scope`.
+- **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. The file's diff and commits appear under `### Divergent files`; the Director routes it via the auto-populated `## Director Review` entry. Not softened with "could be intentional" in `## Out Of Scope`.
+- **`clear-sync`** — divergent with neither local commits nor preserve marker. Routed to this AC's `## In Scope` as `sync to canon`.
+- **`missing-in-target`** — canon ships the file; target does not. If canon is non-empty, routed to `## In Scope` as `create from canon` and detailed under `### Missing in target (create candidates)` with a content preview. If canon is empty, listed under `### Warnings` only.
+- **`target-has-no-canon`** — file exists in target, NOT in canon for this flavor, but DOES exist in the other flavor's canon. Listed under `### Files in target without canon` so the Director can confirm flavor selection or accept the file as a per-repo addition.
 
 For every divergent file, the staged AC's `## Implementation Notes` carries:
 
@@ -61,7 +70,7 @@ When shipping an AC that locks a local form against canon, include one of these 
 
 ## Match evidence
 
-For every `match`-classified file, the staged AC's `### Match evidence` sub-subsection names the comparison method — typically `byte-equal (canon @ <sha> vs <relpath>)`. Do not assert `match` without naming the check.
+For every `match`-classified file, the staged AC's `### Match evidence` sub-subsection names the comparison method — `byte-equal (canon @ <sha> vs <relpath>)`. Files whose canon is a per-repo stub appear under `### Expected per-repo divergence` instead, with a note explaining the divergence is by design.
 
 ## Refinement tracing
 
