@@ -685,15 +685,15 @@ func stageAll(targetRoot, sha string, report *Report, acN, ieStart int) error {
 		return fmt.Errorf("read plan.md: %w", err)
 	}
 
-	// Compute IE entries before AC content (AC's ATs reference the inserted IE numbers).
-	ieEntries, ambiguityIEs, shapeBIE := buildIEEntries(report.Files, ieStart, sha, acFilename)
+	// Compute IE entry before AC content (AC's AT references the inserted IE number).
+	ieEntries, shapeBIE := buildIEEntries(ieStart, sha, acFilename)
 
 	newPlanContent, err := insertIEsIntoPlan(string(planBytes), ieEntries)
 	if err != nil {
 		return err
 	}
 
-	acContent := buildACStub(acN, sha, report, ambiguityIEs, shapeBIE)
+	acContent := buildACStub(acN, sha, report, shapeBIE)
 
 	// Atomic: write both via temp files, then rename.
 	if err := atomicWrite(acPath, []byte(acContent)); err != nil {
@@ -734,34 +734,16 @@ func atomicWrite(dst string, content []byte) error {
 	return nil
 }
 
-// buildIEEntries produces one shape-(b) IE plus one shape-(a) IE per ambiguity,
-// returning the formatted lines, the ambiguity entries (for AC ATs), and the
-// shape-(b) line (for AC ATs).
-func buildIEEntries(files []FileResult, ieStart int, sha, acFilename string) ([]string, []string, string) {
-	var entries []string
-	var ambiguities []FileResult
-	for _, f := range files {
-		if f.Classification == ClassAmbiguity {
-			ambiguities = append(ambiguities, f)
-		}
-	}
-
+// buildIEEntries produces a single shape-(b) IE pointing at the staged AC.
+// The AC carries the per-file divergence detail under ## Implementation Notes;
+// separate shape-(a) IEs per ambiguity file are not emitted (they duplicate
+// what the AC already carries).
+func buildIEEntries(ieStart int, sha, acFilename string) ([]string, string) {
 	shapeBIE := fmt.Sprintf(
 		"- IE%d: drift-scan against governa @ %s → docs/%s",
 		ieStart, sha, acFilename,
 	)
-	entries = append(entries, shapeBIE)
-
-	var shapeALines []string
-	for i, f := range ambiguities {
-		line := fmt.Sprintf(
-			"- IE%d: drift-scan ambiguity in %s — sync to canon or keep local? See docs/%s for diff and classification.",
-			ieStart+1+i, f.Relpath, acFilename,
-		)
-		entries = append(entries, line)
-		shapeALines = append(shapeALines, line)
-	}
-	return entries, shapeALines, shapeBIE
+	return []string{shapeBIE}, shapeBIE
 }
 
 // insertIEsIntoPlan inserts new IE entries into plan.md after the highest
@@ -819,7 +801,7 @@ func insertIEsIntoPlan(plan string, entries []string) (string, error) {
 }
 
 // buildACStub constructs the partially-filled AC stub.
-func buildACStub(acN int, sha string, report *Report, shapeALines []string, shapeBIE string) string {
+func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# AC%d Drift-Scan from governa @ %s\n\n", acN, sha)
@@ -957,12 +939,6 @@ func buildACStub(acN int, sha string, report *Report, shapeALines []string, shap
 	if n := extractIENum(shapeBIE); n > 0 {
 		fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -q '^- IE%d: ' plan.md`.\n\n", atN, n)
 		atN++
-	}
-	for _, line := range shapeALines {
-		if n := extractIENum(line); n > 0 {
-			fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -q '^- IE%d: ' plan.md`.\n\n", atN, n)
-			atN++
-		}
 	}
 	// M5: clear-sync items get no auto-generated AT — the Operator adds them
 	// when implementing the sync. Note this so the staged AC isn't misread as

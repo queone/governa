@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.102.1 | drift-scan: emit single shape-(b) IE; add ## Handoff section to docs |
 | 0.102.0 | AC104: governa drift-scan subcommand with auto-staging |
 | 0.101.0 | drift-scan: SHA pin canon, quote full enclosing section, coherence audit |
 | 0.100.1 | rename drift command to drift-scan (verb form) |

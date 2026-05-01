@@ -108,6 +108,16 @@ func TestStagingHappy(t *testing.T) {
 	if !strings.Contains(plan, "- IE3: drift-scan against governa @ ") {
 		t.Errorf("plan.md missing shape-(b) IE3, got:\n%s", plan)
 	}
+	// Single-IE contract: no shape-(a) per-ambiguity IE entries are emitted —
+	// the AC carries per-file detail under ## Implementation Notes.
+	if strings.Contains(plan, "drift-scan ambiguity in ") {
+		t.Errorf("plan.md must not carry shape-(a) ambiguity IEs, got:\n%s", plan)
+	}
+	// AT count: exactly one IE-grep AT (the shape-(b) one); no per-ambiguity ATs.
+	atIECount := strings.Count(acContent, "rg -q '^- IE")
+	if atIECount != 1 {
+		t.Errorf("expected exactly 1 IE-grep AT in AC, got %d:\n%s", atIECount, acContent)
+	}
 }
 
 // AT10 — Auto-staging skipped when prereqs are missing.
