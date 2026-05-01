@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.101.0 | drift-scan: SHA pin canon, quote full enclosing section, coherence audit |
 | 0.100.1 | rename drift command to drift-scan (verb form) |
 | 0.100.0 | add drift <repo-path> protocol; numbered/question-form Director Review |
 | 0.99.0 | reframe Director Review as pending-decisions queue; line-83 verb fix |
