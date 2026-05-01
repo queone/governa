@@ -78,11 +78,11 @@ List the docs that must be updated as part of this AC. If a change touches code 
 
 ## Director Review
 
-This section lists trade-offs the Director still needs to decide. Each entry states the open question, the Operator's lean, and a one-line why. Once the Director decides (in conversation or by editing the AC), move the item out of this section and attribute it inline (Summary, In Scope/Out of Scope, Implementation Notes) with a `Director-set` parenthetical. Choices already covered by repo precedent are not surfaced here at all. Write `None` when nothing is open.
+This section lists trade-offs the Director still needs to decide. **Each entry must be numbered (`1.`, `2.`, …) and lead with a literal question ending in `?`** so the Director can reference entries inline ("Regarding #1, …"). If you cannot phrase the entry as an open question awaiting the Director's answer, it does not belong here. Send mechanical computations and showing-work notes to Implementation Notes; settled decisions go inline with `Director-set` attribution; choices covered by repo precedent are not surfaced at all. After the question, state the Operator's lean and a one-line why. Once the Director decides (in conversation or by editing the AC), move the item out of this section and attribute it inline (Summary, In Scope/Out of Scope, Implementation Notes) with a `Director-set` parenthetical. Write `None` when nothing is open.
 
 The Director resolves these during critique rounds — in conversation or by editing the AC directly.
 
-- Decision X: option leaned toward (alternatives: A, B). Why: <one-line>.
+1. Should we do X or Y? Operator leans X (alternative: Y). Why: <one-line>.
 
 ## Status
 
