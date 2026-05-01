@@ -36,3 +36,4 @@ Present only the release command after prep; do not add trailing commentary. The
 - Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
 - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
 - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
+- When an AC locks a local form against canon (preserves a customization, declares intentional divergence, blocks a sync), include an explicit `preserve <path> <qualifier>` phrase in the summary. `governa drift-scan` only recognizes explicit markers; implicit AC references won't lock the file. Recognized phrase set: `preserve <path>`, `do not sync <path>`, `intentional divergence: <path>`, `<path>: keep local`.

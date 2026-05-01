@@ -748,6 +748,12 @@ func skipIfExists(op operation) operation {
 }
 
 func readAndRender(tfs fs.FS, path string, placeholders map[string]string) (string, error) {
+	return ReadAndRender(tfs, path, placeholders)
+}
+
+// ReadAndRender reads a template file from tfs and substitutes placeholders.
+// Public surface for read-only callers (e.g. driftscan).
+func ReadAndRender(tfs fs.FS, path string, placeholders map[string]string) (string, error) {
 	content, err := fs.ReadFile(tfs, path)
 	if err != nil {
 		return "", fmt.Errorf("read template file %s: %w", path, err)
@@ -762,6 +768,63 @@ func readAndRender(tfs fs.FS, path string, placeholders map[string]string) (stri
 		out = strings.ReplaceAll(out, key, placeholders[key])
 	}
 	return out, nil
+}
+
+// RenderCanonicalFiles produces the full set of canon files an apply would
+// write, keyed by repo-relative slash path. Read-only — does not touch the
+// filesystem. Used by driftscan to byte-compare target files against canon.
+func RenderCanonicalFiles(tfs fs.FS, cfg Config, targetRoot string) (map[string]string, error) {
+	ops, err := planCanonical(tfs, cfg, targetRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(ops))
+	for _, op := range ops {
+		if op.kind != "write" {
+			continue
+		}
+		rel, err := filepath.Rel(targetRoot, op.path)
+		if err != nil {
+			return nil, fmt.Errorf("relativize op path: %w", err)
+		}
+		out[filepath.ToSlash(rel)] = op.content
+	}
+	return out, nil
+}
+
+// DetectGovernaCheckoutAt reports whether dir looks like a governa checkout
+// (go.mod module github.com/queone/governa + internal/templates/base/ exists).
+// Used by drift-scan and apply fail-safes.
+func DetectGovernaCheckoutAt(dir string) error {
+	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return fmt.Errorf("no go.mod found")
+	}
+	if !strings.Contains(string(gomod), "module github.com/queone/governa") {
+		return fmt.Errorf("go.mod module is not github.com/queone/governa")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "internal", "templates", "base")); err != nil {
+		return fmt.Errorf("internal/templates/base not found")
+	}
+	return nil
+}
+
+// InferRepoName returns the basename of the absolute path of targetDir.
+// Public surface for drift-scan's repo-name resolution.
+func InferRepoName(targetDir string) string {
+	return inferRepoName(targetDir)
+}
+
+// InferStack returns the language/platform inferred from target manifests.
+// Public surface for drift-scan's stack resolution.
+func InferStack(targetDir string) string {
+	return inferStack(targetDir)
+}
+
+// ReadModulePath returns the Go module path from <targetRoot>/go.mod, or "" if absent.
+// Public surface for drift-scan's render-variable resolution.
+func ReadModulePath(targetRoot string) string {
+	return readModulePath(targetRoot)
 }
 
 func valueOrDefault(value, fallback string) string {

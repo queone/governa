@@ -5,9 +5,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/queone/governa-color"
+	"github.com/queone/governa/internal/driftscan"
 	"github.com/queone/governa/internal/governance"
 	"github.com/queone/governa/internal/templates"
 )
@@ -42,6 +42,12 @@ func main() {
 		return
 	case "apply":
 		// handled below
+	case "drift-scan":
+		exit, err := driftscan.RunCLI(args, templates.EmbeddedFS)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(exit)
 	case "sync":
 		fmt.Fprintf(os.Stderr, "unknown command: sync (use \"governa apply\")\n")
 		os.Exit(2)
@@ -76,7 +82,7 @@ func main() {
 
 	// Fail-safe: refuse to apply into the governa repo itself.
 	if target, _ := filepath.Abs(cfg.Target); target != "" {
-		if _, err := detectGovernaCheckoutAt(target); err == nil {
+		if err := governance.DetectGovernaCheckoutAt(target); err == nil {
 			fmt.Fprintln(os.Stderr, "error: cannot run apply against the governa repo itself — apply is for consumer repos")
 			os.Exit(1)
 		}
@@ -94,10 +100,11 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, color.Gra(fmt.Sprintf("Repo governance templates — %s", sourceRepo)))
 	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
 		{Flag: "apply", Desc: "apply governance template to a repo"},
+		{Flag: "drift-scan", Desc: "scan an adopted repo against governa canon"},
 		{Flag: "examples", Desc: "render example repos to /tmp/governa-examples/"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help, h", Desc: "show this help"},
-	}, "Run 'governa apply --help' for apply-specific flags."))
+	}, "Run 'governa <command> -h' for command-specific flags."))
 }
 
 const examplesOutputDir = "/tmp/governa-examples"
@@ -155,21 +162,4 @@ func runExamples() error {
 
 	fmt.Println(examplesOutputDir)
 	return nil
-}
-
-// detectGovernaCheckoutAt reports whether `dir` looks like a governa checkout.
-// Used by the apply fail-safe to refuse writing the template over its own
-// source.
-func detectGovernaCheckoutAt(dir string) (string, error) {
-	gomod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-	if err != nil {
-		return "", fmt.Errorf("no go.mod found")
-	}
-	if !strings.Contains(string(gomod), "module github.com/queone/governa") {
-		return "", fmt.Errorf("go.mod module is not github.com/queone/governa")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "internal", "templates", "base")); err != nil {
-		return "", fmt.Errorf("internal/templates/base not found")
-	}
-	return dir, nil
 }

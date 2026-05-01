@@ -1,0 +1,1174 @@
+// Package driftscan implements the `governa drift-scan` subcommand.
+//
+// It walks the canon overlay, byte-compares each governed file against the
+// target adopted repo, classifies divergences, collects evidence (preserve
+// markers, git log), computes next-AC and next-IE numbers, and emits a
+// structured report. When the target has prerequisites (plan.md + docs/),
+// it also stages a partially-filled AC stub and inserts plan.md IE entries.
+//
+// drift-scan is governa-internal protocol that consumes overlays. It does not
+// have a consumer-overlay counterpart by design — the project rule that
+// requires source-level changes under internal/ to propagate to overlays does
+// not apply here. See docs/ac104-drift-scan-cmd.md.
+package driftscan
+
+import (
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime/debug"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/queone/governa/internal/governance"
+	"github.com/queone/governa/internal/templates"
+)
+
+// Exit codes.
+const (
+	ExitOK       = 0
+	ExitEnvError = 1
+	ExitUsage    = 2
+)
+
+// Classification labels per docs/drift-scan.md.
+type Classification string
+
+const (
+	ClassMatch         Classification = "match"
+	ClassPreserve      Classification = "preserve"
+	ClassAmbiguity     Classification = "ambiguity"
+	ClassClearSync     Classification = "clear-sync"
+	ClassMissingTarget Classification = "missing-in-target"
+	ClassTargetNoCanon Classification = "target-has-no-canon" // reserved; not currently emitted
+)
+
+// Config holds drift-scan invocation parameters.
+type Config struct {
+	Target     string // resolved absolute path to target repo
+	Flavor     string // "code" or "doc"
+	JSON       bool
+	DiffLines  int    // diff truncation limit
+	RepoName   string // overrides basename of Target
+	Invocation string // exact CLI invocation string for the report header
+
+	// OverrideSHA bypasses canonSHA() lookup. Used in tests where
+	// runtime/debug.ReadBuildInfo()'s vcs.revision is unavailable.
+	// Production callers leave this empty.
+	OverrideSHA string
+}
+
+// ParseArgs parses CLI arguments. Returns config, help bool, error.
+func ParseArgs(args []string) (Config, bool, error) {
+	cfg := Config{DiffLines: 200}
+	fset := flag.NewFlagSet("governa drift-scan", flag.ContinueOnError)
+	fset.SetOutput(os.Stderr)
+
+	fset.StringVar(&cfg.Flavor, "f", "", "overlay flavor: code|doc")
+	fset.StringVar(&cfg.Flavor, "flavor", "", "overlay flavor: code|doc")
+	fset.BoolVar(&cfg.JSON, "j", false, "emit JSON report instead of markdown")
+	fset.BoolVar(&cfg.JSON, "json", false, "emit JSON report instead of markdown")
+	fset.IntVar(&cfg.DiffLines, "l", 200, "diff truncation limit")
+	fset.IntVar(&cfg.DiffLines, "diff-lines", 200, "diff truncation limit")
+	fset.StringVar(&cfg.RepoName, "n", "", "override repo name (default: basename of target)")
+	fset.StringVar(&cfg.RepoName, "repo-name", "", "override repo name (default: basename of target)")
+
+	for _, a := range args {
+		if a == "-h" || a == "--help" || a == "-?" {
+			printUsage()
+			return cfg, true, nil
+		}
+	}
+
+	if err := fset.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printUsage()
+			return cfg, true, nil
+		}
+		return cfg, false, err
+	}
+
+	rest := fset.Args()
+	if len(rest) == 0 {
+		return cfg, false, fmt.Errorf("drift-scan: missing <repo-path> argument")
+	}
+	if len(rest) > 1 {
+		return cfg, false, fmt.Errorf("drift-scan: unexpected extra arguments: %v", rest[1:])
+	}
+
+	abs, err := filepath.Abs(rest[0])
+	if err != nil {
+		return cfg, false, fmt.Errorf("drift-scan: resolve target path: %w", err)
+	}
+	cfg.Target = abs
+
+	cfg.Invocation = "governa drift-scan " + strings.Join(args, " ")
+
+	if cfg.Flavor != "" && cfg.Flavor != "code" && cfg.Flavor != "doc" {
+		return cfg, false, fmt.Errorf("drift-scan: --flavor must be code or doc, got %q", cfg.Flavor)
+	}
+
+	return cfg, false, nil
+}
+
+func printUsage() {
+	fmt.Fprintln(os.Stderr, `Usage: governa drift-scan <repo-path> [flags]
+
+Scan an adopted-governa repo against canon. Stages a partially-filled AC stub
+and IE entries when plan.md and docs/ exist.
+
+Flags:
+  -f, --flavor code|doc      overlay flavor (default: auto-detect)
+  -j, --json                 emit JSON report instead of markdown
+  -l, --diff-lines <N>       diff truncation limit (default: 200)
+  -n, --repo-name <name>     override repo name (default: basename of target)
+  -h, --help                 show this help`)
+}
+
+// RunCLI is the cmd-layer entry point. Parses args, runs the scan, returns exit code.
+func RunCLI(args []string, tfs fs.FS) (int, error) {
+	cfg, help, err := ParseArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		printUsage()
+		return ExitUsage, nil
+	}
+	if help {
+		return ExitOK, nil
+	}
+	exit, err := Run(cfg, tfs, os.Stdout)
+	return exit, err
+}
+
+// Run executes the drift-scan against cfg.Target, writing the report to out.
+// Returns an exit code suitable for os.Exit.
+func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
+	// H1: validate target exists.
+	info, err := os.Stat(cfg.Target)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ExitEnvError, fmt.Errorf("drift-scan: target %s does not exist; pass an existing repo path", cfg.Target)
+		}
+		return ExitEnvError, fmt.Errorf("drift-scan: stat target %s: %w", cfg.Target, err)
+	}
+	if !info.IsDir() {
+		return ExitEnvError, fmt.Errorf("drift-scan: target %s is not a directory", cfg.Target)
+	}
+
+	// Fail-safe: refuse governa-self.
+	if err := governance.DetectGovernaCheckoutAt(cfg.Target); err == nil {
+		return ExitEnvError, fmt.Errorf("drift-scan: target %s looks like a governa checkout — drift-scan is for adopted repos, not the governa source", cfg.Target)
+	}
+
+	// C1: require target to be a git repo. gitLogN silently returning empty
+	// would otherwise downgrade ambiguous files to clear-sync without warning.
+	gitDir := filepath.Join(cfg.Target, ".git")
+	if _, err := os.Stat(gitDir); err != nil {
+		return ExitEnvError, fmt.Errorf("drift-scan: target %s is not a git worktree (no .git/) — drift-scan needs git history to classify divergent files; run `git init` and commit, or pass an apply'd target", cfg.Target)
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return ExitEnvError, fmt.Errorf("drift-scan: git binary not found on PATH; install git before running drift-scan")
+	}
+
+	// Canon SHA via build-time vcs.revision (or test override).
+	sha := cfg.OverrideSHA
+	if sha == "" {
+		var err error
+		sha, err = canonSHA()
+		if err != nil {
+			return ExitEnvError, fmt.Errorf("drift-scan: %w", err)
+		}
+	}
+
+	// Flavor.
+	flavor := cfg.Flavor
+	if flavor == "" {
+		var err error
+		flavor, err = detectFlavor(cfg.Target)
+		if err != nil {
+			return ExitEnvError, fmt.Errorf("drift-scan: %w", err)
+		}
+	}
+
+	// Repo name.
+	repoName := cfg.RepoName
+	if repoName == "" {
+		repoName = governance.InferRepoName(cfg.Target)
+	}
+
+	// Build governance.Config to drive the renderer.
+	gcfg := governance.Config{
+		Mode:     governance.ModeApply,
+		Target:   cfg.Target,
+		RepoName: repoName,
+	}
+	switch flavor {
+	case "code":
+		gcfg.Type = governance.RepoTypeCode
+		stack := governance.InferStack(cfg.Target)
+		if stack == "" {
+			return ExitEnvError, fmt.Errorf("drift-scan: cannot resolve template variable {{STACK_OR_PLATFORM}} — target %s lacks a recognized stack manifest (go.mod, package.json, etc.); pass -f to disambiguate or run drift-scan against an apply'd target", cfg.Target)
+		}
+		gcfg.Stack = stack
+	case "doc":
+		gcfg.Type = governance.RepoTypeDoc
+	}
+
+	// Render canon to memory.
+	canon, err := governance.RenderCanonicalFiles(tfs, gcfg, cfg.Target)
+	if err != nil {
+		return ExitEnvError, fmt.Errorf("drift-scan: render canon: %w", err)
+	}
+
+	// M4: ensure Invocation has a sensible default for library callers.
+	invocation := cfg.Invocation
+	if invocation == "" {
+		invocation = fmt.Sprintf("governa drift-scan %s (programmatic)", cfg.Target)
+	}
+
+	// Walk canon, classify each.
+	report := Report{
+		Header: ReportHeader{
+			Invocation: invocation,
+			CanonSHA:   sha,
+			Target:     cfg.Target,
+			Flavor:     flavor,
+			RepoName:   repoName,
+		},
+	}
+	for _, relpath := range sortedKeys(canon) {
+		canonContent := canon[relpath]
+		fr := classifyFile(cfg, relpath, canonContent, sha)
+		report.Files = append(report.Files, fr)
+	}
+
+	// C4: surface target-has-no-canon files for the chosen flavor.
+	otherFlavor := "doc"
+	if flavor == "doc" {
+		otherFlavor = "code"
+	}
+	otherCanon, _ := otherFlavorCanonPaths(tfs, otherFlavor, repoName, cfg.Target)
+	for _, rel := range targetGovernanceFilesNotInCanon(cfg.Target, canon, otherCanon) {
+		report.Files = append(report.Files, FileResult{
+			Relpath:        rel,
+			Classification: ClassTargetNoCanon,
+			CanonRef:       fmt.Sprintf("(no canon path for flavor %s)", flavor),
+		})
+	}
+
+	// H3: compute numbering once and pass forward.
+	report.NextAC, _ = nextACNumber(cfg.Target)
+	report.NextIE, _ = nextIENumber(cfg.Target)
+
+	// Pre-staging gates: orphaned-IE, prior-staging-for-this-SHA.
+	if err := detectOrphanedIEs(cfg.Target); err != nil {
+		// Still emit report; staging is skipped.
+		report.StagingError = err.Error()
+		writeReport(out, report, cfg.JSON)
+		return ExitEnvError, nil
+	}
+	if err := checkPriorStaging(cfg.Target, sha); err != nil {
+		report.StagingError = err.Error()
+		writeReport(out, report, cfg.JSON)
+		return ExitEnvError, nil
+	}
+
+	// Auto-stage if prereqs exist.
+	planPath := filepath.Join(cfg.Target, "plan.md")
+	docsDir := filepath.Join(cfg.Target, "docs")
+	planExists := fileExists(planPath)
+	docsExists := dirExists(docsDir)
+
+	if planExists && docsExists {
+		stageErr := stageAll(cfg.Target, sha, &report, report.NextAC, report.NextIE)
+		if stageErr != nil {
+			report.StagingError = stageErr.Error()
+			writeReport(out, report, cfg.JSON)
+			return ExitEnvError, nil
+		}
+	} else {
+		var missing []string
+		if !planExists {
+			missing = append(missing, "plan.md")
+		}
+		if !docsExists {
+			missing = append(missing, "docs/")
+		}
+		report.StagingError = fmt.Sprintf("staging skipped: target missing prerequisite(s): %s", strings.Join(missing, ", "))
+		writeReport(out, report, cfg.JSON)
+		return ExitEnvError, nil
+	}
+
+	writeReport(out, report, cfg.JSON)
+	return ExitOK, nil
+}
+
+// canonSHA reads the build-time vcs.revision and truncates to 7 chars.
+func canonSHA() (string, error) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", fmt.Errorf("vcs.revision unavailable: BuildInfo missing — rebuild governa from a git checkout")
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.revision" && s.Value != "" {
+			if len(s.Value) >= 7 {
+				return s.Value[:7], nil
+			}
+			return s.Value, nil
+		}
+	}
+	return "", fmt.Errorf("vcs.revision unavailable: not embedded in binary — rebuild governa from a git checkout")
+}
+
+func detectFlavor(target string) (string, error) {
+	hasGoMod := fileExists(filepath.Join(target, "go.mod"))
+	hasJekyll := fileExists(filepath.Join(target, "_config.yml"))
+	switch {
+	case hasGoMod && !hasJekyll:
+		return "code", nil
+	case !hasGoMod && hasJekyll:
+		return "doc", nil
+	case !hasGoMod && !hasJekyll:
+		return "doc", nil
+	default:
+		return "", fmt.Errorf("ambiguous flavor: target has both go.mod and _config.yml — pass -f|--flavor code|doc to disambiguate")
+	}
+}
+
+// FileResult captures per-file scan outcome.
+type FileResult struct {
+	Relpath        string         `json:"relpath"`
+	Classification Classification `json:"classification"`
+	Diff           string         `json:"diff,omitempty"`
+	Commits        []string       `json:"commits,omitempty"`
+	Markers        []string       `json:"preserve_markers,omitempty"`
+	CanonRef       string         `json:"canon_ref,omitempty"`
+	CompareCommand string         `json:"compare_command,omitempty"`
+}
+
+// ReportHeader is the report's self-identifying header.
+type ReportHeader struct {
+	Invocation string `json:"invocation"`
+	CanonSHA   string `json:"canon_sha"`
+	Target     string `json:"target"`
+	Flavor     string `json:"flavor"`
+	RepoName   string `json:"repo_name"`
+}
+
+// Report is the full scan output.
+type Report struct {
+	Header       ReportHeader `json:"header"`
+	Files        []FileResult `json:"files"`
+	NextAC       int          `json:"next_ac"`
+	NextIE       int          `json:"next_ie"`
+	Staging      *StagingInfo `json:"staging,omitempty"`
+	StagingError string       `json:"staging_error,omitempty"`
+}
+
+// StagingInfo records what got staged.
+type StagingInfo struct {
+	ACPath      string   `json:"ac_path"`
+	PlanInserts []string `json:"plan_md_inserts"`
+}
+
+// expectedDivergencePaths are governed files whose content is per-repo by
+// design (template ships a stub; adopted repos fill it). Byte-compare always
+// diverges; we skip them and surface as ClassMatch with a note. (H2)
+var expectedDivergencePaths = map[string]bool{
+	"plan.md": true,
+}
+
+func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
+	targetPath := filepath.Join(cfg.Target, relpath)
+	fr := FileResult{
+		Relpath:  relpath,
+		CanonRef: fmt.Sprintf("governa @ %s: internal/templates/overlays/<flavor>/files/%s", sha, relpath),
+	}
+	targetBytes, err := os.ReadFile(targetPath)
+	if err != nil {
+		fr.Classification = ClassMissingTarget
+		return fr
+	}
+	target := string(targetBytes)
+	if target == canon {
+		fr.Classification = ClassMatch
+		fr.CompareCommand = fmt.Sprintf("byte-equal (canon @ %s vs %s)", sha, relpath)
+		return fr
+	}
+	// H2: per-repo content files always diverge from the canon stub.
+	if expectedDivergencePaths[relpath] {
+		fr.Classification = ClassMatch
+		fr.CompareCommand = fmt.Sprintf("expected per-repo divergence (canon @ %s is a content stub; %s carries repo-specific content)", sha, relpath)
+		return fr
+	}
+
+	// Divergent — collect evidence.
+	fr.Diff = unifiedDiff(canon, target, relpath, cfg.DiffLines)
+	fr.Commits = gitLogN(cfg.Target, relpath, 5)
+	fr.Markers = grepPreserveMarkers(cfg.Target, relpath)
+
+	switch {
+	case len(fr.Markers) > 0:
+		fr.Classification = ClassPreserve
+	case len(fr.Commits) > 0:
+		fr.Classification = ClassAmbiguity
+	default:
+		fr.Classification = ClassClearSync
+	}
+	return fr
+}
+
+// unifiedDiff produces a `diff -u`-style output truncated to maxLines.
+// Uses the system `diff` binary for fidelity with what users expect. Falls
+// back to a placeholder marker if `diff` is unavailable so the staged AC
+// surfaces the failure instead of an empty diff hunk. (H5)
+func unifiedDiff(canon, target, relpath string, maxLines int) string {
+	if _, err := exec.LookPath("diff"); err != nil {
+		return fmt.Sprintf("[diff unavailable: %s — install GNU/BSD diff and re-run]", err)
+	}
+	canonF, err := os.CreateTemp("", "drift-canon-")
+	if err != nil {
+		return fmt.Sprintf("[diff failed: create canon tmp: %s]", err)
+	}
+	defer os.Remove(canonF.Name())
+	canonF.WriteString(canon)
+	canonF.Close()
+
+	targetF, err := os.CreateTemp("", "drift-target-")
+	if err != nil {
+		return fmt.Sprintf("[diff failed: create target tmp: %s]", err)
+	}
+	defer os.Remove(targetF.Name())
+	targetF.WriteString(target)
+	targetF.Close()
+
+	// M6: -L is the portable form (BSD + GNU diff both accept it; --label is
+	// GNU-only on older systems).
+	cmd := exec.Command("diff", "-u",
+		"-L", "canon/"+relpath,
+		"-L", "target/"+relpath,
+		canonF.Name(), targetF.Name())
+	out, runErr := cmd.CombinedOutput()
+	// `diff` exits 1 when files differ — that's the success path here. Only
+	// exit codes ≥ 2 indicate trouble.
+	if exitErr, ok := runErr.(*exec.ExitError); ok && exitErr.ExitCode() >= 2 {
+		return fmt.Sprintf("[diff failed: exit %d: %s]", exitErr.ExitCode(), strings.TrimSpace(string(out)))
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if maxLines > 0 && len(lines) > maxLines {
+		extra := len(lines) - maxLines
+		lines = lines[:maxLines]
+		lines = append(lines, fmt.Sprintf("[... %d more lines truncated ...]", extra))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func gitLogN(targetRoot, relpath string, n int) []string {
+	cmd := exec.Command("git", "-C", targetRoot, "log",
+		fmt.Sprintf("-n%d", n),
+		"--follow", "--pretty=oneline", "--", relpath)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var result []string
+	for line := range strings.SplitSeq(strings.TrimRight(string(out), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		result = append(result, line)
+	}
+	return result
+}
+
+// preserveMarkerPatterns is the fixed phrase set per docs/drift-scan.md.
+// Format strings %s = relpath, %%s = literal %s placeholder for the qualifier.
+var preserveMarkerPatterns = []string{
+	`preserve %s`,
+	`do not sync %s`,
+	`intentional divergence: %s`,
+	`%s: keep local`,
+}
+
+// grepPreserveMarkers scans CHANGELOG and docs/ac*.md for verbatim preserve
+// markers naming relpath. C2: phrases must appear at a "boundary" — start of
+// line, after a `|` (CHANGELOG table cell), or after a `;` (CHANGELOG cell
+// separator) — optionally preceded by a list/bold marker. This avoids
+// matching prose like "we should preserve docs/foo.md eventually" where the
+// phrase appears mid-sentence.
+func grepPreserveMarkers(targetRoot, relpath string) []string {
+	var hits []string
+
+	// Build per-pattern anchored regexes once.
+	type compiled struct {
+		re *regexp.Regexp
+	}
+	var compiledPats []compiled
+	anchor := `(?:^|[|;])\s*(?:[-*]\s+|\*\*[^*]+\*\*\s+)?`
+	for _, pat := range preserveMarkerPatterns {
+		phrase := fmt.Sprintf(pat, relpath)
+		compiledPats = append(compiledPats, compiled{
+			re: regexp.MustCompile(anchor + regexp.QuoteMeta(phrase)),
+		})
+	}
+
+	scan := func(content string) {
+		for line := range strings.SplitSeq(content, "\n") {
+			for _, c := range compiledPats {
+				if c.re.MatchString(line) {
+					hits = append(hits, strings.TrimSpace(line))
+					break
+				}
+			}
+		}
+	}
+
+	if changelog, err := os.ReadFile(filepath.Join(targetRoot, "CHANGELOG.md")); err == nil {
+		scan(string(changelog))
+	}
+
+	docsDir := filepath.Join(targetRoot, "docs")
+	if entries, err := os.ReadDir(docsDir); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if !strings.HasPrefix(name, "ac") || !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join(docsDir, name))
+			if err != nil {
+				continue
+			}
+			scan(string(content))
+		}
+	}
+
+	return uniq(hits)
+}
+
+func uniq(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	var out []string
+	for _, s := range in {
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+var (
+	// L1: require the .md suffix to avoid matching backup files.
+	acFilenameRe = regexp.MustCompile(`^ac(\d+)-.*\.md$`)
+	acRefRe      = regexp.MustCompile(`AC(\d+)`)
+	ieRe         = regexp.MustCompile(`IE(\d+)`)
+)
+
+func nextACNumber(targetRoot string) (int, error) {
+	max := 0
+	docsDir := filepath.Join(targetRoot, "docs")
+	if entries, err := os.ReadDir(docsDir); err == nil {
+		for _, e := range entries {
+			m := acFilenameRe.FindStringSubmatch(e.Name())
+			if m == nil {
+				continue
+			}
+			n, _ := strconv.Atoi(m[1])
+			if n > max {
+				max = n
+			}
+		}
+	}
+	cmd := exec.Command("git", "-C", targetRoot, "log", "--all", "--pretty=%B")
+	if out, err := cmd.Output(); err == nil {
+		for _, m := range acRefRe.FindAllStringSubmatch(string(out), -1) {
+			n, _ := strconv.Atoi(m[1])
+			if n > max {
+				max = n
+			}
+		}
+	}
+	return max + 1, nil
+}
+
+func nextIENumber(targetRoot string) (int, error) {
+	planBytes, err := os.ReadFile(filepath.Join(targetRoot, "plan.md"))
+	if err != nil {
+		return 1, nil
+	}
+	max := 0
+	for _, m := range ieRe.FindAllStringSubmatch(string(planBytes), -1) {
+		n, _ := strconv.Atoi(m[1])
+		if n > max {
+			max = n
+		}
+	}
+	return max + 1, nil
+}
+
+// detectOrphanedIEs scans plan.md for shape-(b) IE entries pointing at
+// docs/ac*-drift-scan-from-*.md and verifies the referenced AC file exists.
+// L2: accepts both `→` (U+2192) and ASCII `->` to be lenient on Operator typing.
+func detectOrphanedIEs(targetRoot string) error {
+	planBytes, err := os.ReadFile(filepath.Join(targetRoot, "plan.md"))
+	if err != nil {
+		return nil // plan.md missing is handled separately
+	}
+	re := regexp.MustCompile(`(?m)^- (IE\d+):.*(?:→|->)\s*(docs/ac\d+-drift-scan-from-[^\s]+\.md)`)
+	for _, m := range re.FindAllStringSubmatch(string(planBytes), -1) {
+		ieID := m[1]
+		acPath := m[2]
+		full := filepath.Join(targetRoot, acPath)
+		if _, err := os.Stat(full); errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("plan.md %s points to deleted %s; remove the orphaned IE entries before re-running so staging does not produce duplicates", ieID, acPath)
+		}
+	}
+	return nil
+}
+
+// checkPriorStaging looks for any pre-existing ac*-drift-scan-from-<sha>.md
+// matching the current canon SHA in target's docs/.
+func checkPriorStaging(targetRoot, sha string) error {
+	docsDir := filepath.Join(targetRoot, "docs")
+	entries, err := os.ReadDir(docsDir)
+	if err != nil {
+		return nil
+	}
+	suffix := fmt.Sprintf("-drift-scan-from-%s.md", sha)
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, suffix) {
+			return fmt.Errorf("a prior drift-scan AC for canon SHA %s already exists at docs/%s; resolve (commit, delete, or amend) before re-running", sha, name)
+		}
+	}
+	return nil
+}
+
+func fileExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
+func dirExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// stageAll writes the AC stub and inserts plan.md IE entries atomically.
+// H3: AC and IE numbers are passed in (computed once in Run) rather than
+// recomputed here, eliminating the race window between the two reads.
+func stageAll(targetRoot, sha string, report *Report, acN, ieStart int) error {
+	acFilename := fmt.Sprintf("ac%d-drift-scan-from-%s.md", acN, sha)
+	acPath := filepath.Join(targetRoot, "docs", acFilename)
+
+	planPath := filepath.Join(targetRoot, "plan.md")
+	planBytes, err := os.ReadFile(planPath)
+	if err != nil {
+		return fmt.Errorf("read plan.md: %w", err)
+	}
+
+	// Compute IE entries before AC content (AC's ATs reference the inserted IE numbers).
+	ieEntries, ambiguityIEs, shapeBIE := buildIEEntries(report.Files, ieStart, sha, acFilename)
+
+	newPlanContent, err := insertIEsIntoPlan(string(planBytes), ieEntries)
+	if err != nil {
+		return err
+	}
+
+	acContent := buildACStub(acN, sha, report, ambiguityIEs, shapeBIE)
+
+	// Atomic: write both via temp files, then rename.
+	if err := atomicWrite(acPath, []byte(acContent)); err != nil {
+		return fmt.Errorf("write AC: %w", err)
+	}
+	if err := atomicWrite(planPath, []byte(newPlanContent)); err != nil {
+		// Roll back AC write.
+		os.Remove(acPath)
+		return fmt.Errorf("write plan.md: %w", err)
+	}
+
+	report.Staging = &StagingInfo{
+		ACPath:      filepath.Join("docs", acFilename),
+		PlanInserts: ieEntries,
+	}
+	return nil
+}
+
+func atomicWrite(dst string, content []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(dst), filepath.Base(dst)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+// buildIEEntries produces one shape-(b) IE plus one shape-(a) IE per ambiguity,
+// returning the formatted lines, the ambiguity entries (for AC ATs), and the
+// shape-(b) line (for AC ATs).
+func buildIEEntries(files []FileResult, ieStart int, sha, acFilename string) ([]string, []string, string) {
+	var entries []string
+	var ambiguities []FileResult
+	for _, f := range files {
+		if f.Classification == ClassAmbiguity {
+			ambiguities = append(ambiguities, f)
+		}
+	}
+
+	shapeBIE := fmt.Sprintf(
+		"- IE%d: drift-scan against governa @ %s → docs/%s",
+		ieStart, sha, acFilename,
+	)
+	entries = append(entries, shapeBIE)
+
+	var shapeALines []string
+	for i, f := range ambiguities {
+		line := fmt.Sprintf(
+			"- IE%d: drift-scan ambiguity in %s — sync to canon or keep local? See docs/%s for diff and classification.",
+			ieStart+1+i, f.Relpath, acFilename,
+		)
+		entries = append(entries, line)
+		shapeALines = append(shapeALines, line)
+	}
+	return entries, shapeALines, shapeBIE
+}
+
+// insertIEsIntoPlan inserts new IE entries into plan.md after the highest
+// existing IE<M> line. Replaces "(none active)" if that's the only content
+// under ## Ideas To Explore. Errors if the section heading is missing.
+func insertIEsIntoPlan(plan string, entries []string) (string, error) {
+	lines := strings.Split(plan, "\n")
+	var ideasIdx = -1
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "## Ideas To Explore" {
+			ideasIdx = i
+			break
+		}
+	}
+	if ideasIdx < 0 {
+		return "", fmt.Errorf("plan.md missing `## Ideas To Explore` section or IE entries; fix the section heading before re-running")
+	}
+
+	// Find last IE<N> line within the Ideas To Explore section, or (none active) marker.
+	lastIEIdx := -1
+	noneActiveIdx := -1
+	endSection := len(lines)
+	for i := ideasIdx + 1; i < len(lines); i++ {
+		l := lines[i]
+		if strings.HasPrefix(strings.TrimSpace(l), "## ") {
+			endSection = i
+			break
+		}
+		if ieRe.MatchString(l) && strings.HasPrefix(strings.TrimSpace(l), "- IE") {
+			lastIEIdx = i
+		}
+		if strings.TrimSpace(l) == "(none active)" {
+			noneActiveIdx = i
+		}
+	}
+
+	if noneActiveIdx >= 0 && lastIEIdx < 0 {
+		// Replace (none active) with the new entries.
+		out := append([]string(nil), lines[:noneActiveIdx]...)
+		out = append(out, entries...)
+		out = append(out, lines[noneActiveIdx+1:]...)
+		return strings.Join(out, "\n"), nil
+	}
+
+	if lastIEIdx < 0 {
+		return "", fmt.Errorf("plan.md missing `## Ideas To Explore` section or IE entries; fix the section heading before re-running")
+	}
+
+	// Insert after lastIEIdx.
+	out := append([]string(nil), lines[:lastIEIdx+1]...)
+	out = append(out, entries...)
+	out = append(out, lines[lastIEIdx+1:endSection]...)
+	out = append(out, lines[endSection:]...)
+	return strings.Join(out, "\n"), nil
+}
+
+// buildACStub constructs the partially-filled AC stub.
+func buildACStub(acN int, sha string, report *Report, shapeALines []string, shapeBIE string) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "# AC%d Drift-Scan from governa @ %s\n\n", acN, sha)
+
+	// Summary placeholder
+	fmt.Fprintln(&b, "## Summary")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
+	fmt.Fprintln(&b)
+
+	// Objective Fit placeholder
+	fmt.Fprintln(&b, "## Objective Fit")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
+	fmt.Fprintln(&b)
+
+	// In Scope
+	fmt.Fprintln(&b, "## In Scope")
+	fmt.Fprintln(&b)
+	clearSync := filterByClass(report.Files, ClassClearSync)
+	if len(clearSync) == 0 {
+		fmt.Fprintln(&b, "None.")
+	} else {
+		for _, f := range clearSync {
+			fmt.Fprintf(&b, "- `%s` — sync to canon\n", f.Relpath)
+		}
+	}
+	fmt.Fprintln(&b)
+
+	// Out Of Scope
+	fmt.Fprintln(&b, "## Out Of Scope")
+	fmt.Fprintln(&b)
+	preserves := filterByClass(report.Files, ClassPreserve)
+	if len(preserves) == 0 {
+		fmt.Fprintln(&b, "None.")
+	} else {
+		for _, f := range preserves {
+			fmt.Fprintf(&b, "- `%s` — preserve marker present:\n", f.Relpath)
+			for _, m := range f.Markers {
+				fmt.Fprintf(&b, "  - `%s`\n", m)
+			}
+		}
+	}
+	fmt.Fprintln(&b)
+
+	// Implementation Notes
+	fmt.Fprintln(&b, "## Implementation Notes")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Canon: governa @ %s, flavor `%s`. Comparison: `governa drift-scan` against the embedded canon.\n", sha, report.Header.Flavor)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Per-file outcomes:")
+	fmt.Fprintln(&b)
+	for _, f := range report.Files {
+		fmt.Fprintf(&b, "- `%s` — %s\n", f.Relpath, f.Classification)
+	}
+	fmt.Fprintln(&b)
+
+	// Match evidence
+	matches := filterByClass(report.Files, ClassMatch)
+	if len(matches) > 0 {
+		fmt.Fprintln(&b, "### Match evidence")
+		fmt.Fprintln(&b)
+		for _, f := range matches {
+			fmt.Fprintf(&b, "- `%s` — %s\n", f.Relpath, f.CompareCommand)
+		}
+		fmt.Fprintln(&b)
+	}
+
+	// Divergent file detail
+	divergent := []FileResult{}
+	for _, f := range report.Files {
+		if f.Classification == ClassPreserve || f.Classification == ClassAmbiguity || f.Classification == ClassClearSync {
+			divergent = append(divergent, f)
+		}
+	}
+	if len(divergent) > 0 {
+		fmt.Fprintln(&b, "### Divergent files")
+		fmt.Fprintln(&b)
+		for _, f := range divergent {
+			fmt.Fprintf(&b, "#### `%s` — %s\n\n", f.Relpath, f.Classification)
+			fmt.Fprintf(&b, "Canon: %s\n\n", f.CanonRef)
+			if len(f.Commits) > 0 {
+				fmt.Fprintln(&b, "Local commits (`git log -n 5 --follow`):")
+				fmt.Fprintln(&b)
+				for _, c := range f.Commits {
+					fmt.Fprintf(&b, "- `%s`\n", c)
+				}
+				fmt.Fprintln(&b)
+			}
+			if f.Diff != "" {
+				fmt.Fprintln(&b, "Diff (`diff -u canon target`):")
+				fmt.Fprintln(&b)
+				fmt.Fprintln(&b, "```diff")
+				fmt.Fprintln(&b, f.Diff)
+				fmt.Fprintln(&b, "```")
+				fmt.Fprintln(&b)
+			}
+		}
+	}
+
+	// Warnings
+	warnings := filterByClass(report.Files, ClassMissingTarget)
+	if len(warnings) > 0 {
+		fmt.Fprintln(&b, "### Warnings")
+		fmt.Fprintln(&b)
+		for _, f := range warnings {
+			fmt.Fprintf(&b, "- `%s` — %s\n", f.Relpath, f.Classification)
+		}
+		fmt.Fprintln(&b)
+	}
+
+	// Post-merge coherence audit placeholder
+	fmt.Fprintln(&b, "### Post-merge coherence audit")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
+	fmt.Fprintln(&b)
+
+	// Acceptance Tests
+	fmt.Fprintln(&b, "## Acceptance Tests")
+	fmt.Fprintln(&b)
+	atN := 1
+	for _, f := range preserves {
+		for _, m := range f.Markers {
+			// Find a verbatim short phrase to grep — use the first preserve marker pattern that fits.
+			phrase := firstMatchingPhrase(f.Relpath, m)
+			// H4: use a literal/fixed-string flag so phrases with shell or
+			// regex metacharacters work. -F = literal; -- ends flag parsing.
+			fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -qF -- %s CHANGELOG.md`.\n\n", atN, shellQuote(phrase))
+			atN++
+		}
+	}
+	// Shape-(b) IE assertion. M1: extractIENum returns 0 only on regex miss,
+	// which can't happen for tool-generated lines; guard with a panic-free
+	// fallback that the AT body remains valid even if the format ever changes.
+	if n := extractIENum(shapeBIE); n > 0 {
+		fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -q '^- IE%d: ' plan.md`.\n\n", atN, n)
+		atN++
+	}
+	for _, line := range shapeALines {
+		if n := extractIENum(line); n > 0 {
+			fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -q '^- IE%d: ' plan.md`.\n\n", atN, n)
+			atN++
+		}
+	}
+	// M5: clear-sync items get no auto-generated AT — the Operator adds them
+	// when implementing the sync. Note this so the staged AC isn't misread as
+	// "ATs cover everything".
+	if len(clearSync) > 0 {
+		fmt.Fprintf(&b, "<!-- TBD by Operator: add one AT per clear-sync file in `## In Scope` verifying the sync was applied. -->\n\n")
+	}
+
+	// Documentation Updates
+	fmt.Fprintln(&b, "## Documentation Updates")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "- `CHANGELOG.md` — release row added at release prep time per template guidance.")
+	fmt.Fprintln(&b)
+
+	// Director Review
+	fmt.Fprintln(&b, "## Director Review")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "None.")
+	fmt.Fprintln(&b)
+
+	// Status
+	fmt.Fprintln(&b, "## Status")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "`PENDING` — awaiting Director critique.")
+
+	return b.String()
+}
+
+func filterByClass(files []FileResult, c Classification) []FileResult {
+	var out []FileResult
+	for _, f := range files {
+		if f.Classification == c {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func firstMatchingPhrase(relpath, line string) string {
+	for _, pat := range preserveMarkerPatterns {
+		phrase := fmt.Sprintf(pat, relpath)
+		if strings.Contains(line, phrase) {
+			return phrase
+		}
+	}
+	return relpath
+}
+
+func extractIENum(line string) int {
+	m := ieRe.FindStringSubmatch(line)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+// writeReport emits to out in markdown or JSON.
+func writeReport(out io.Writer, r Report, asJSON bool) {
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(r)
+		return
+	}
+	fmt.Fprintln(out, "# Drift-Scan Report")
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "- Invocation: `%s`\n", r.Header.Invocation)
+	fmt.Fprintf(out, "- Canon: governa @ %s\n", r.Header.CanonSHA)
+	fmt.Fprintf(out, "- Target: %s\n", r.Header.Target)
+	fmt.Fprintf(out, "- Flavor: %s\n", r.Header.Flavor)
+	fmt.Fprintf(out, "- Repo name: %s\n", r.Header.RepoName)
+	fmt.Fprintf(out, "- Next AC: AC%d\n", r.NextAC)
+	fmt.Fprintf(out, "- Next IE: IE%d\n", r.NextIE)
+	if r.Staging != nil {
+		fmt.Fprintf(out, "- Staged: `%s`\n", r.Staging.ACPath)
+	}
+	if r.StagingError != "" {
+		fmt.Fprintf(out, "- Staging: skipped — %s\n", r.StagingError)
+	}
+	fmt.Fprintln(out)
+
+	fmt.Fprintln(out, "## Files")
+	fmt.Fprintln(out)
+	for _, f := range r.Files {
+		fmt.Fprintf(out, "### `%s` — %s\n\n", f.Relpath, f.Classification)
+		if f.CompareCommand != "" {
+			fmt.Fprintf(out, "Compare: %s\n\n", f.CompareCommand)
+		}
+		if f.CanonRef != "" {
+			fmt.Fprintf(out, "Canon ref: `%s`\n\n", f.CanonRef)
+		}
+		if len(f.Markers) > 0 {
+			fmt.Fprintln(out, "Preserve markers:")
+			for _, m := range f.Markers {
+				fmt.Fprintf(out, "- `%s`\n", m)
+			}
+			fmt.Fprintln(out)
+		}
+		if len(f.Commits) > 0 {
+			fmt.Fprintln(out, "Local commits:")
+			for _, c := range f.Commits {
+				fmt.Fprintf(out, "- `%s`\n", c)
+			}
+			fmt.Fprintln(out)
+		}
+		if f.Diff != "" {
+			fmt.Fprintln(out, "```diff")
+			fmt.Fprintln(out, f.Diff)
+			fmt.Fprintln(out, "```")
+			fmt.Fprintln(out)
+		}
+	}
+}
+
+// EmbeddedFS exposes the templates FS to test callers without exporting the
+// templates package elsewhere.
+var EmbeddedFS = templates.EmbeddedFS
+
+// shellQuote returns s wrapped in single quotes, escaping any embedded single
+// quotes for safe use in a shell command line. (H4)
+func shellQuote(s string) string {
+	if !strings.ContainsAny(s, "'\"\\$`") && !strings.ContainsAny(s, " \t\n;|&<>()") {
+		return "'" + s + "'"
+	}
+	// Standard POSIX-safe single-quoted form: 'foo'\''bar'.
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// otherFlavorCanonPaths renders the OTHER flavor's canon and returns the set
+// of relpaths it produces. Used by C4 to detect target files that would be
+// governed by the other flavor (suggesting flavor mis-detection or a
+// straddling repo).
+func otherFlavorCanonPaths(tfs fs.FS, otherFlavor, repoName, target string) (map[string]bool, error) {
+	gcfg := governance.Config{
+		Mode:     governance.ModeApply,
+		Target:   target,
+		RepoName: repoName,
+	}
+	switch otherFlavor {
+	case "code":
+		gcfg.Type = governance.RepoTypeCode
+		gcfg.Stack = "Go" // best-effort; any non-empty stack lets the renderer succeed
+	case "doc":
+		gcfg.Type = governance.RepoTypeDoc
+	default:
+		return nil, fmt.Errorf("unknown flavor %q", otherFlavor)
+	}
+	files, err := governance.RenderCanonicalFiles(tfs, gcfg, target)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(files))
+	for k := range files {
+		out[k] = true
+	}
+	return out, nil
+}
+
+// targetGovernanceFilesNotInCanon walks target's docs/ and selected root files,
+// returning relpaths that exist in the target but NOT in our canon. If the
+// otherCanon map indicates the file IS in the other flavor's canon, the result
+// is more useful (suggests flavor mismatch); otherwise it's just a per-repo
+// addition the Operator can ignore. We surface only the otherCanon-overlapping
+// case to keep the warnings actionable.
+func targetGovernanceFilesNotInCanon(target string, ourCanon map[string]string, otherCanon map[string]bool) []string {
+	var out []string
+	// Walk docs/.
+	docsDir := filepath.Join(target, "docs")
+	_ = filepath.WalkDir(docsDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(target, p)
+		rel = filepath.ToSlash(rel)
+		// Skip per-AC files (always per-repo).
+		base := filepath.Base(rel)
+		if strings.HasPrefix(base, "ac") && strings.HasSuffix(base, ".md") {
+			if matched, _ := regexp.MatchString(`^ac\d+-`, base); matched {
+				return nil
+			}
+		}
+		if _, inOurs := ourCanon[rel]; inOurs {
+			return nil
+		}
+		if otherCanon[rel] {
+			out = append(out, rel)
+		}
+		return nil
+	})
+	// Walk selected root files.
+	rootEntries, err := os.ReadDir(target)
+	if err == nil {
+		for _, e := range rootEntries {
+			if e.IsDir() {
+				continue
+			}
+			rel := e.Name()
+			if _, inOurs := ourCanon[rel]; inOurs {
+				continue
+			}
+			if otherCanon[rel] {
+				out = append(out, rel)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}

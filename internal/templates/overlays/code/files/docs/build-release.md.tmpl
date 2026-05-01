@@ -65,5 +65,6 @@ CHANGELOG row shape (enforced by prep's insertion code and by convention):
 - Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
 - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
 - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
+- When an AC locks a local form against canon (preserves a customization, declares intentional divergence, blocks a sync), include an explicit `preserve <path> <qualifier>` phrase in the summary. `governa drift-scan` only recognizes explicit markers; implicit AC references won't lock the file. Recognized phrase set: `preserve <path>`, `do not sync <path>`, `intentional divergence: <path>`, `<path>: keep local`.
 
 Flags: `--dry-run` (or `-n`) prints intended writes without touching the working tree; `--no-build` skips phases 3 and 8. Both are for power users or tests — the common path is plain `go run ./cmd/prep/ vX.Y.Z "message"`.

@@ -46,3 +46,34 @@ func TestCLIHelpAlias(t *testing.T) {
 		}
 	}
 }
+
+// AT for cmd/governa/main_test.go subcommand registration coverage:
+// drift-scan appears in printUsage() output.
+func TestDriftScanSubcommandListed(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+	out, _ := exec.Command(bin, "help").CombinedOutput()
+	if !strings.Contains(string(out), "drift-scan") {
+		t.Errorf("expected 'drift-scan' in help output, got:\n%s", out)
+	}
+}
+
+// drift-scan dispatches to the drift-scan handler (not "unknown command").
+func TestDriftScanDispatch(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+	out, _ := exec.Command(bin, "drift-scan").CombinedOutput()
+	if strings.Contains(string(out), "unknown command") {
+		t.Errorf("drift-scan should not be unknown, got:\n%s", out)
+	}
+}
+
+// `governa drift-scan -h` prints drift-scan-specific help.
+func TestDriftScanHelp(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+	out, _ := exec.Command(bin, "drift-scan", "-h").CombinedOutput()
+	if !strings.Contains(string(out), "Scan an adopted-governa repo") {
+		t.Errorf("drift-scan help should describe the command, got:\n%s", out)
+	}
+}
