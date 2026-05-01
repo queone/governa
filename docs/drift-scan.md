@@ -1,6 +1,6 @@
 # Drift Scan
 
-When the user invokes `drift <repo-path>`, follow this protocol.
+When the user invokes `drift-scan <repo-path>`, follow this protocol.
 
 ## Protocol
 

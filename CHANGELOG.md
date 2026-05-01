@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.100.1 | rename drift command to drift-scan (verb form) |
 | 0.100.0 | add drift <repo-path> protocol; numbered/question-form Director Review |
 | 0.99.0 | reframe Director Review as pending-decisions queue; line-83 verb fix |
 | 0.98.0 | AC103: repo-relative paths in adoption AC In Scope list |
