@@ -78,11 +78,11 @@ List the docs that must be updated as part of this AC. If a change touches code 
 
 ## Director Review
 
-List every scope or wording trade-off chosen between two or more viable options during the Operator/Director cycle. Each entry names the option taken and a one-line why. Empty is allowed — write `None` when the AC has no judgment calls worth surfacing.
+This section lists trade-offs the Director still needs to decide. Each entry states the open question, the Operator's lean, and a one-line why. Once the Director decides (in conversation or by editing the AC), move the item out of this section and attribute it inline (Summary, In Scope/Out of Scope, Implementation Notes) with a `Director-set` parenthetical. Choices already covered by repo precedent are not surfaced here at all. Write `None` when nothing is open.
 
-The Director validates this list during critique rounds.
+The Director resolves these during critique rounds — in conversation or by editing the AC directly.
 
-- Decision X: option taken (alternatives considered: A, B). Why: <one-line>.
+- Decision X: option leaned toward (alternatives: A, B). Why: <one-line>.
 
 ## Status
 

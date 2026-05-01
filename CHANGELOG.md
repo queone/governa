@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.99.0 | reframe Director Review as pending-decisions queue; line-83 verb fix |
 | 0.98.0 | AC103: repo-relative paths in adoption AC In Scope list |
 | 0.97.2 | AC102: in-tree wrapper rationale — comments + policy corollary |
 | 0.97.1 | AC101: governa shrinkage — dead governance.go guards + doc cleanup |
