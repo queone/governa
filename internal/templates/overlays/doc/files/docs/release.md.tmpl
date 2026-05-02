@@ -17,6 +17,8 @@ Every AT in an AC document must be labeled `[Automated]` or `[Manual]`.
 
 Default to Automated whenever the result is verifiable without a live external service. Manual ATs add friction to the release flow, so reserve them for behaviors that genuinely cannot be checked any other way.
 
+Source axis (`[Automated]` / `[Manual]`) names who verifies. Timing axis (`[Pre-release gate]` / `[Post-release verification]`) names when verification happens. `[Pre-release gate]` is the default and may be omitted; `[Post-release verification]` is explicit. Use `[Post-release verification]` only when automated regression coverage already gates pre-release on the underlying class. The label communicates that the AT is a confidence check, not a gate, so future Operators do not promote it back into a gate.
+
 ## Pre-Release Checklist
 
 Do not start this checklist unless the user explicitly asks to prep for release or equivalent.

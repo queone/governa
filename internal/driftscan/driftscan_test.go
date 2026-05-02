@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -640,7 +641,7 @@ func TestImplementationNotes_RoutingSummaryTableFirst(t *testing.T) {
 		t.Errorf("`### Routing summary` must precede `### Match evidence`; rsIdx=%d meIdx=%d", rsIdx, meIdx)
 	}
 	// Table header must follow.
-	if !strings.Contains(ac[rsIdx:], "| File | Local edit source | What diverged | Recommendation |") {
+	if !strings.Contains(ac[rsIdx:], "| File | Local edit source | What diverged | Operator lean (as of staging) |") {
 		t.Errorf("expected routing summary table header, got:\n%s", ac[rsIdx:])
 	}
 }
@@ -745,7 +746,7 @@ func TestImplementationNotes_AsymmetryNote(t *testing.T) {
 	ac := mustRead(t, matches[0])
 
 	// AC105 Part B: same verbatim string in both AC and console.
-	const note = "Scan walks canon→target only. Files in target with no canon counterpart are not enumerated here except via per-file `Coupled local-only files` sub-bullets."
+	const note = "Scan walks canon→target only. Files in target with no canon counterpart surface under `### Files in target without canon` (when present in the other flavor's canon) or via name-reference body scan."
 	if !strings.Contains(ac, note) {
 		t.Errorf("AC missing asymmetry note, got:\n%s", ac)
 	}
@@ -754,31 +755,11 @@ func TestImplementationNotes_AsymmetryNote(t *testing.T) {
 	}
 }
 
-// AT-A1: Coupled local-only files are listed for divergent files using the
-// directory-sibling rule. cmd/rel/helper.go is local-only and must be
-// surfaced under cmd/rel/main.go's per-file block.
-func TestCoupledLocalOnlyFiles_DirectorySiblings(t *testing.T) {
-	dir := docFixture(t)
-	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\n// local divergent version\n")
-	mustWrite(t, filepath.Join(dir, "cmd/rel/helper.go"), "package main\n// local-only sibling\n")
-	gitAddCommit(t, dir, "AC1: cmd/rel divergence")
-
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	matches := findStagedACs(t, dir)
-	ac := mustRead(t, matches[0])
-
-	if !strings.Contains(ac, "Coupled local-only files: cmd/rel/helper.go") {
-		t.Errorf("expected helper.go listed under Coupled local-only files for cmd/rel/main.go, got:\n%s", ac)
-	}
-}
-
-// AT-A2: Shell→binary coupling groups rel.sh and cmd/rel/main.go into one
-// Director Review entry. The single regex over `*.sh` must resolve `go run
-// ./cmd/rel` to a divergent file in cmd/rel/.
-func TestCoupledLocalOnlyFiles_ShellBinary(t *testing.T) {
+// AC106 Part C: Shell→binary coupling surfaces both files in the
+// `Coupled-with:` annotation under each one's per-file block. Q-per-file
+// emission means each file gets its own Director Review Q (the prior
+// "must route together" framing was dropped per class G).
+func TestCoupling_ShellBinary(t *testing.T) {
 	dir := docFixture(t)
 	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\n// local\n")
 	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nset -euo pipefail\nexec go run ./cmd/rel \"$@\"\n")
@@ -791,43 +772,13 @@ func TestCoupledLocalOnlyFiles_ShellBinary(t *testing.T) {
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
-	// One Director Review line must mention both files together.
-	drStart := strings.Index(ac, "## Director Review")
-	if drStart < 0 {
-		t.Fatalf("no Director Review section, got:\n%s", ac)
+	// AC106 class G: no "must route together" assertion anywhere in the AC.
+	if strings.Contains(ac, "must route together") {
+		t.Errorf("class G violation: AC must not contain `must route together`; got:\n%s", ac)
 	}
-	dr := ac[drStart:]
-	found := false
-	for line := range strings.SplitSeq(dr, "\n") {
-		if strings.Contains(line, "`cmd/rel/main.go`") && strings.Contains(line, "`rel.sh`") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected one Director Review line mentioning both cmd/rel/main.go and rel.sh, got:\n%s", dr)
-	}
-	if !strings.Contains(dr, "(coupled — must route together)") {
-		t.Errorf("expected coupled-group framing, got:\n%s", dr)
-	}
-}
-
-// AT-A3: Coupled files appear in a single Director Review entry, not
-// multiple. This guards against accidentally emitting one question per
-// coupled file in addition to the grouped question.
-func TestDirectorReview_GroupsCoupledFiles(t *testing.T) {
-	dir := docFixture(t)
-	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\n// local\n")
-	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/rel \"$@\"\n")
-	gitAddCommit(t, dir, "AC1: cmd/rel + rel.sh")
-
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	matches := findStagedACs(t, dir)
-	ac := mustRead(t, matches[0])
-
+	// AC106 Part B: Q-per-file emission. Each file gets its own Director
+	// Review Q. Ambiguity files emit a Q with "Should `<path>` be synced"
+	// shape.
 	drStart := strings.Index(ac, "## Director Review")
 	if drStart < 0 {
 		t.Fatalf("no Director Review section, got:\n%s", ac)
@@ -837,41 +788,11 @@ func TestDirectorReview_GroupsCoupledFiles(t *testing.T) {
 	if drEnd > 0 {
 		dr = dr[:drEnd]
 	}
-
-	// Coupled files must NOT appear as separate single-file entries.
-	// A single-file entry has the form "N. Should `<one path>` be synced..."
-	// without the "(coupled — must route together)" parenthetical.
 	for _, rel := range []string{"cmd/rel/main.go", "rel.sh"} {
-		soloPattern := "Should `" + rel + "` be synced"
-		if strings.Contains(dr, soloPattern) {
-			t.Errorf("coupled file %q must not appear as a separate single-file entry; got:\n%s", rel, dr)
+		want := "Should `" + rel + "` be synced"
+		if !strings.Contains(dr, want) {
+			t.Errorf("Q-per-file: expected per-file Q for %q, got:\n%s", rel, dr)
 		}
-	}
-}
-
-// QA-3 + QA-4: enumerateLocalOnlySiblings filters OS/editor noise files
-// (.DS_Store, Thumbs.db, *.swp, *~) and symlinks (e.g., CLAUDE.md →
-// AGENTS.md). Only real local-only files surface in CoupledLocalOnly.
-func TestEnumerateLocalOnlySiblings_FiltersNoiseAndSymlinks(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{
-		"real.go",
-		".DS_Store",
-		"Thumbs.db",
-		"main.go.swp",
-		"backup~",
-	} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.Symlink("real.go", filepath.Join(dir, "alias.md")); err != nil {
-		t.Skipf("symlink unsupported on this filesystem: %v", err)
-	}
-	canonPaths := map[string]bool{"main.go": true}
-	siblings := enumerateLocalOnlySiblings(dir, "main.go", canonPaths)
-	if len(siblings) != 1 || siblings[0] != "real.go" {
-		t.Errorf("expected [real.go] (noise + symlink filtered), got %v", siblings)
 	}
 }
 
@@ -902,9 +823,11 @@ func TestAcceptanceTests_NoneWhenInScopeEmpty(t *testing.T) {
 	}
 }
 
-// QA-6: For divergent files with no local-only siblings, the per-file
-// block must render `Coupled local-only files: None` (not omit the line).
-func TestPerFileBlock_CoupledLocalOnlyNoneRendered(t *testing.T) {
+// AC106 Part B: For divergent files with no coupled siblings under the
+// unified rule, the per-file block must render `Coupled-with: None`
+// (not omit the line). Replaces the prior `Coupled local-only files`
+// rendering — directory-sibling enumeration is no longer used.
+func TestPerFileBlock_CoupledWithNoneRendered(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
 	captureOut(t, func(f *os.File) {
@@ -912,28 +835,34 @@ func TestPerFileBlock_CoupledLocalOnlyNoneRendered(t *testing.T) {
 	})
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
-	// docs/ac-template.md is in target's docs/ alongside only per-AC files
-	// (filtered) — so its CoupledLocalOnly is empty and the line must read
-	// `None`.
-	if !strings.Contains(ac, "Coupled local-only files: None") {
-		t.Errorf("expected `Coupled local-only files: None` line for at least one divergent file, got:\n%s", ac)
+	if !strings.Contains(ac, "Coupled-with: None") {
+		t.Errorf("expected `Coupled-with: None` line for at least one divergent file, got:\n%s", ac)
 	}
 }
 
-// QA-7: Three or more divergent files unioned via shared coupled-local-only
-// siblings collapse into a single routing group.
+// AC106 Part C: Three .go files in the same package + same directory
+// transitively union into a single routing group via the Go same-package
+// build-relationship signal. Replaces the prior directory-sibling test —
+// directory-sibling enumeration is no longer used as a coupling proxy.
 func TestComputeRoutingGroups_MultiFileTransitive(t *testing.T) {
 	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "cmd", "rel")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"main.go", "color.go", "main_test.go"} {
+		if err := os.WriteFile(filepath.Join(pkgDir, f), []byte("package main\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	files := []FileResult{
-		{Relpath: "cmd/a/main.go", Classification: ClassAmbiguity, CoupledLocalOnly: []string{"cmd/a/helper.go"}},
-		{Relpath: "cmd/b/main.go", Classification: ClassAmbiguity, CoupledLocalOnly: []string{"cmd/b/helper.go"}},
-		// shared.go pulls both packages into one group via overlapping
-		// coupled-local-only entries.
-		{Relpath: "shared.go", Classification: ClassAmbiguity, CoupledLocalOnly: []string{"cmd/a/helper.go", "cmd/b/helper.go"}},
+		{Relpath: "cmd/rel/main.go", Classification: ClassAmbiguity},
+		{Relpath: "cmd/rel/color.go", Classification: ClassAmbiguity},
+		{Relpath: "cmd/rel/main_test.go", Classification: ClassAmbiguity},
 	}
 	groups := computeRoutingGroups(files, dir)
 	if len(groups) != 1 {
-		t.Fatalf("expected 1 routing group (3 files transitively unioned), got %d: %v", len(groups), groups)
+		t.Fatalf("expected 1 routing group (3 .go files in same package), got %d: %v", len(groups), groups)
 	}
 	if len(groups[0]) != 3 {
 		t.Errorf("expected 3 files in the unioned group, got %d: %v", len(groups[0]), groups[0])
@@ -1016,5 +945,289 @@ func TestCanonSHAFromSourceCheckout(t *testing.T) {
 	}
 	if len(sha) != 7 {
 		t.Errorf("expected 7-char SHA, got %q", sha)
+	}
+}
+
+// AC106 Class C: format-defining files in the registry are auto-routed
+// to ## In Scope as sync (regardless of raw classification), suppressed
+// from Director Review, and named under ### Format-defining file routing
+// with rationale.
+func TestClassC_FormatDefiningHardRoutes(t *testing.T) {
+	dir := docFixture(t)
+	// Make docs/ac-template.md divergent (already exists in fixture as
+	// a stub; just modify content so canon vs target differ).
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n\nlocal divergence here\n")
+	gitAddCommit(t, dir, "AC1: ac-template.md tweak")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// In Scope must list ac-template.md as sync (with format-defining note).
+	if !strings.Contains(ac, "`docs/ac-template.md` — sync to canon (format-defining; hard-routed") {
+		t.Errorf("expected docs/ac-template.md hard-routed to In Scope as sync, got:\n%s", ac)
+	}
+	// ### Format-defining file routing block must name it.
+	if !strings.Contains(ac, "### Format-defining file routing") {
+		t.Errorf("expected `### Format-defining file routing` sub-subsection, got:\n%s", ac)
+	}
+	// Director Review must NOT carry a Q for ac-template.md.
+	drStart := strings.Index(ac, "## Director Review")
+	if drStart < 0 {
+		t.Fatalf("no Director Review section, got:\n%s", ac)
+	}
+	dr := ac[drStart:]
+	if strings.Contains(dr, "Should `docs/ac-template.md`") {
+		t.Errorf("class C violation: Director Review must not emit a Q for format-defining file; got:\n%s", dr)
+	}
+}
+
+// AC106 Class E: canon-coherence precondition fires hard on deliberate
+// AGENTS.md ↔ ac-template.md drift. Drift-scan exits non-zero, writes a
+// structured stdout report (H1: # Canon-Coherence Precondition Failed),
+// and stages no files in the target.
+func TestClassE_CanonCoherenceHardFail(t *testing.T) {
+	// Use the live canon — it's coherent post-AC106 reconciliation.
+	// To exercise the hard-fail path, install a coherence rule with a
+	// pattern guaranteed not to match.
+	saved := coherenceRules
+	defer func() { coherenceRules = saved }()
+	coherenceRules = []coherenceRule{
+		{
+			Name:           "Synthetic-test rule",
+			AuthorityPath:  "AGENTS.md",
+			AuthorityRegex: regexp.MustCompile(`__pattern_that_will_not_match_anything_in_AGENTS_md__`),
+		},
+	}
+
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	out := captureOut(t, func(f *os.File) {
+		exit, _ := Run(cfg, EmbeddedFS, f)
+		if exit == ExitOK {
+			t.Errorf("class E: expected non-zero exit on canon-coherence failure, got ExitOK")
+		}
+	})
+	if !strings.Contains(out, "# Canon-Coherence Precondition Failed") {
+		t.Errorf("class E: expected `# Canon-Coherence Precondition Failed` H1 on stdout, got:\n%s", out)
+	}
+	if !strings.Contains(out, "**governa-side**") {
+		t.Errorf("class E: expected governa-side framing in report, got:\n%s", out)
+	}
+	// No target writes.
+	staged := findStagedACs(t, dir)
+	if len(staged) > 0 {
+		t.Errorf("class E: expected no staged ACs after hard-fail, got %v", staged)
+	}
+}
+
+// AC106 Class G discipline (descriptive-not-prescriptive coupling
+// language) is enforced by negative-matching the regex list below
+// across the full staged-AC output. The list is heuristic, not
+// exhaustive: extend it whenever a new prescriptive coupling phrasing
+// is observed in emission output (during code review of any drift-scan
+// emission change, or when a consumer agent surfaces a routing-language
+// complaint). An unrevised list ages into a false-pass surface —
+// failing tests are the only signal that the discipline holds, so keep
+// them honest.
+var classGProhibitedPhrases = []string{
+	"must route together",
+	"route together",
+	"route as a group",
+	"route as a unit",
+	"should be routed",
+	"consider as a unit",
+}
+
+// AC106 Class G: no prescriptive coupling language survives in the
+// staged AC. Tested globally across the full AC body so the discipline
+// holds even if a future emission change moves prescriptive language
+// into a different section.
+func TestClassG_NoPrescriptiveCouplingLanguage(t *testing.T) {
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\n// local\n")
+	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nset -euo pipefail\nexec go run ./cmd/rel \"$@\"\n")
+	gitAddCommit(t, dir, "AC1: shell-binary coupling fixture")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	for _, banned := range classGProhibitedPhrases {
+		if strings.Contains(ac, banned) {
+			t.Errorf("class G violation: AC body contains prescriptive phrase %q. Update emission or add new phrasing to classGProhibitedPhrases.", banned)
+		}
+	}
+	// Coupled sets reading aid heading verbatim with qualifier.
+	if !strings.Contains(ac, "### Coupled sets (informational — routing decisions per Q above)") {
+		t.Errorf("class G: expected `### Coupled sets (informational — routing decisions per Q above)` heading verbatim, got:\n%s", ac)
+	}
+}
+
+// AC106 Class I: `target-has-no-canon` files emit a Director Review Q
+// with keep/delete/migrate-to-canon options. Closes the decision-surface
+// coverage gap — every non-terminal classification must pair with a Q.
+func TestClassI_TargetHasNoCanonGetsQ(t *testing.T) {
+	// Use a doc-flavor fixture, but place a file that exists only in the
+	// CODE overlay's canon — so it's target-has-no-canon for doc flavor.
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "docs/development-cycle.md"), "# Development cycle\n\nlocal version\n")
+	gitAddCommit(t, dir, "AC1: development-cycle.md added (only in code overlay)")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// Director Review must carry a Q for the target-has-no-canon file
+	// with keep/delete/migrate-to-canon options.
+	drStart := strings.Index(ac, "## Director Review")
+	if drStart < 0 {
+		t.Fatalf("no Director Review section, got:\n%s", ac)
+	}
+	dr := ac[drStart:]
+	if !strings.Contains(dr, "(target-has-no-canon)") {
+		t.Errorf("class I: expected target-has-no-canon Q in Director Review, got:\n%s", dr)
+	}
+	if !strings.Contains(dr, "kept as a per-repo addition, deleted, or migrated into canon") {
+		t.Errorf("class I: expected keep/delete/migrate-to-canon options in Q text, got:\n%s", dr)
+	}
+}
+
+// AC106 AT4: Routing summary table carries the staging-time stamp
+// directly under the heading. Class B discipline against staleness.
+func TestRoutingSummary_StagingStamp(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	const stamp = "_Operator lean below reflects staging-time analysis. Director-resolved routing lives in the Director Review section below; this table does not auto-update on resolution._"
+	if !strings.Contains(ac, stamp) {
+		t.Errorf("AC106 AT4: expected staging stamp under `### Routing summary`, got:\n%s", ac)
+	}
+}
+
+// AC106 AT5 (with-content variant): when In Scope has body content AND
+// Director Review has open Qs, the header note appears at the top of
+// In Scope, before the body items.
+func TestInScopeHeaderNote_WithContent(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// docFixture has missing-in-target candidates and ambiguity files,
+	// so In Scope has body and Director Review has Qs — the header note
+	// must appear.
+	const noteFragment = "_In Scope expands as Director resolves Q1–Q"
+	if !strings.Contains(ac, noteFragment) {
+		t.Errorf("AC106 AT5 (with-content): expected In Scope header note when Director Review has open Qs, got:\n%s", ac)
+	}
+}
+
+// AC106 AT5 (None-replacement variant): when In Scope is otherwise
+// `None` and Director Review has open Qs, the header note replaces
+// the `None` body.
+func TestInScopeHeaderNote_NoneReplacement(t *testing.T) {
+	// Construct a report where every divergent file is preserve (no
+	// In Scope body) but ambiguity exists in the Q list. We can do this
+	// with a hand-built Report passed to buildACStub directly.
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "preserved.md", Classification: ClassPreserve, Markers: []string{"| 0.1.0 | preserve preserved.md customization |"}},
+			{Relpath: "ambiguity.md", Classification: ClassAmbiguity, Commits: []string{"abc subject"}},
+		},
+	}
+	out := buildACStub(1, "abcdef0", report)
+
+	// In Scope body should be the header note, not "None.".
+	const noteFragment = "_In Scope expands as Director resolves Q1–Q"
+	if !strings.Contains(out, noteFragment) {
+		t.Errorf("AC106 AT5 (None-replacement): expected In Scope header note as body, got:\n%s", out)
+	}
+	// The literal "None." should not appear as the In Scope body when
+	// the header note replaces it.
+	inScopeIdx := strings.Index(out, "## In Scope")
+	if inScopeIdx < 0 {
+		t.Fatalf("missing ## In Scope section, got:\n%s", out)
+	}
+	tail := out[inScopeIdx:]
+	bodyEnd := strings.Index(tail, "## Out Of Scope")
+	if bodyEnd < 0 {
+		bodyEnd = len(tail)
+	}
+	body := tail[:bodyEnd]
+	if strings.Contains(body, "\nNone.\n") {
+		t.Errorf("AC106 AT5 (None-replacement): `None.` must not appear as body when header note replaces it, got body:\n%s", body)
+	}
+}
+
+// AC106 AT8 / Class H: Resolution protocol section is present in
+// docs/drift-scan.md and enumerates sync/preserve/defer transitions.
+func TestClassH_ResolutionProtocolDocumented(t *testing.T) {
+	data, err := os.ReadFile("../../docs/drift-scan.md")
+	if err != nil {
+		t.Fatalf("read drift-scan.md: %v", err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, "## Resolution protocol") {
+		t.Error("AC106 AT8: drift-scan.md missing `## Resolution protocol` section")
+	}
+	for _, transition := range []string{"`sync` resolution", "`preserve` resolution", "`defer` resolution"} {
+		if !strings.Contains(doc, transition) {
+			t.Errorf("AC106 AT8: drift-scan.md `## Resolution protocol` missing %s transition", transition)
+		}
+	}
+}
+
+// AC106 Class A negative case: heterogeneous content at any depth
+// (process docs alongside reference docs under docs/, multiple
+// unrelated subcommands under cmd/) does not couple by directory
+// alone. Only build-relationship signal (Go same-package) or
+// name-reference body scan unions files into a group.
+func TestClassA_DepthNHeterogeneousNoFalseCoupling(t *testing.T) {
+	dir := t.TempDir()
+	// Two unrelated cmd/ subtrees with different packages.
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", "beta"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "cmd/alpha/main.go"), "package alpha\n")
+	mustWrite(t, filepath.Join(dir, "cmd/beta/main.go"), "package beta\n")
+	// Two unrelated docs/ files (no name-reference between them).
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "docs/process.md"), "# Process\n\nworkflow doc\n")
+	mustWrite(t, filepath.Join(dir, "docs/reference.md"), "# Reference\n\nlookup doc\n")
+
+	files := []FileResult{
+		{Relpath: "cmd/alpha/main.go", Classification: ClassAmbiguity},
+		{Relpath: "cmd/beta/main.go", Classification: ClassAmbiguity},
+		{Relpath: "docs/process.md", Classification: ClassAmbiguity},
+		{Relpath: "docs/reference.md", Classification: ClassAmbiguity},
+	}
+	groups := computeRoutingGroups(files, dir)
+	// Each file is its own group — no directory-sibling coupling at any depth.
+	if len(groups) != 4 {
+		t.Errorf("AC106 Class A: heterogeneous depth-N content must not couple via directory; expected 4 groups, got %d: %v", len(groups), groups)
 	}
 }

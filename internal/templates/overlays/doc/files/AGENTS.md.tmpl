@@ -24,6 +24,7 @@ Rules:
 - When updating, name the exact sections to change and keep edits local.
 - Treat this file as a governed config artifact, not freeform prose.
 - Use flat `##` with inline bullets. Avoid `###` sub-subsections — split or extract instead. Exception: documented technical need (e.g., grouped domain rules in Project Rules).
+- AGENTS.md is the authoritative source for rules it describes. Overlay templates and other canon files must conform; canon-internal drift on rules AGENTS.md describes is a violation of this contract and is detected by drift-scan's canon-coherence precondition.
 
 ## Interaction Mode
 
@@ -46,9 +47,10 @@ Rules:
 - Never run the release command. Present it for the user to run. Follow the Pre-Release Checklist in `docs/release.md`.
 - **AC-first workflow** (non-trivial changes):
   - Draft `docs/ac<N>-<slug>.md` before implementation, using `docs/ac-template.md` if available. Define scope, out-of-scope, objective fit, required tests.
-  - Objective Fit must answer: (1) what outcome this serves, (2) why this beats competing work, (3) what decisions/constraints it depends on, (4) direct roadmap work or intentional pivot.
+  - Objective Fit must state: (1) **Outcome** — what this delivers, in one sentence; (2) **Priority** — why this over higher-priority work, naming the trade-off if it's an intentional pivot; (3) **Dependencies** — prior ACs or decisions this builds on or contradicts.
   - Do not implement until the AC is critiqued and the user confirms it is implementation-ready.
 - **AC critique gate:** After drafting, the director reviews and provides critique findings. The Operator transcribes findings into the AC's `## Critique` section and addresses them. Proceed only when the director explicitly confirms the AC is implementation-ready. See `docs/critique-protocol.md`.
+- **Pre-implementation verification:** After Director resolves all review questions, run a checklist — not a QA round — confirming each settled decision landed verbatim in the AC, Objective Fit uses the current form, Director Review is `None` with resolutions attributed inline, and ATs match settled wording. List ✓ or flag gaps. Authorize only when clean.
 
 ## File-Change Discipline
 
@@ -78,7 +80,7 @@ Rules:
 ## Base Rules
 
 - Follow semver. PATCH: invisible to users (fixes, refactors, formatting). MINOR: user-visible (structure, navigation, schema). Batch PATCH-level changes.
-- Every AC labels each acceptance test `[Automated]` or `[Manual]`. See `docs/ac-template.md`.
+- Every AC labels each acceptance test with source axis (`[Automated]` / `[Manual]`) and timing axis (`[Pre-release gate]` default; `[Post-release verification]` explicit). See `docs/ac-template.md`.
 - Follow existing repo patterns unless an approved improvement says otherwise.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace). Batch independent shell calls. Do not re-read files already in context.
 

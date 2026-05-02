@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.105.0 | AC106: drift-scan staged-AC self-consistency hardening |
 | 0.104.0 | AC105: drift-scan coupling-aware grouping, sister diffs, decision-first AC |
 | 0.103.0 | drift-scan: AC stub rework + go-run SHA fallback; DOC adds CHANGELOG+README |
 | 0.102.1 | drift-scan: emit single shape-(b) IE; add ## Handoff section to docs |
