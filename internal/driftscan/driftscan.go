@@ -40,6 +40,11 @@ const (
 	ExitUsage    = 2
 )
 
+// asymmetryNote is the one-line scan-asymmetry text. AC105 Part B requires
+// the same verbatim string in both the staged AC's `## Implementation Notes`
+// opening and the console report header.
+const asymmetryNote = "Scan walks canon→target only. Files in target with no canon counterpart are not enumerated here except via per-file `Coupled local-only files` sub-bullets."
+
 // Classification labels per docs/drift-scan.md.
 type Classification string
 
@@ -266,6 +271,20 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		})
 	}
 
+	// Enrich divergent files with same-directory local-only siblings and
+	// compute routing groups (Part A: coupling-aware analysis).
+	canonPaths := make(map[string]bool, len(canon))
+	for k := range canon {
+		canonPaths[k] = true
+	}
+	for i := range report.Files {
+		if !isDivergentClass(report.Files[i].Classification) {
+			continue
+		}
+		report.Files[i].CoupledLocalOnly = enumerateLocalOnlySiblings(cfg.Target, report.Files[i].Relpath, canonPaths)
+	}
+	report.RoutingGroups = computeRoutingGroups(report.Files, cfg.Target)
+
 	// H3: compute numbering once and pass forward.
 	report.NextAC, _ = nextACNumber(cfg.Target)
 	report.NextIE, _ = nextIENumber(cfg.Target)
@@ -389,6 +408,12 @@ type FileResult struct {
 	// detect empty-canon edge cases. Not serialized to JSON to keep reports
 	// small; the canon SHA + path identify the source.
 	CanonContent string `json:"-"`
+	// CoupledLocalOnly lists same-directory files that exist in target but
+	// not in canon for this flavor. Surfaced in the AC's per-file block so
+	// the Director sees the local-only files that ride along with this
+	// file's routing decision. Populated only for divergent classifications
+	// (preserve, ambiguity, clear-sync).
+	CoupledLocalOnly []string `json:"coupled_local_only,omitempty"`
 }
 
 // ReportHeader is the report's self-identifying header.
@@ -408,6 +433,12 @@ type Report struct {
 	NextIE       int          `json:"next_ie"`
 	Staging      *StagingInfo `json:"staging,omitempty"`
 	StagingError string       `json:"staging_error,omitempty"`
+	// RoutingGroups holds divergent files clustered by routing-coupling: two
+	// files are in the same group iff they share a coupled local-only sibling
+	// or are linked by a shell→binary `go run` reference. Each inner slice is
+	// a list of relpaths. Populated in Run after classification; consumed by
+	// the AC stub to emit one Director Review entry per group.
+	RoutingGroups [][]string `json:"routing_groups,omitempty"`
 }
 
 // StagingInfo records what got staged.
@@ -656,7 +687,7 @@ func nextIENumber(targetRoot string) (int, error) {
 	return max + 1, nil
 }
 
-// detectOrphanedIEs scans plan.md for shape-(b) IE entries pointing at
+// detectOrphanedIEs scans plan.md for AC-pointer IE entries pointing at
 // docs/ac*-drift-scan-from-*.md and verifies the referenced AC file exists.
 // L2: accepts both `→` (U+2192) and ASCII `->` to be lenient on Operator typing.
 func detectOrphanedIEs(targetRoot string) error {
@@ -718,7 +749,9 @@ func sortedKeys(m map[string]string) []string {
 // recomputed here, eliminating the race window between the two reads.
 func stageAll(targetRoot, sha string, report *Report, acN, ieStart int) error {
 	acFilename := fmt.Sprintf("ac%d-drift-scan-from-%s.md", acN, sha)
+	sisterFilename := fmt.Sprintf("ac%d-drift-scan-from-%s-diffs.md", acN, sha)
 	acPath := filepath.Join(targetRoot, "docs", acFilename)
+	sisterPath := filepath.Join(targetRoot, "docs", sisterFilename)
 
 	planPath := filepath.Join(targetRoot, "plan.md")
 	planBytes, err := os.ReadFile(planPath)
@@ -726,23 +759,29 @@ func stageAll(targetRoot, sha string, report *Report, acN, ieStart int) error {
 		return fmt.Errorf("read plan.md: %w", err)
 	}
 
-	// Compute IE entry before AC content (AC's AT references the inserted IE number).
-	ieEntries, shapeBIE := buildIEEntries(ieStart, sha, acFilename)
-
+	ieEntries := buildIEEntries(ieStart, sha, acFilename)
 	newPlanContent, err := insertIEsIntoPlan(string(planBytes), ieEntries)
 	if err != nil {
 		return err
 	}
 
-	acContent := buildACStub(acN, sha, report, shapeBIE)
+	acContent := buildACStub(acN, sha, report)
+	sisterContent := buildSisterDiffs(acN, sha, report)
 
-	// Atomic: write both via temp files, then rename.
+	// Atomic: write all three via temp files, then rename. Sister file
+	// (Part B) is staged alongside the AC so the target-repo Operator has
+	// the full diffs without re-running the scan.
 	if err := atomicWrite(acPath, []byte(acContent)); err != nil {
 		return fmt.Errorf("write AC: %w", err)
 	}
-	if err := atomicWrite(planPath, []byte(newPlanContent)); err != nil {
-		// Roll back AC write.
+	if err := atomicWrite(sisterPath, []byte(sisterContent)); err != nil {
 		os.Remove(acPath)
+		return fmt.Errorf("write sister diffs file: %w", err)
+	}
+	if err := atomicWrite(planPath, []byte(newPlanContent)); err != nil {
+		// Roll back AC + sister writes.
+		os.Remove(acPath)
+		os.Remove(sisterPath)
 		return fmt.Errorf("write plan.md: %w", err)
 	}
 
@@ -775,16 +814,15 @@ func atomicWrite(dst string, content []byte) error {
 	return nil
 }
 
-// buildIEEntries produces a single shape-(b) IE pointing at the staged AC.
+// buildIEEntries produces a single AC-pointer IE pointing at the staged AC.
 // The AC carries the per-file divergence detail under ## Implementation Notes;
-// separate shape-(a) IEs per ambiguity file are not emitted (they duplicate
+// separate pre-rubric IEs per ambiguity file are not emitted (they duplicate
 // what the AC already carries).
-func buildIEEntries(ieStart int, sha, acFilename string) ([]string, string) {
-	shapeBIE := fmt.Sprintf(
+func buildIEEntries(ieStart int, sha, acFilename string) []string {
+	return []string{fmt.Sprintf(
 		"- IE%d: drift-scan against governa @ %s → docs/%s",
 		ieStart, sha, acFilename,
-	)
-	return []string{shapeBIE}, shapeBIE
+	)}
 }
 
 // insertIEsIntoPlan inserts new IE entries into plan.md after the highest
@@ -842,7 +880,7 @@ func insertIEsIntoPlan(plan string, entries []string) (string, error) {
 }
 
 // buildACStub constructs the partially-filled AC stub.
-func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
+func buildACStub(acN int, sha string, report *Report) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# AC%d Drift-Scan from governa @ %s\n\n", acN, sha)
@@ -922,6 +960,44 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	fmt.Fprintf(&b, "Counts: %s.\n", tallyClassifications(report.Files))
 	fmt.Fprintln(&b)
 
+	// Scan asymmetry note (Part B). Same verbatim text as the console
+	// report header — see asymmetryNote constant.
+	fmt.Fprintln(&b, asymmetryNote)
+	fmt.Fprintln(&b)
+
+	// Sister-file cross-ref (Part B). Per-file diffs live in the sister
+	// file alongside this AC; per-file blocks below carry the commit list
+	// but no diff hunks. Both files share the `docs/ac<N>-*.md` prefix so
+	// release prep deletes them together.
+	sisterFilename := fmt.Sprintf("ac%d-drift-scan-from-%s-diffs.md", acN, sha)
+	fmt.Fprintf(&b, "Per-file diffs: `docs/%s`.\n", sisterFilename)
+	fmt.Fprintln(&b)
+
+	// Routing summary table (Part B). First sub-subsection of Implementation
+	// Notes — gives the reader the routing decision surface up front. Tool
+	// fills File and Local edit source from the most-recent commit subject;
+	// Operator fills the one-line characterization and recommendation.
+	divergent := []FileResult{}
+	divergent = append(divergent, preserves...)
+	divergent = append(divergent, ambiguities...)
+	divergent = append(divergent, clearSync...)
+	if len(divergent) > 0 {
+		fmt.Fprintln(&b, "### Routing summary")
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "| File | Local edit source | What diverged | Recommendation |")
+		fmt.Fprintln(&b, "|---|---|---|---|")
+		for _, f := range divergent {
+			editSrc := "—"
+			if len(f.Commits) > 0 {
+				_, subject, _ := strings.Cut(f.Commits[0], " ")
+				// Escape | so it doesn't break the table cell.
+				editSrc = strings.ReplaceAll(subject, "|", `\|`)
+			}
+			fmt.Fprintf(&b, "| `%s` | %s | <!-- TBD by Operator --> | <!-- TBD by Operator --> |\n", f.Relpath, editSrc)
+		}
+		fmt.Fprintln(&b)
+	}
+
 	// Match evidence (true byte-equal only).
 	if len(matches) > 0 {
 		fmt.Fprintln(&b, "### Match evidence")
@@ -944,31 +1020,28 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 		fmt.Fprintln(&b)
 	}
 
-	// Divergent file detail (preserve, ambiguity, clear-sync).
-	divergent := []FileResult{}
-	divergent = append(divergent, preserves...)
-	divergent = append(divergent, ambiguities...)
-	divergent = append(divergent, clearSync...)
+	// Divergent file detail (preserve, ambiguity, clear-sync). `divergent`
+	// was declared earlier for the routing summary table.
 	if len(divergent) > 0 {
 		fmt.Fprintln(&b, "### Divergent files")
 		fmt.Fprintln(&b)
 		for _, f := range divergent {
 			fmt.Fprintf(&b, "#### `%s` — %s\n\n", f.Relpath, f.Classification)
 			fmt.Fprintf(&b, "Canon: %s\n\n", f.CanonRef)
+			// Coupled local-only files line. Always rendered (None when
+			// empty) so silence does not read as "checked, none found".
+			if len(f.CoupledLocalOnly) > 0 {
+				fmt.Fprintf(&b, "Coupled local-only files: %s\n\n", strings.Join(f.CoupledLocalOnly, ", "))
+			} else {
+				fmt.Fprintln(&b, "Coupled local-only files: None")
+				fmt.Fprintln(&b)
+			}
 			if len(f.Commits) > 0 {
 				fmt.Fprintln(&b, "Local commits (`git log -n 5 --follow`):")
 				fmt.Fprintln(&b)
 				for _, c := range f.Commits {
 					fmt.Fprintf(&b, "- `%s`\n", annotateCommit(c))
 				}
-				fmt.Fprintln(&b)
-			}
-			if f.Diff != "" {
-				fmt.Fprintln(&b, "Diff (`diff -u canon target`):")
-				fmt.Fprintln(&b)
-				fmt.Fprintln(&b, "```diff")
-				fmt.Fprintln(&b, f.Diff)
-				fmt.Fprintln(&b, "```")
 				fmt.Fprintln(&b)
 			}
 		}
@@ -1027,30 +1100,25 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	}
 	fmt.Fprintln(&b)
 
-	// Acceptance Tests
+	// Acceptance Tests (Part B: tool emits ATs only for In Scope deliverables).
+	// Preserve-marker ATs and the IE-pointer AT were dropped — they verified
+	// scaffolding placed by earlier ACs / by this scan's staging step, not
+	// this AC's deliverable.
 	fmt.Fprintln(&b, "## Acceptance Tests")
 	fmt.Fprintln(&b)
-	atN := 1
-	// AT per preserve marker: assert the FULL marker line is present in
-	// CHANGELOG.md, not just the short phrase. The full line is unique enough
-	// to survive future edits to other rows that happen to mention the
-	// phrase in passing.
-	for _, f := range preserves {
-		for _, m := range f.Markers {
-			fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -qF -- %s CHANGELOG.md`.\n\n", atN, shellQuote(m))
+	if len(clearSync) == 0 && len(missingCreate) == 0 {
+		fmt.Fprintln(&b, "None — this AC ships only the staged plan.md IE entry; nothing to verify in target.")
+		fmt.Fprintln(&b)
+	} else {
+		atN := 1
+		for _, f := range clearSync {
+			fmt.Fprintf(&b, "**AT%d** [Automated] — <!-- TBD by Operator: verify `%s` synced to canon (e.g., `rg -qF -- '<canonical line>' %s`). -->\n\n", atN, f.Relpath, f.Relpath)
 			atN++
 		}
-	}
-	// AT for shape-(b) IE: assert the FULL IE line, not just the prefix.
-	// The full line carries the canon SHA and AC filename, so this AT also
-	// verifies the IE wasn't replaced by an unrelated entry sharing the same
-	// IE number.
-	fmt.Fprintf(&b, "**AT%d** [Automated] — `rg -qF -- %s plan.md`.\n\n", atN, shellQuote(shapeBIE))
-	atN++
-	// Operator-add reminder for clear-sync / create candidates: each landed
-	// edit needs its own verification AT.
-	if len(clearSync) > 0 || len(missingCreate) > 0 {
-		fmt.Fprintf(&b, "<!-- TBD by Operator: add one AT per file in `## In Scope` verifying the sync/create was applied (e.g., `rg -qF -- '<canonical line>' <path>`, or `test -f <path>` for create candidates). -->\n\n")
+		for _, f := range missingCreate {
+			fmt.Fprintf(&b, "**AT%d** [Automated] — `test -f %s` <!-- TBD by Operator: extend with a content check (e.g., `rg -qF -- '<canonical line>' %s`). -->\n\n", atN, f.Relpath, f.Relpath)
+			atN++
+		}
 	}
 
 	// Documentation Updates
@@ -1059,27 +1127,88 @@ func buildACStub(acN int, sha string, report *Report, shapeBIE string) string {
 	fmt.Fprintln(&b, "- `CHANGELOG.md` — release row added at release prep time per template guidance.")
 	fmt.Fprintln(&b)
 
-	// Director Review: auto-populate one routing question per ambiguity. Each
-	// ambiguity is a file the tool cannot route on its own — the Director has
-	// to choose sync vs preserve vs defer. Following the canon ac-template
-	// form: numbered, leads with a question ending in `?`, Operator lean +
-	// one-line why placeholders. When there are no ambiguities, the section
-	// stays as `None.` per protocol.
+	// Director Review: auto-populate one routing question per coupled set
+	// containing at least one ambiguity. Coupled-set grouping (Part A)
+	// collapses files that share a local-only sibling or are linked by
+	// shell→binary `go run` so the Director routes them together. Groups
+	// containing only preserve/clear-sync files are skipped (already routed
+	// to Out Of Scope / In Scope respectively). When there are no ambiguity
+	// files, the section stays as `None.` per protocol.
 	fmt.Fprintln(&b, "## Director Review")
 	fmt.Fprintln(&b)
-	if len(ambiguities) == 0 {
+	relpathToFile := map[string]FileResult{}
+	for _, f := range report.Files {
+		relpathToFile[f.Relpath] = f
+	}
+	var routingGroups [][]string
+	for _, g := range report.RoutingGroups {
+		for _, rel := range g {
+			if relpathToFile[rel].Classification == ClassAmbiguity {
+				routingGroups = append(routingGroups, g)
+				break
+			}
+		}
+	}
+	if len(routingGroups) == 0 {
 		fmt.Fprintln(&b, "None.")
 	} else {
-		dN := 1
-		for _, f := range ambiguities {
-			fmt.Fprintf(&b,
-				"%d. Should `%s` be synced to canon, preserved with a marker (backfill `preserve %s <qualifier>` in CHANGELOG.md), or deferred to a later AC? Operator lean: <TBD>. Why: <TBD>.\n",
-				dN, f.Relpath, f.Relpath,
-			)
-			dN++
+		// collectCoupled returns the de-duplicated union of CoupledLocalOnly
+		// entries across all files in the group. Local-only siblings are
+		// surfaced in the routing question so the Director sees the full
+		// blast radius of the routing decision in one place (QA-2).
+		collectCoupled := func(group []string) []string {
+			seen := map[string]bool{}
+			var coupled []string
+			for _, rel := range group {
+				for _, c := range relpathToFile[rel].CoupledLocalOnly {
+					if seen[c] {
+						continue
+					}
+					seen[c] = true
+					coupled = append(coupled, c)
+				}
+			}
+			sort.Strings(coupled)
+			return coupled
+		}
+		formatPaths := func(rels []string) string {
+			out := make([]string, len(rels))
+			for i, r := range rels {
+				out[i] = "`" + r + "`"
+			}
+			return strings.Join(out, ", ")
+		}
+		for i, g := range routingGroups {
+			coupled := collectCoupled(g)
+			if len(g) == 1 {
+				rel := g[0]
+				if len(coupled) > 0 {
+					fmt.Fprintf(&b,
+						"%d. Should `%s` (with local-only siblings: %s) be synced to canon, preserved with a marker (backfill `preserve %s <qualifier>` in CHANGELOG.md), or deferred to a later AC? Operator lean: <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n",
+						i+1, rel, formatPaths(coupled), rel,
+					)
+				} else {
+					fmt.Fprintf(&b,
+						"%d. Should `%s` be synced to canon, preserved with a marker (backfill `preserve %s <qualifier>` in CHANGELOG.md), or deferred to a later AC? Operator lean: <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n",
+						i+1, rel, rel,
+					)
+				}
+			} else {
+				if len(coupled) > 0 {
+					fmt.Fprintf(&b,
+						"%d. Should %s (coupled — must route together; local-only siblings: %s) be synced to canon, preserved with markers, or deferred to a later AC? Operator lean: <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n",
+						i+1, formatPaths(g), formatPaths(coupled),
+					)
+				} else {
+					fmt.Fprintf(&b,
+						"%d. Should %s (coupled — must route together) be synced to canon, preserved with markers, or deferred to a later AC? Operator lean: <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n",
+						i+1, formatPaths(g),
+					)
+				}
+			}
 		}
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "<!-- HINT: review for cross-file couplings before answering (e.g., a script + the binary it invokes; a Go file + its test; a doc + the file it references). Coupled files must be routed together. -->")
+		fmt.Fprintln(&b, "<!-- HINT: coupled files are pre-grouped above — the routing decision applies to the whole group. Verify the grouping looks right before answering. -->")
 	}
 	fmt.Fprintln(&b)
 
@@ -1179,6 +1308,9 @@ func writeReport(out io.Writer, r Report, asJSON bool) {
 	fmt.Fprintf(out, "- Next AC: AC%d\n", r.NextAC)
 	fmt.Fprintf(out, "- Next IE: IE%d\n", r.NextIE)
 	fmt.Fprintf(out, "- Counts: %s\n", tallyClassifications(r.Files))
+	// Asymmetry note — same verbatim text used in the staged AC's
+	// `## Implementation Notes` opening (see asymmetryNote constant).
+	fmt.Fprintf(out, "- %s\n", asymmetryNote)
 	if r.Staging != nil {
 		fmt.Fprintf(out, "- Staged: `%s`\n", r.Staging.ACPath)
 	}
@@ -1220,18 +1352,233 @@ func writeReport(out io.Writer, r Report, asJSON bool) {
 	}
 }
 
+// isDivergentClass reports whether c is one of the classifications that
+// indicates a per-file divergence requiring routing analysis (preserve,
+// ambiguity, clear-sync). Match, expected-divergence, missing-in-target,
+// and target-has-no-canon are routed by other paths or skipped entirely.
+func isDivergentClass(c Classification) bool {
+	return c == ClassPreserve || c == ClassAmbiguity || c == ClassClearSync
+}
+
+// perACFileRe matches per-AC file basenames (ac<N>-<slug>.md). Used to
+// filter per-AC files out of CoupledLocalOnly enumeration — they are not
+// "coupled" to the file alongside them, just per-repo work products.
+var perACFileRe = regexp.MustCompile(`^ac\d+-.*\.md$`)
+
+// noiseFileNames is the explicit set of OS / editor artifacts to exclude
+// from CoupledLocalOnly enumeration. Conservative list — adding random
+// dotfiles to the filter would also drop genuinely meaningful local files
+// like .envrc, .tool-versions, etc.
+var noiseFileNames = map[string]bool{
+	".DS_Store": true,
+	"Thumbs.db": true,
+	".gitkeep":  true,
+}
+
+// noiseFileSuffixes are basename suffixes that indicate transient editor
+// artifacts (Vim swap files, Emacs backups, etc.). Filtered for the same
+// reason as noiseFileNames.
+var noiseFileSuffixes = []string{".swp", ".swo", "~"}
+
+// isNoiseFile reports whether a basename is OS/editor noise that should
+// not appear in the Coupled local-only files list.
+func isNoiseFile(name string) bool {
+	if noiseFileNames[name] {
+		return true
+	}
+	for _, suf := range noiseFileSuffixes {
+		if strings.HasSuffix(name, suf) {
+			return true
+		}
+	}
+	return false
+}
+
+// enumerateLocalOnlySiblings returns same-directory files in target that
+// do not exist in canon for this flavor. Per-AC files, OS/editor noise,
+// and symlinks are filtered. Used to populate FileResult.CoupledLocalOnly
+// so the Director sees the local-only files that ride along with each
+// routing decision.
+func enumerateLocalOnlySiblings(targetRoot, relpath string, canonPaths map[string]bool) []string {
+	dir := filepath.Dir(relpath)
+	if dir == "." {
+		dir = ""
+	}
+	targetDir := filepath.Join(targetRoot, dir)
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		return nil
+	}
+	var siblings []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		// Skip symlinks — typically aliases (e.g., CLAUDE.md → AGENTS.md)
+		// rather than independent local-only files.
+		if e.Type()&fs.ModeSymlink != 0 {
+			continue
+		}
+		sibling := e.Name()
+		if dir != "" {
+			sibling = dir + "/" + e.Name()
+		}
+		if sibling == relpath {
+			continue
+		}
+		if canonPaths[sibling] {
+			continue
+		}
+		if perACFileRe.MatchString(e.Name()) {
+			continue
+		}
+		if isNoiseFile(e.Name()) {
+			continue
+		}
+		siblings = append(siblings, sibling)
+	}
+	sort.Strings(siblings)
+	return siblings
+}
+
+// shellGoRunRe matches `go run <arg>` invocations in shell scripts. Used
+// for the coarse shell→binary coupling pass: scripts that `go run` a
+// package containing another divergent file route together with that
+// file. Single regex pass over `*.sh` only — broader scanning of
+// `bash -c`, Makefile recipes, and `*.go` build directives is deferred
+// until a concrete failure case shows up.
+var shellGoRunRe = regexp.MustCompile(`go\s+run\s+(\S+)`)
+
+// computeRoutingGroups clusters divergent files into routing groups.
+// Two files are in the same group iff:
+//   - they share at least one coupled local-only sibling, or
+//   - one is a shell script whose `go run` arg resolves to a directory
+//     containing the other.
+//
+// Returns groups as slices of relpaths, sorted by first-relpath for
+// stable rendering. Non-divergent files are excluded. Used by the AC
+// stub to emit one Director Review entry per group instead of per file.
+func computeRoutingGroups(files []FileResult, targetRoot string) [][]string {
+	var divergent []FileResult
+	for _, f := range files {
+		if isDivergentClass(f.Classification) {
+			divergent = append(divergent, f)
+		}
+	}
+	n := len(divergent)
+	if n == 0 {
+		return nil
+	}
+
+	parent := make([]int, n)
+	for i := range parent {
+		parent[i] = i
+	}
+	var find func(int) int
+	find = func(i int) int {
+		if parent[i] != i {
+			parent[i] = find(parent[i])
+		}
+		return parent[i]
+	}
+	union := func(a, b int) {
+		ra, rb := find(a), find(b)
+		if ra != rb {
+			parent[ra] = rb
+		}
+	}
+
+	// Edge 1: shared CoupledLocalOnly entry — two divergent files with
+	// overlapping local-only siblings are in the same routing group.
+	seenSibling := map[string]int{}
+	for i, f := range divergent {
+		for _, s := range f.CoupledLocalOnly {
+			if j, ok := seenSibling[s]; ok {
+				union(i, j)
+			} else {
+				seenSibling[s] = i
+			}
+		}
+	}
+
+	// Edge 2: shell→binary cross-link. Read each divergent *.sh, find
+	// `go run <arg>` references, resolve <arg> to a package directory,
+	// and union the script with any divergent file in that directory.
+	for i, f := range divergent {
+		if !strings.HasSuffix(f.Relpath, ".sh") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(targetRoot, f.Relpath))
+		if err != nil {
+			continue
+		}
+		for _, m := range shellGoRunRe.FindAllStringSubmatch(string(content), -1) {
+			arg := strings.TrimPrefix(m[1], "./")
+			pkgDir := arg
+			if filepath.Ext(arg) != "" {
+				// Arg is a file path (e.g., ./cmd/rel/main.go); use parent dir.
+				pkgDir = filepath.Dir(arg)
+			}
+			for j, fj := range divergent {
+				if i == j {
+					continue
+				}
+				if filepath.Dir(fj.Relpath) == pkgDir {
+					union(i, j)
+				}
+			}
+		}
+	}
+
+	groupMap := map[int][]string{}
+	for i, f := range divergent {
+		root := find(i)
+		groupMap[root] = append(groupMap[root], f.Relpath)
+	}
+	var groups [][]string
+	for _, g := range groupMap {
+		sort.Strings(g)
+		groups = append(groups, g)
+	}
+	sort.Slice(groups, func(a, b int) bool {
+		return groups[a][0] < groups[b][0]
+	})
+	return groups
+}
+
 // EmbeddedFS exposes the templates FS to test callers without exporting the
 // templates package elsewhere.
 var EmbeddedFS = templates.EmbeddedFS
 
-// shellQuote returns s wrapped in single quotes, escaping any embedded single
-// quotes for safe use in a shell command line. (H4)
-func shellQuote(s string) string {
-	if !strings.ContainsAny(s, "'\"\\$`") && !strings.ContainsAny(s, " \t\n;|&<>()") {
-		return "'" + s + "'"
+// buildSisterDiffs constructs the sister-file content carrying full per-file
+// diffs. The AC stays a clean decision document; this sister file holds the
+// verification material the target-repo Operator needs without re-running
+// the scan. Title points back at the parent AC; one `## <relpath>` section
+// per divergent file with the verbatim `diff -u` hunk.
+func buildSisterDiffs(acN int, sha string, report *Report) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Diffs for AC%d (drift-scan from governa @ %s)\n\n", acN, sha)
+	var divergent []FileResult
+	for _, f := range report.Files {
+		if isDivergentClass(f.Classification) {
+			divergent = append(divergent, f)
+		}
 	}
-	// Standard POSIX-safe single-quoted form: 'foo'\''bar'.
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	sort.Slice(divergent, func(i, j int) bool {
+		return divergent[i].Relpath < divergent[j].Relpath
+	})
+	if len(divergent) == 0 {
+		fmt.Fprintln(&b, "No divergent files.")
+		return b.String()
+	}
+	for _, f := range divergent {
+		fmt.Fprintf(&b, "## `%s`\n\n", f.Relpath)
+		fmt.Fprintln(&b, "```diff")
+		fmt.Fprintln(&b, f.Diff)
+		fmt.Fprintln(&b, "```")
+		fmt.Fprintln(&b)
+	}
+	return b.String()
 }
 
 // otherFlavorCanonPaths renders the OTHER flavor's canon and returns the set

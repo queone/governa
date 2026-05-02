@@ -69,6 +69,22 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 }
 
+// findStagedACs returns the AC file paths under dir/docs/ matching the
+// drift-scan staging pattern, excluding the `-diffs.md` sister files
+// introduced in AC105 Part B.
+func findStagedACs(t *testing.T, dir string) []string {
+	t.Helper()
+	all, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	var acs []string
+	for _, m := range all {
+		if strings.HasSuffix(m, "-diffs.md") {
+			continue
+		}
+		acs = append(acs, m)
+	}
+	return acs
+}
+
 // AT9 (subset) — Auto-staging when prereqs are present.
 func TestStagingHappy(t *testing.T) {
 	dir := docFixture(t)
@@ -85,7 +101,7 @@ func TestStagingHappy(t *testing.T) {
 	}
 
 	// AC stub written.
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	matches := findStagedACs(t, dir)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 staged AC, got %d", len(matches))
 	}
@@ -106,18 +122,18 @@ func TestStagingHappy(t *testing.T) {
 	// plan.md modified.
 	plan := mustRead(t, filepath.Join(dir, "plan.md"))
 	if !strings.Contains(plan, "- IE3: drift-scan against governa @ ") {
-		t.Errorf("plan.md missing shape-(b) IE3, got:\n%s", plan)
+		t.Errorf("plan.md missing AC-pointer IE3, got:\n%s", plan)
 	}
-	// Single-IE contract: no shape-(a) per-ambiguity IE entries are emitted —
+	// Single-IE contract: no pre-rubric per-ambiguity IE entries are emitted —
 	// the AC carries per-file detail under ## Implementation Notes.
 	if strings.Contains(plan, "drift-scan ambiguity in ") {
-		t.Errorf("plan.md must not carry shape-(a) ambiguity IEs, got:\n%s", plan)
+		t.Errorf("plan.md must not carry pre-rubric ambiguity IEs, got:\n%s", plan)
 	}
-	// AT count: exactly one IE-grep AT (the shape-(b) one); no per-ambiguity ATs.
-	// AT shape post-AC4 fixes: literal-string match (`rg -qF`) on the full IE entry.
-	atIECount := strings.Count(acContent, "rg -qF -- '- IE")
-	if atIECount != 1 {
-		t.Errorf("expected exactly 1 IE-grep AT in AC, got %d:\n%s", atIECount, acContent)
+	// AT scope (Part B): tool no longer emits AT-for-IE-pointer or
+	// AT-for-preserve-marker — those verified scaffolding placed by earlier
+	// ACs / by this scan's staging step. ATs cover only In Scope work.
+	if strings.Contains(acContent, "rg -qF -- '- IE") {
+		t.Errorf("Part B: AC must not carry AT-for-IE-pointer; got:\n%s", acContent)
 	}
 }
 
@@ -139,7 +155,7 @@ func TestStagingMissingPrereqs(t *testing.T) {
 	if !strings.Contains(out, "staging skipped") {
 		t.Errorf("output missing staging-skipped marker:\n%s", out)
 	}
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	matches := findStagedACs(t, dir)
 	if len(matches) != 0 {
 		t.Errorf("expected no staged AC, got %d", len(matches))
 	}
@@ -205,7 +221,7 @@ func TestMalformedPlan(t *testing.T) {
 // AT15 — Orphaned-IE detection.
 func TestOrphanedIE(t *testing.T) {
 	dir := docFixture(t)
-	// Overwrite plan.md with a shape-(b) IE pointing at a non-existent AC.
+	// Overwrite plan.md with an AC-pointer IE pointing at a non-existent AC.
 	mustWrite(t, filepath.Join(dir, "plan.md"),
 		"# Plan\n\n## Ideas To Explore\n\n"+
 			"- IE1: existing\n"+
@@ -491,7 +507,7 @@ func TestCountsTallyLine(t *testing.T) {
 		t.Errorf("terminal report missing Counts line, got:\n%s", out)
 	}
 
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	matches := findStagedACs(t, dir)
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 staged AC, got %d", len(matches))
 	}
@@ -564,7 +580,7 @@ func TestMissingInTargetCreateRouting(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
 	// .gitignore is in canon (non-empty) but not in the docFixture target —
@@ -589,7 +605,7 @@ func TestDirectorReviewAutoPopulate(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
 	// docFixture's AGENTS.md and docs/ac-template.md exist with stub content +
@@ -603,25 +619,391 @@ func TestDirectorReviewAutoPopulate(t *testing.T) {
 	}
 }
 
-// AT regex strengthening: AT for preserve marker uses literal-string match
-// on the FULL marker line (not just the short phrase prefix).
-func TestATFullMarkerLine(t *testing.T) {
+// AT-B1: Routing summary table is the first sub-subsection of `##
+// Implementation Notes` (after the Counts line, asymmetry note, and
+// sister-file cross-ref). It must precede `### Match evidence`.
+func TestImplementationNotes_RoutingSummaryTableFirst(t *testing.T) {
 	dir := docFixture(t)
-	// Add a preserve marker for an existing canon file (docs/ac-template.md).
-	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
-		"# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.2.0 | AC2: did things; preserve docs/ac-template.md customization |\n",
-	)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
-	// AT must rg -qF the FULL marker line, not just `preserve docs/ac-template.md`.
-	wantAT := "rg -qF -- '| 0.2.0 | AC2: did things; preserve docs/ac-template.md customization |' CHANGELOG.md"
-	if !strings.Contains(ac, wantAT) {
-		t.Errorf("AT must use full marker line; want %q in:\n%s", wantAT, ac)
+	rsIdx := strings.Index(ac, "### Routing summary")
+	meIdx := strings.Index(ac, "### Match evidence")
+	if rsIdx < 0 {
+		t.Fatalf("expected `### Routing summary` sub-subsection, got:\n%s", ac)
+	}
+	if meIdx > 0 && meIdx < rsIdx {
+		t.Errorf("`### Routing summary` must precede `### Match evidence`; rsIdx=%d meIdx=%d", rsIdx, meIdx)
+	}
+	// Table header must follow.
+	if !strings.Contains(ac[rsIdx:], "| File | Local edit source | What diverged | Recommendation |") {
+		t.Errorf("expected routing summary table header, got:\n%s", ac[rsIdx:])
+	}
+}
+
+// AT-B2: AC per-file blocks under `### Divergent files` carry no `diff -u`
+// hunks AND do carry the verbatim commit list. The sister-file cross-ref
+// line appears at the top of `## Implementation Notes`.
+func TestStagedAC_NoDiffsKeepCommits(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// No diff fences in the AC body. (Sister carries diffs.)
+	if strings.Contains(ac, "```diff") {
+		t.Errorf("AC must not carry diff hunks; got ```diff fence in:\n%s", ac)
+	}
+	// Commit list line must remain in per-file blocks for at least one
+	// ambiguity file (docFixture has multiple ambiguity files with commits).
+	if !strings.Contains(ac, "Local commits (`git log -n 5 --follow`):") {
+		t.Errorf("AC must carry commit lists in per-file blocks, got:\n%s", ac)
+	}
+	// Sister-file cross-ref line is in Implementation Notes.
+	if !strings.Contains(ac, "Per-file diffs: `docs/ac1-drift-scan-from-abcdef0-diffs.md`") {
+		t.Errorf("AC missing sister-file cross-ref line, got:\n%s", ac)
+	}
+}
+
+// AT-B3: Sister file is staged alongside the AC. Title points back at the
+// parent AC; one `## <relpath>` section per divergent file with the
+// verbatim diff hunk; matches files have no section in the sister.
+func TestStagedSisterFile(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	sisterPath := filepath.Join(dir, "docs", "ac1-drift-scan-from-abcdef0-diffs.md")
+	if _, err := os.Stat(sisterPath); err != nil {
+		t.Fatalf("sister file not staged at %s: %v", sisterPath, err)
+	}
+	sister := mustRead(t, sisterPath)
+	if !strings.HasPrefix(sister, "# Diffs for AC1 (drift-scan from governa @ abcdef0)") {
+		t.Errorf("sister file missing expected title, got:\n%s", sister[:min(len(sister), 200)])
+	}
+	// Sister must contain at least one ## relpath section + diff fence.
+	if !strings.Contains(sister, "## `") {
+		t.Errorf("sister file missing per-file section, got:\n%s", sister)
+	}
+	if !strings.Contains(sister, "```diff") {
+		t.Errorf("sister file missing diff fence, got:\n%s", sister)
+	}
+	// Match-classified files (e.g., AGENTS.md when target is byte-equal)
+	// would have no section in sister. docFixture's AGENTS.md is ambiguity,
+	// so it should appear. There are no byte-equal files in docFixture, so
+	// instead verify sister's section count matches the divergent count.
+	// Expect at least one section.
+	if strings.Count(sister, "## `") < 1 {
+		t.Errorf("sister file should have ≥ 1 per-file section, got:\n%s", sister)
+	}
+}
+
+// AT-B4: AT generation is scoped to In Scope only. With no In Scope items,
+// AT body is the literal `None — ...` line. With In Scope items, ATs cover
+// only those — no preserve-marker or IE-pointer ATs.
+func TestAcceptanceTests_OnlyForInScope(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// docFixture has missing-in-target create candidates (.gitignore etc.),
+	// so `## In Scope` is non-empty and AT body has scaffolds.
+	if !strings.Contains(ac, "**AT1** [Automated]") {
+		t.Errorf("expected AT1 scaffold for In Scope items, got:\n%s", ac)
+	}
+	// No preserve-marker AT.
+	if strings.Contains(ac, "rg -qF -- '|") {
+		t.Errorf("AT must not include preserve-marker check; got:\n%s", ac)
+	}
+	// No IE-pointer AT.
+	if strings.Contains(ac, "rg -qF -- '- IE") {
+		t.Errorf("AT must not include IE-pointer check; got:\n%s", ac)
+	}
+}
+
+// AT-B5: Asymmetry note appears in AC's `## Implementation Notes` opening
+// and in the console report header.
+func TestImplementationNotes_AsymmetryNote(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	out := captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// AC105 Part B: same verbatim string in both AC and console.
+	const note = "Scan walks canon→target only. Files in target with no canon counterpart are not enumerated here except via per-file `Coupled local-only files` sub-bullets."
+	if !strings.Contains(ac, note) {
+		t.Errorf("AC missing asymmetry note, got:\n%s", ac)
+	}
+	if !strings.Contains(out, note) {
+		t.Errorf("console report missing same verbatim asymmetry note, got:\n%s", out)
+	}
+}
+
+// AT-A1: Coupled local-only files are listed for divergent files using the
+// directory-sibling rule. cmd/rel/helper.go is local-only and must be
+// surfaced under cmd/rel/main.go's per-file block.
+func TestCoupledLocalOnlyFiles_DirectorySiblings(t *testing.T) {
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\n// local divergent version\n")
+	mustWrite(t, filepath.Join(dir, "cmd/rel/helper.go"), "package main\n// local-only sibling\n")
+	gitAddCommit(t, dir, "AC1: cmd/rel divergence")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	if !strings.Contains(ac, "Coupled local-only files: cmd/rel/helper.go") {
+		t.Errorf("expected helper.go listed under Coupled local-only files for cmd/rel/main.go, got:\n%s", ac)
+	}
+}
+
+// AT-A2: Shell→binary coupling groups rel.sh and cmd/rel/main.go into one
+// Director Review entry. The single regex over `*.sh` must resolve `go run
+// ./cmd/rel` to a divergent file in cmd/rel/.
+func TestCoupledLocalOnlyFiles_ShellBinary(t *testing.T) {
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\n// local\n")
+	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nset -euo pipefail\nexec go run ./cmd/rel \"$@\"\n")
+	gitAddCommit(t, dir, "AC1: rel.sh + cmd/rel divergence")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// One Director Review line must mention both files together.
+	drStart := strings.Index(ac, "## Director Review")
+	if drStart < 0 {
+		t.Fatalf("no Director Review section, got:\n%s", ac)
+	}
+	dr := ac[drStart:]
+	found := false
+	for line := range strings.SplitSeq(dr, "\n") {
+		if strings.Contains(line, "`cmd/rel/main.go`") && strings.Contains(line, "`rel.sh`") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected one Director Review line mentioning both cmd/rel/main.go and rel.sh, got:\n%s", dr)
+	}
+	if !strings.Contains(dr, "(coupled — must route together)") {
+		t.Errorf("expected coupled-group framing, got:\n%s", dr)
+	}
+}
+
+// AT-A3: Coupled files appear in a single Director Review entry, not
+// multiple. This guards against accidentally emitting one question per
+// coupled file in addition to the grouped question.
+func TestDirectorReview_GroupsCoupledFiles(t *testing.T) {
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\n// local\n")
+	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/rel \"$@\"\n")
+	gitAddCommit(t, dir, "AC1: cmd/rel + rel.sh")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	drStart := strings.Index(ac, "## Director Review")
+	if drStart < 0 {
+		t.Fatalf("no Director Review section, got:\n%s", ac)
+	}
+	dr := ac[drStart:]
+	drEnd := strings.Index(dr, "\n## ")
+	if drEnd > 0 {
+		dr = dr[:drEnd]
+	}
+
+	// Coupled files must NOT appear as separate single-file entries.
+	// A single-file entry has the form "N. Should `<one path>` be synced..."
+	// without the "(coupled — must route together)" parenthetical.
+	for _, rel := range []string{"cmd/rel/main.go", "rel.sh"} {
+		soloPattern := "Should `" + rel + "` be synced"
+		if strings.Contains(dr, soloPattern) {
+			t.Errorf("coupled file %q must not appear as a separate single-file entry; got:\n%s", rel, dr)
+		}
+	}
+}
+
+// QA-3 + QA-4: enumerateLocalOnlySiblings filters OS/editor noise files
+// (.DS_Store, Thumbs.db, *.swp, *~) and symlinks (e.g., CLAUDE.md →
+// AGENTS.md). Only real local-only files surface in CoupledLocalOnly.
+func TestEnumerateLocalOnlySiblings_FiltersNoiseAndSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"real.go",
+		".DS_Store",
+		"Thumbs.db",
+		"main.go.swp",
+		"backup~",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("real.go", filepath.Join(dir, "alias.md")); err != nil {
+		t.Skipf("symlink unsupported on this filesystem: %v", err)
+	}
+	canonPaths := map[string]bool{"main.go": true}
+	siblings := enumerateLocalOnlySiblings(dir, "main.go", canonPaths)
+	if len(siblings) != 1 || siblings[0] != "real.go" {
+		t.Errorf("expected [real.go] (noise + symlink filtered), got %v", siblings)
+	}
+}
+
+// QA-5: When `## In Scope` is empty (every divergent file is preserve or
+// ambiguity, none clear-sync, and no missing-in-target candidates), the AT
+// body must be the literal `None — ...` line.
+func TestAcceptanceTests_NoneWhenInScopeEmpty(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{
+				Relpath:        "foo.md",
+				Classification: ClassPreserve,
+				Markers:        []string{"| 0.1.0 | preserve foo.md customization |"},
+				Diff:           "--- a\n+++ b\n",
+				Commits:        []string{"abc subject"},
+			},
+		},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	const want = "None — this AC ships only the staged plan.md IE entry; nothing to verify in target."
+	if !strings.Contains(out, want) {
+		t.Errorf("expected `None — ...` AT body when In Scope is empty, got:\n%s", out)
+	}
+	// And no AT scaffolds.
+	if strings.Contains(out, "**AT1** [Automated]") {
+		t.Errorf("expected no AT scaffolds when In Scope is empty, got:\n%s", out)
+	}
+}
+
+// QA-6: For divergent files with no local-only siblings, the per-file
+// block must render `Coupled local-only files: None` (not omit the line).
+func TestPerFileBlock_CoupledLocalOnlyNoneRendered(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+	// docs/ac-template.md is in target's docs/ alongside only per-AC files
+	// (filtered) — so its CoupledLocalOnly is empty and the line must read
+	// `None`.
+	if !strings.Contains(ac, "Coupled local-only files: None") {
+		t.Errorf("expected `Coupled local-only files: None` line for at least one divergent file, got:\n%s", ac)
+	}
+}
+
+// QA-7: Three or more divergent files unioned via shared coupled-local-only
+// siblings collapse into a single routing group.
+func TestComputeRoutingGroups_MultiFileTransitive(t *testing.T) {
+	dir := t.TempDir()
+	files := []FileResult{
+		{Relpath: "cmd/a/main.go", Classification: ClassAmbiguity, CoupledLocalOnly: []string{"cmd/a/helper.go"}},
+		{Relpath: "cmd/b/main.go", Classification: ClassAmbiguity, CoupledLocalOnly: []string{"cmd/b/helper.go"}},
+		// shared.go pulls both packages into one group via overlapping
+		// coupled-local-only entries.
+		{Relpath: "shared.go", Classification: ClassAmbiguity, CoupledLocalOnly: []string{"cmd/a/helper.go", "cmd/b/helper.go"}},
+	}
+	groups := computeRoutingGroups(files, dir)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 routing group (3 files transitively unioned), got %d: %v", len(groups), groups)
+	}
+	if len(groups[0]) != 3 {
+		t.Errorf("expected 3 files in the unioned group, got %d: %v", len(groups[0]), groups[0])
+	}
+}
+
+// QA-8: When the scan finds zero divergent files, the sister diffs file
+// is still staged and carries the "No divergent files." body.
+func TestBuildSisterDiffs_NoDivergent(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "foo.md", Classification: ClassMatch},
+		},
+	}
+	out := buildSisterDiffs(1, "abcdef0", report)
+	if !strings.HasPrefix(out, "# Diffs for AC1 (drift-scan from governa @ abcdef0)") {
+		t.Errorf("sister missing title, got:\n%s", out)
+	}
+	if !strings.Contains(out, "No divergent files.") {
+		t.Errorf("expected `No divergent files.` body, got:\n%s", out)
+	}
+}
+
+// QA-9: Commit subjects containing `|` would otherwise break the routing
+// summary markdown table; the cell renderer must escape them.
+func TestRoutingSummary_EscapesPipeInCommitSubject(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{
+				Relpath:        "foo.md",
+				Classification: ClassAmbiguity,
+				Commits:        []string{"abcdef AC1: tweaked | the | thing"},
+			},
+		},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	if !strings.Contains(out, `AC1: tweaked \| the \| thing`) {
+		t.Errorf("expected `|` escaped as `\\|` in routing summary cell, got:\n%s", out)
+	}
+}
+
+// AT-C4: Operator-lean placeholder in `## Director Review` uses
+// `<!-- TBD by Operator -->`, not the legacy `<TBD>` form, so the convention
+// is uniform with the other Operator-fill placeholders.
+func TestDirectorReview_LeanPlaceholderMarker(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	drStart := strings.Index(ac, "## Director Review")
+	if drStart < 0 {
+		t.Fatalf("no Director Review section, got:\n%s", ac)
+	}
+	dr := ac[drStart:]
+	drEnd := strings.Index(dr, "\n## ")
+	if drEnd > 0 {
+		dr = dr[:drEnd]
+	}
+	if !strings.Contains(dr, "Operator lean: <!-- TBD by Operator -->") {
+		t.Errorf("expected Operator-lean placeholder `<!-- TBD by Operator -->`, got:\n%s", dr)
+	}
+	// Legacy `<TBD>` must not appear.
+	if strings.Contains(dr, "Operator lean: <TBD>") {
+		t.Errorf("legacy `<TBD>` placeholder must be removed; got:\n%s", dr)
 	}
 }
 
