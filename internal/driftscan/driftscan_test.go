@@ -1115,10 +1115,10 @@ func TestClassI_TargetHasNoCanonGetsQ(t *testing.T) {
 	if !strings.Contains(dr, "(target-has-no-canon)") {
 		t.Errorf("class I: expected target-has-no-canon Q in Director Review, got:\n%s", dr)
 	}
-	// AC111 Class X: keep/delete/migrate-to-canon menu lives in the
-	// bulleted routing-menu block at the top of Director Review.
-	if !strings.Contains(dr, "`keep` / `delete` / `migrate-to-canon`") {
-		t.Errorf("class I: expected keep/delete/migrate-to-canon menu in bulleted routing-menu block, got:\n%s", dr)
+	// AC111 Class X: keep/delete menu lives in the bulleted routing-menu
+	// block at the top of Director Review (AC116 Q3 dropped migrate-to-canon).
+	if !strings.Contains(dr, "`keep` / `delete`") {
+		t.Errorf("class I: expected keep/delete menu in bulleted routing-menu block, got:\n%s", dr)
 	}
 }
 
@@ -1168,21 +1168,31 @@ func TestClassX_InScopeEmptyWithOpenQsTerseOneLiner(t *testing.T) {
 	}
 }
 
-// AC106 AT8 / Class H: Resolution protocol section is present in
-// docs/drift-scan.md and enumerates sync/preserve/defer transitions.
+// AC106 AT8 / Class H (updated AC116 Part D): Resolution protocol section is
+// present in docs/drift-scan.md and documents the per-decision menus.
+// Structural assertion per AC115's lesson — verifies presence of decision
+// tokens without pinning verbatim wording shape.
 func TestClassH_ResolutionProtocolDocumented(t *testing.T) {
 	data, err := os.ReadFile("../../docs/drift-scan.md")
 	if err != nil {
 		t.Fatalf("read drift-scan.md: %v", err)
 	}
 	doc := string(data)
-	if !strings.Contains(doc, "## Resolution protocol") {
-		t.Error("AC106 AT8: drift-scan.md missing `## Resolution protocol` section")
+	rpBody, ok := sectionBody(doc, "Resolution protocol")
+	if !ok {
+		t.Fatal("AC106 AT8: drift-scan.md missing `## Resolution protocol` section")
 	}
-	for _, transition := range []string{"`sync` resolution", "`preserve` resolution", "`defer` resolution"} {
-		if !strings.Contains(doc, transition) {
-			t.Errorf("AC106 AT8: drift-scan.md `## Resolution protocol` missing %s transition", transition)
+	for _, decision := range []string{"`sync`", "`preserve`", "`defer`", "`keep`", "`delete`"} {
+		if !strings.Contains(rpBody, decision) {
+			t.Errorf("`## Resolution protocol` missing %s decision", decision)
 		}
+	}
+	// Per AC116 Part D: imperative + named failure mode (AC115 pattern).
+	if !strings.Contains(rpBody, "MUST") {
+		t.Error("`## Resolution protocol` missing imperative MUST token")
+	}
+	if !strings.Contains(rpBody, "**Failure mode:**") {
+		t.Error("`## Resolution protocol` missing named failure mode")
 	}
 }
 
@@ -1682,7 +1692,7 @@ func TestClassV_RoutingMenuStampEmitted(t *testing.T) {
 		"- `sync` — file moves to In Scope",
 		"- `preserve` — file stays in Out Of Scope; backfill `preserve <path> <qualifier>` in CHANGELOG.md at next release prep",
 		"- `defer` — file becomes a follow-on AC pointer (new IE in `plan.md`)",
-		"- For `target-has-no-canon` files: `keep` / `delete` / `migrate-to-canon` instead. See `governa @ abcdef0: docs/drift-scan.md ## Resolution protocol`.",
+		"- For `target-has-no-canon` files: `keep` / `delete` instead. See `governa @ abcdef0: docs/drift-scan.md ## Resolution protocol`.",
 	}
 	for _, want := range wants {
 		if !strings.Contains(dr, want) {
@@ -2309,4 +2319,353 @@ func TestAC114_AT13_VerifyCLI(t *testing.T) {
 			t.Errorf("expected no output, got:\n%s", buf.String())
 		}
 	})
+}
+
+// =====================================================================
+// AC116 — Drift-Scan Resolve Subcommand
+// =====================================================================
+
+// ac116Fixture builds an AC body containing both ambiguity Qs and a
+// target-has-no-canon Q for testing.
+func ac116Fixture() string {
+	return "# AC4 Drift-Scan from governa @ abcdef0\n\n" +
+		"## Summary\n\nFilled.\n\n" +
+		"## Objective Fit\n\n1. **Outcome** delivers X.\n\n" +
+		"## In Scope\n\nNone.\n\n" +
+		"## Out Of Scope\n\nNone.\n\n" +
+		"## Implementation Notes\n\nCanon: governa @ abcdef0, flavor `doc`.\n\n" +
+		"## Acceptance Tests\n\nNone — this AC ships only the staged plan.md IE entry; nothing to verify in target.\n\n" +
+		"## Director Review\n\n" +
+		"**Routing menu** (pick one per Q):\n\n" +
+		"1. **`amb1.md`** — preserve. Why: per-repo content.\n" +
+		"2. **`AGENTS.md`** — sync. Why: canon refinement.\n" +
+		"3. **`amb3.md`** — defer. Why: needs scoping.\n" +
+		"4. **`thnc.md`** (target-has-no-canon) — keep. Why: per-repo addition.\n\n" +
+		"## Status\n\n`PENDING`\n"
+}
+
+func writeAC116Fixture(t *testing.T, dir string) string {
+	t.Helper()
+	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n(none active)\n")
+	acPath := filepath.Join(dir, "docs", "ac4-drift-scan-from-abcdef0.md")
+	mustWrite(t, acPath, ac116Fixture())
+	return acPath
+}
+
+// AC116 AT1 — `resolve` is dispatched by RunCLI to RunResolveCLI.
+func TestAC116_AT1_ResolveDispatch(t *testing.T) {
+	exit, err := RunCLI([]string{"resolve", "/nonexistent/ac.md", "1", "sync"}, EmbeddedFS)
+	if err != nil {
+		t.Fatalf("RunCLI: %v", err)
+	}
+	if exit != 1 {
+		t.Errorf("expected exit 1 (resolve error on nonexistent path), got %d", exit)
+	}
+}
+
+// AC116 AT2 — Resolve errors for missing path, Q num out of range,
+// invalid decision for Q type, decision not in any menu.
+func TestAC116_AT2_ResolveErrors(t *testing.T) {
+	dir := t.TempDir()
+	acPath := writeAC116Fixture(t, dir)
+
+	t.Run("missing AC path", func(t *testing.T) {
+		err := Resolve("/nonexistent/ac.md", 1, "sync", EmbeddedFS)
+		if err == nil {
+			t.Error("expected error for missing path")
+		}
+	})
+	t.Run("Q num out of range", func(t *testing.T) {
+		err := Resolve(acPath, 99, "sync", EmbeddedFS)
+		if err == nil || !strings.Contains(err.Error(), "Q99 not found") {
+			t.Errorf("expected Q-not-found error, got: %v", err)
+		}
+	})
+	t.Run("invalid decision for ambiguity", func(t *testing.T) {
+		err := Resolve(acPath, 1, "keep", EmbeddedFS)
+		if err == nil || !strings.Contains(err.Error(), "invalid decision") {
+			t.Errorf("expected invalid-decision error, got: %v", err)
+		}
+	})
+	t.Run("invalid decision for target-has-no-canon", func(t *testing.T) {
+		err := Resolve(acPath, 4, "sync", EmbeddedFS)
+		if err == nil || !strings.Contains(err.Error(), "invalid decision") {
+			t.Errorf("expected invalid-decision error, got: %v", err)
+		}
+	})
+	t.Run("migrate-to-canon rejected (Q3 dropped)", func(t *testing.T) {
+		err := Resolve(acPath, 4, "migrate-to-canon", EmbeddedFS)
+		if err == nil || !strings.Contains(err.Error(), "invalid decision") {
+			t.Errorf("expected invalid-decision error for migrate-to-canon, got: %v", err)
+		}
+	})
+}
+
+// AC116 AT3 — parseDirectorReviewQ identifies Q types via the
+// (target-has-no-canon) annotation and extracts the file path.
+func TestAC116_AT3_ParseDirectorReviewQ(t *testing.T) {
+	body := ac116Fixture()
+	t.Run("ambiguity Q", func(t *testing.T) {
+		qType, fp, _, err := parseDirectorReviewQ(body, 2)
+		if err != nil {
+			t.Fatalf("parseDirectorReviewQ: %v", err)
+		}
+		if qType != "ambiguity" || fp != "AGENTS.md" {
+			t.Errorf("got (%q, %q), want (ambiguity, AGENTS.md)", qType, fp)
+		}
+	})
+	t.Run("target-has-no-canon Q", func(t *testing.T) {
+		qType, fp, _, err := parseDirectorReviewQ(body, 4)
+		if err != nil {
+			t.Fatalf("parseDirectorReviewQ: %v", err)
+		}
+		if qType != "target-has-no-canon" || fp != "thnc.md" {
+			t.Errorf("got (%q, %q), want (target-has-no-canon, thnc.md)", qType, fp)
+		}
+	})
+}
+
+// AC116 AT4 — validateDecision accepts per-Q-type menus, rejects others.
+func TestAC116_AT4_ValidateDecision(t *testing.T) {
+	cases := []struct {
+		qType    string
+		decision string
+		wantErr  bool
+	}{
+		{"ambiguity", "sync", false},
+		{"ambiguity", "preserve", false},
+		{"ambiguity", "defer", false},
+		{"ambiguity", "keep", true},
+		{"ambiguity", "delete", true},
+		{"ambiguity", "migrate-to-canon", true},
+		{"ambiguity", "unknown", true},
+		{"target-has-no-canon", "keep", false},
+		{"target-has-no-canon", "delete", false},
+		{"target-has-no-canon", "migrate-to-canon", true}, // Q3 dropped
+		{"target-has-no-canon", "sync", true},
+		{"target-has-no-canon", "preserve", true},
+		{"target-has-no-canon", "defer", true},
+		{"target-has-no-canon", "unknown", true},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%s/%s", tc.qType, tc.decision), func(t *testing.T) {
+			err := validateDecision(tc.qType, tc.decision)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("got err=%v, wantErr=%v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// AC116 AT5 — sync resolution: In Scope gets new line containing file +
+// (Director-set); AT section gets new AT line.
+func TestAC116_AT5_SyncResolution(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# template\n")
+	acPath := writeAC116Fixture(t, dir)
+
+	if err := Resolve(acPath, 2, "sync", EmbeddedFS); err != nil {
+		t.Fatalf("Resolve sync: %v", err)
+	}
+	body := mustRead(t, acPath)
+	inScope, _ := sectionBody(body, "In Scope")
+	atSection, _ := sectionBody(body, "Acceptance Tests")
+	foundInScope := false
+	for _, line := range strings.Split(inScope, "\n") {
+		if strings.Contains(line, "AGENTS.md") && strings.Contains(line, "(Director-set)") {
+			foundInScope = true
+			break
+		}
+	}
+	if !foundInScope {
+		t.Errorf("In Scope missing new sync line for AGENTS.md with (Director-set):\n%s", inScope)
+	}
+	foundAT := false
+	atRe := regexp.MustCompile(`\*\*AT\d+\*\*.*AGENTS\.md.*\(Director-set\)`)
+	for _, line := range strings.Split(atSection, "\n") {
+		if atRe.MatchString(line) {
+			foundAT = true
+			break
+		}
+	}
+	if !foundAT {
+		t.Errorf("AT section missing new AT for AGENTS.md with (Director-set):\n%s", atSection)
+	}
+}
+
+// AC116 AT6 — preserve resolution: In Scope gets CHANGELOG marker-backfill
+// line containing file + (Director-set) + CHANGELOG.md.
+func TestAC116_AT6_PreserveResolution(t *testing.T) {
+	dir := t.TempDir()
+	acPath := writeAC116Fixture(t, dir)
+
+	if err := Resolve(acPath, 1, "preserve", EmbeddedFS); err != nil {
+		t.Fatalf("Resolve preserve: %v", err)
+	}
+	body := mustRead(t, acPath)
+	inScope, _ := sectionBody(body, "In Scope")
+	found := false
+	for _, line := range strings.Split(inScope, "\n") {
+		if strings.Contains(line, "amb1.md") && strings.Contains(line, "(Director-set)") && strings.Contains(line, "CHANGELOG.md") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("In Scope missing preserve marker-backfill line for amb1.md:\n%s", inScope)
+	}
+}
+
+// AC116 AT7 — defer resolution: plan.md gets a new IE entry containing
+// file + defer marker. AC body In Scope/AT/Out Of Scope unchanged.
+func TestAC116_AT7_DeferResolution(t *testing.T) {
+	dir := t.TempDir()
+	acPath := writeAC116Fixture(t, dir)
+	preBody := mustRead(t, acPath)
+	preInScope, _ := sectionBody(preBody, "In Scope")
+	preATs, _ := sectionBody(preBody, "Acceptance Tests")
+	preOOS, _ := sectionBody(preBody, "Out Of Scope")
+
+	if err := Resolve(acPath, 3, "defer", EmbeddedFS); err != nil {
+		t.Fatalf("Resolve defer: %v", err)
+	}
+	plan := mustRead(t, filepath.Join(dir, "plan.md"))
+	if !strings.Contains(plan, "amb3.md") || !strings.Contains(plan, "defer") {
+		t.Errorf("plan.md missing defer IE for amb3.md:\n%s", plan)
+	}
+	postBody := mustRead(t, acPath)
+	postInScope, _ := sectionBody(postBody, "In Scope")
+	postATs, _ := sectionBody(postBody, "Acceptance Tests")
+	postOOS, _ := sectionBody(postBody, "Out Of Scope")
+	if preInScope != postInScope {
+		t.Errorf("In Scope changed unexpectedly")
+	}
+	if preATs != postATs {
+		t.Errorf("Acceptance Tests changed unexpectedly")
+	}
+	if preOOS != postOOS {
+		t.Errorf("Out Of Scope changed unexpectedly")
+	}
+}
+
+// AC116 AT8 — Q line in Director Review gets (Director-set) annotation +
+// resolved-decision marker after each Resolve.
+func TestAC116_AT8_QLineAnnotation(t *testing.T) {
+	dir := t.TempDir()
+	acPath := writeAC116Fixture(t, dir)
+
+	if err := Resolve(acPath, 1, "preserve", EmbeddedFS); err != nil {
+		t.Fatalf("Resolve preserve: %v", err)
+	}
+	body := mustRead(t, acPath)
+	dr, _ := sectionBody(body, "Director Review")
+	q1Found := false
+	q2Untouched := true
+	for _, line := range strings.Split(dr, "\n") {
+		if strings.HasPrefix(line, "1. **`amb1.md`**") {
+			if strings.Contains(line, "(Director-set)") && strings.Contains(line, "preserve") {
+				q1Found = true
+			}
+		}
+		if strings.HasPrefix(line, "2. **`AGENTS.md`**") {
+			if strings.Contains(line, "(Director-set)") {
+				q2Untouched = false
+			}
+		}
+	}
+	if !q1Found {
+		t.Errorf("Q1 line missing (Director-set) annotation:\n%s", dr)
+	}
+	if !q2Untouched {
+		t.Errorf("Q2 line should be untouched but carries (Director-set):\n%s", dr)
+	}
+}
+
+// AC116 AT9 — keep resolution: no AC In Scope/AT/Out Of Scope mutation,
+// no plan.md mutation; only the Q line gets annotated.
+func TestAC116_AT9_KeepResolution(t *testing.T) {
+	dir := t.TempDir()
+	acPath := writeAC116Fixture(t, dir)
+	preBody := mustRead(t, acPath)
+	preInScope, _ := sectionBody(preBody, "In Scope")
+	preATs, _ := sectionBody(preBody, "Acceptance Tests")
+	preOOS, _ := sectionBody(preBody, "Out Of Scope")
+	prePlan := mustRead(t, filepath.Join(dir, "plan.md"))
+
+	if err := Resolve(acPath, 4, "keep", EmbeddedFS); err != nil {
+		t.Fatalf("Resolve keep: %v", err)
+	}
+	postBody := mustRead(t, acPath)
+	postInScope, _ := sectionBody(postBody, "In Scope")
+	postATs, _ := sectionBody(postBody, "Acceptance Tests")
+	postOOS, _ := sectionBody(postBody, "Out Of Scope")
+	postPlan := mustRead(t, filepath.Join(dir, "plan.md"))
+
+	if preInScope != postInScope || preATs != postATs || preOOS != postOOS {
+		t.Errorf("keep should not mutate In Scope/AT/Out Of Scope")
+	}
+	if prePlan != postPlan {
+		t.Errorf("keep should not mutate plan.md")
+	}
+	dr, _ := sectionBody(postBody, "Director Review")
+	if !strings.Contains(dr, "(Director-set)") {
+		t.Errorf("keep should annotate Q line:\n%s", dr)
+	}
+}
+
+// AC116 AT10 — delete resolution: In Scope gets new line containing file +
+// (Director-set) + delete marker.
+func TestAC116_AT10_DeleteResolution(t *testing.T) {
+	dir := t.TempDir()
+	acPath := writeAC116Fixture(t, dir)
+
+	if err := Resolve(acPath, 4, "delete", EmbeddedFS); err != nil {
+		t.Fatalf("Resolve delete: %v", err)
+	}
+	body := mustRead(t, acPath)
+	inScope, _ := sectionBody(body, "In Scope")
+	found := false
+	for _, line := range strings.Split(inScope, "\n") {
+		if strings.Contains(line, "thnc.md") && strings.Contains(line, "(Director-set)") && strings.Contains(line, "delete") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("In Scope missing delete line for thnc.md:\n%s", inScope)
+	}
+}
+
+// AC116 AT11 — Resolve errors when invoked on a Q already resolved
+// (idempotency-as-error per Q4).
+func TestAC116_AT11_IdempotencyError(t *testing.T) {
+	dir := t.TempDir()
+	acPath := writeAC116Fixture(t, dir)
+
+	if err := Resolve(acPath, 1, "preserve", EmbeddedFS); err != nil {
+		t.Fatalf("first Resolve: %v", err)
+	}
+	err := Resolve(acPath, 1, "sync", EmbeddedFS)
+	if err == nil || !strings.Contains(err.Error(), "already resolved") {
+		t.Errorf("expected already-resolved error on second Resolve, got: %v", err)
+	}
+}
+
+// AC116 AT12 — Resolution protocol section in drift-scan.md has imperative
+// MUST + named failure mode (structural per AC115 lesson).
+func TestAC116_AT12_ResolutionProtocolStructural(t *testing.T) {
+	data, err := os.ReadFile("../../docs/drift-scan.md")
+	if err != nil {
+		t.Fatalf("read drift-scan.md: %v", err)
+	}
+	body, ok := sectionBody(string(data), "Resolution protocol")
+	if !ok {
+		t.Fatal("missing ## Resolution protocol section")
+	}
+	if !strings.Contains(body, "MUST") {
+		t.Error("Resolution protocol missing imperative MUST token")
+	}
+	if !strings.Contains(body, "**Failure mode:**") {
+		t.Error("Resolution protocol missing **Failure mode:** substring")
+	}
 }

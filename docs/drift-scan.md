@@ -33,7 +33,7 @@ The staged AC arrives with these sections already filled — no Operator action 
   - `### Expected per-repo divergence` — files whose canon is a stub by design and whose path is registered (see `## Expected-divergence registry`); kept separate from byte-equal matches so the Operator does not misread "match" as "verified canonical".
   - `### Divergent files` — `preserve` / `ambiguity` / `clear-sync` files with classification, canon ref, preserve markers, optional `Coupled-with: <signal-name> set (see § Coupled sets)` line (AC108 Class R: only when the file is in a coupled set; uncoupled files emit no Coupled-with line), `Direction:` summary line (AC108 Class U: target/canon line counts and a target-leads/canon-leads/mutual qualitative label so the Operator does not have to read +/- glyphs to determine direction), `What diverged: <!-- TBD by Operator -->` Operator-fill line (AC112 Class Y: positioned after `Direction:` so the Operator reads direction first; one-line characterization of the change), and verbatim commit list. **No diff hunks** — diffs live in the sister file.
   - `### Missing in target (create candidates)` — missing-in-target files with non-empty canon; carries canon ref + content preview so the Operator does not need to leave the AC.
-  - `### Files in target without canon` — `target-has-no-canon` files (the file exists in target and in the OTHER flavor's canon — possible flavor mismatch). Carries content preview (first/last lines) and the canon path the file would map to under the other flavor. Each of these files also gets a Director Review Q with options `keep / delete / migrate-to-canon` (see `## Decision-surface coverage`).
+  - `### Files in target without canon` — `target-has-no-canon` files (the file exists in target and in the OTHER flavor's canon — possible flavor mismatch). Carries content preview (first/last lines) and the canon path the file would map to under the other flavor. Each of these files also gets a Director Review Q with options `keep / delete` (see `## Decision-surface coverage`).
   - `### Coupled sets (informational — routing decisions per Q above)` — emitted when at least one coupling has been detected. The heading qualifier `(informational — routing decisions per Q above)` signals the section's nature; body is one bullet per coupled set naming the signal that produced it (e.g., `Go same-package: cmd/rel/main.go, cmd/rel/color.go, cmd/rel/main_test.go`; `Shell→binary: rel.sh → cmd/rel/main.go`; `Name-reference: README.md mentions index.md`). The subsection is descriptive, not prescriptive — no language like `route together`, `should`, `must`, `consider as a unit` survives in emission.
   - `### Warnings` — only missing-in-target with empty canon (rare; informational).
 - **`## Acceptance Tests`** — one AT scaffold per file in `## In Scope` (clear-sync sync ATs and missing-in-target create ATs). Missing-in-target ATs use a byte-equality check that embeds canon content (target file matches canon byte-for-byte). When `## In Scope` is `None`, body is `None — this AC ships only the staged plan.md IE entry; nothing to verify in target.` Tool no longer emits AT-for-preserve-marker or AT-for-IE-pointer (both verified scaffolding placed by earlier ACs / by this scan's staging step, not this AC's deliverable).
@@ -46,7 +46,7 @@ The staged AC arrives with these sections already filled — no Operator action 
   - `sync` — file moves to In Scope
   - `preserve` — file stays in Out Of Scope; backfill `preserve <path> <qualifier>` in CHANGELOG.md at next release prep
   - `defer` — file becomes a follow-on AC pointer (new IE in `plan.md`)
-  - For `target-has-no-canon` files: `keep` / `delete` / `migrate-to-canon` instead. See `governa @ <sha>: docs/drift-scan.md ## Resolution protocol`.
+  - For `target-has-no-canon` files: `keep` / `delete` instead. See `governa @ <sha>: docs/drift-scan.md ## Resolution protocol`.
   ```
 
   Followed by one numbered entry per ambiguity file (`<N>. **`<file>`** — <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.`) plus one per `target-has-no-canon` file (same shape with `(target-has-no-canon)` annotation between file and placeholder). Per-Q text is shape-only — the menu lives once at the top. Coupling info is purely informational via `### Coupled sets` — never duplicated per Q. Format-defining files (registered) emit no Director Review Q — they are auto-routed to In Scope as sync. When no Q-emitting classifications fire, body is `None.` and no menu block is emitted.
@@ -76,7 +76,7 @@ Before writing, the Operator MUST read in this order:
 
 For each open Q in `## Director Review`, fill:
 
-- The lean placeholder — pick from the routing menu at the top of the section (`sync` / `preserve` / `defer` for ambiguity; `keep` / `delete` / `migrate-to-canon` for `target-has-no-canon`).
+- The lean placeholder — pick from the routing menu at the top of the section (`sync` / `preserve` / `defer` for ambiguity; `keep` / `delete` for `target-has-no-canon`).
 - The `Why: <!-- TBD by Operator -->` rationale — one line, anchored on the `Direction:` line and the per-file `What diverged` from step 1.
 
 **Sequencing constraint:** the Operator MUST fill step 1 before step 2. The per-file `What diverged` is the input to the lean rationale; filling leans first and characterizing diffs after invites confirmation-bias.
@@ -155,7 +155,7 @@ The tool emits one of the classifications below for every file. The Operator can
   - **Cross-flavor branch:** the file exists in the OTHER flavor's canon. Possible flavor mismatch.
   - **Name-reference branch (AC112 Class Z):** the file exists in target only (no canon counterpart in either flavor) but is name-referenced from a divergent target file (e.g., `rel.sh` references `./cmd/rel/color.go` and color.go has no canon presence).
 
-  Both branches list the file under `### Files in target without canon` and emit a Director Review Q with options `keep / delete / migrate-to-canon` (see `## Decision-surface coverage`). The `migrate-to-canon` option in the name-reference branch means migrate to the current flavor's canon (since the other flavor doesn't have it either).
+  Both branches list the file under `### Files in target without canon` and emit a Director Review Q with options `keep / delete` (see `## Decision-surface coverage`). Migrating a file into canon is a separate governa-side workflow, not a drift-scan resolution; the consumer agent surfaces the file via `keep` and Director coordinates with governa maintainer if upstream migration is desired.
 
 For every divergent file, the staged AC's `## Implementation Notes` carries:
 
@@ -225,14 +225,28 @@ The check is registry-driven: rule definitions live next to `FormatDefiningCanon
 
 ## Resolution protocol
 
-When the Director resolves a Director Review question, the Operator applies the protocol below. The tool stages once; the Operator updates the AC body on resolution.
+When the Director resolves a Director Review question, the Operator MUST invoke the resolve subcommand:
 
-- **`sync` resolution:** file moves into `## In Scope` as a sync action. AT auto-extends with a byte-equality check against canon content. Resolution attributed inline with `(Director-set)` per `docs/ac-template.md`'s convention.
-- **`preserve` resolution:** file stays in `## Out Of Scope` with the marker named. CHANGELOG marker-backfill action lands in `## In Scope` as `add preserve marker for <path> in CHANGELOG.md row at next release prep`. Resolution attributed inline.
-- **`defer` resolution:** file stays in routing queue if more critique rounds are expected, or moves to a follow-on AC pointer added to `plan.md` as a new IE. Resolution attributed inline.
-- **`target-has-no-canon` resolutions:** `keep` leaves the file as a per-repo addition (no AC action); `delete` adds a removal line to `## In Scope`; `migrate-to-canon` adds a follow-on IE pointing at a governa-side AC to introduce the file into canon.
+```
+governa drift-scan resolve <ac-path> <Q-num> <decision>
+```
 
-The Operator applies the protocol on resolution; the tool does not auto-update the AC after staging.
+The subcommand performs per-section mutations mechanically. Decision values per Q type:
+
+**For ambiguity Qs:**
+
+- **`sync`** — file appended to `## In Scope` as sync; AT appended to `## Acceptance Tests` with byte-equality check against canon; `(Director-set)` attribution recorded inline on the Director Review Q line.
+- **`preserve`** — file stays in `## Out Of Scope`; CHANGELOG marker-backfill action appended to `## In Scope` as `add preserve marker for <path> in CHANGELOG.md row at next release prep`.
+- **`defer`** — pre-rubric IE appended to `plan.md` recording the deferred file and the source AC.
+
+**For target-has-no-canon Qs:**
+
+- **`keep`** — no AC mutation; Q-line annotation alone records the resolution.
+- **`delete`** — removal line appended to `## In Scope`.
+
+**Failure mode:** manually editing the AC body for a routing decision (instead of invoking the subcommand) bypasses the deterministic mutation logic and may leave the AC in an inconsistent state — file moved between sections without `(Director-set)` attribution, or sync resolution without the paired AT extension. The Operator MUST use the subcommand for routing decisions; manual edits are reserved for content (Summary, Objective Fit, What diverged, lean rationale, audit reconciliation).
+
+After all Qs resolved, run `governa drift-scan verify <ac-path>` to confirm no compliance failures remain.
 
 ## Reference qualification
 
@@ -265,7 +279,7 @@ Tool-emitted text inside the staged consumer AC must qualify any reference to a 
 
 **Output format:** `<line>:<section>: <description>` per failure (gcc/golangci-lint convention for editor jump-to-error). Exit 0 = clean, exit 1 = failures present, exit 2 = usage error.
 
-**Usage:** `governa drift-scan verify <ac-path>`. Run before handoff to the Director, after filling all five Operator-fill spots in the staged AC.
+**Usage:** `governa drift-scan verify <ac-path>`. Run before handoff to the Director, after filling all five Operator-fill spots in the staged AC. Typical sequence: Operator fills placeholders → Director resolves Director Review Qs via `governa drift-scan resolve <ac-path> <Q-num> <decision>` (per `## Resolution protocol`) → Operator runs `verify` → Director receives handoff.
 
 ## Decision-surface coverage
 
@@ -279,7 +293,7 @@ Every classification that requires a Director call pairs with an auto-emitted de
 | `clear-sync` | No | Terminal — auto-routed to In Scope |
 | `missing-in-target` | No | Terminal — auto-routed to In Scope (or to Warnings) |
 | `ambiguity` | Yes | Routing decision: sync / preserve / defer |
-| `target-has-no-canon` | Yes | Routing decision: keep / delete / migrate-to-canon |
+| `target-has-no-canon` | Yes | Routing decision: keep / delete |
 | Format-defining (registered) | No | Hard-routed to sync regardless of raw classification |
 
 ## Coupling analysis

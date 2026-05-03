@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.109.0 | AC116: drift-scan resolve subcommand for Director Q decisions |
 | 0.108.0 | AC113+AC114+AC115: drift-scan promotions + doc reconciliation |
 | 0.107.0 | AC108+AC109+AC110+AC111+AC112: drift-scan + preptool cleanup |
 | 0.106.0 | AC107: drift-scan emission hygiene (class J + H follow-on) |

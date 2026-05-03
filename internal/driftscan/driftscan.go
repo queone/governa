@@ -151,6 +151,10 @@ func RunCLI(args []string, tfs fs.FS) (int, error) {
 	if len(args) >= 1 && args[0] == "verify" {
 		return RunVerifyCLI(args[1:], os.Stdout)
 	}
+	// AC116 Part A: `governa drift-scan resolve <ac-path> <Q-num> <decision>` subcommand.
+	if len(args) >= 1 && args[0] == "resolve" {
+		return RunResolveCLI(args[1:], tfs, os.Stdout)
+	}
 	cfg, help, err := ParseArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -1609,8 +1613,9 @@ func buildACStub(acN int, sha string, report *Report) string {
 	// no prescriptive language across the full staged-AC body.
 	// AC109 Class V: routing-matrix shape replaces the verbose per-Q
 	// question form. One menu stamp at the top documents both routing
-	// menus (sync/preserve/defer for ambiguity, keep/delete/migrate-to-canon
-	// for target-has-no-canon); per-Q text leads with the file in backticks
+	// menus (sync/preserve/defer for ambiguity, keep/delete for
+	// target-has-no-canon — AC116 Q3 dropped migrate-to-canon); per-Q
+	// text leads with the file in backticks
 	// + lean placeholder + why placeholder. Coupled-with annotations are
 	// dropped from per-Q text (already in `### Coupled sets`); per-Q
 	// backfill-marker boilerplate is dropped (covered by the menu stamp's
@@ -1631,7 +1636,7 @@ func buildACStub(acN int, sha string, report *Report) string {
 		fmt.Fprintln(&b, "- `sync` — file moves to In Scope")
 		fmt.Fprintln(&b, "- `preserve` — file stays in Out Of Scope; backfill `preserve <path> <qualifier>` in CHANGELOG.md at next release prep")
 		fmt.Fprintln(&b, "- `defer` — file becomes a follow-on AC pointer (new IE in `plan.md`)")
-		fmt.Fprintf(&b, "- For `target-has-no-canon` files: `keep` / `delete` / `migrate-to-canon` instead. See `%s ## Resolution protocol`.\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
+		fmt.Fprintf(&b, "- For `target-has-no-canon` files: `keep` / `delete` instead. See `%s ## Resolution protocol`.\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
 		fmt.Fprintln(&b)
 		qN := 1
 		for _, f := range ambiguities {
@@ -2690,5 +2695,397 @@ func RunVerifyCLI(args []string, out io.Writer) (int, error) {
 	if len(failures) > 0 {
 		return 1, nil
 	}
+	return ExitOK, nil
+}
+
+// =============================================================================
+// AC116 — Drift-Scan Resolve Subcommand
+// =============================================================================
+
+// directorReviewAmbiguityQRe matches the file-first lead of an ambiguity Q in
+// the AC's `## Director Review` section: `<N>. **`<file>`** — ...`. The
+// `(target-has-no-canon)` annotation is absent.
+var directorReviewAmbiguityQHeadRe = regexp.MustCompile("^(\\d+)\\. \\*\\*`([^`]+)`\\*\\* — ")
+
+// directorReviewTargetHasNoCanonQHeadRe matches the file-first lead of a
+// target-has-no-canon Q: `<N>. **`<file>`** (target-has-no-canon) — ...`.
+var directorReviewTargetHasNoCanonQHeadRe = regexp.MustCompile("^(\\d+)\\. \\*\\*`([^`]+)`\\*\\* \\(target-has-no-canon\\) — ")
+
+// alreadyResolvedAnnotationRe matches the Director-set resolution annotation
+// suffix appended to a Q line by a prior `Resolve` invocation. Idempotency
+// gate per Director-set Q4.
+var alreadyResolvedAnnotationRe = regexp.MustCompile(`→ resolved as \S+ \(Director-set\)`)
+
+// parseDirectorReviewQ extracts the Nth numbered Q from the staged AC's
+// `## Director Review` section. Returns:
+//   - qType: "ambiguity" or "target-has-no-canon"
+//   - filePath: the file path captured from the leading backticked token
+//   - lineIdx: 0-based index of the Q line within the AC body's line slice
+//
+// Errors: AC body has no Director Review section; Q num out of range; Q already
+// carries the Director-set resolution annotation (idempotency gate per Q4).
+// AC116 Part A.
+func parseDirectorReviewQ(acBody string, qNum int) (qType, filePath string, lineIdx int, err error) {
+	drBody, drStart := extractSection(acBody, "Director Review")
+	if drStart < 0 {
+		return "", "", -1, fmt.Errorf("resolve: AC body has no `## Director Review` section")
+	}
+	drLines := strings.Split(drBody, "\n")
+	for i, line := range drLines {
+		if m := directorReviewTargetHasNoCanonQHeadRe.FindStringSubmatch(line); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			if n == qNum {
+				if alreadyResolvedAnnotationRe.MatchString(line) {
+					return "", "", -1, fmt.Errorf("resolve: Q%d already resolved (Q line carries Director-set annotation; manually edit to re-resolve)", qNum)
+				}
+				return "target-has-no-canon", m[2], drStart + i, nil
+			}
+			continue
+		}
+		if m := directorReviewAmbiguityQHeadRe.FindStringSubmatch(line); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			if n == qNum {
+				if alreadyResolvedAnnotationRe.MatchString(line) {
+					return "", "", -1, fmt.Errorf("resolve: Q%d already resolved (Q line carries Director-set annotation; manually edit to re-resolve)", qNum)
+				}
+				return "ambiguity", m[2], drStart + i, nil
+			}
+		}
+	}
+	return "", "", -1, fmt.Errorf("resolve: Q%d not found in `## Director Review`", qNum)
+}
+
+// validateDecision rejects decisions that don't appear in the qType's menu.
+// Per Director-set Q3, target-has-no-canon menu is keep/delete only
+// (migrate-to-canon dropped). AC116 Part A.
+func validateDecision(qType, decision string) error {
+	switch qType {
+	case "ambiguity":
+		switch decision {
+		case "sync", "preserve", "defer":
+			return nil
+		default:
+			return fmt.Errorf("resolve: invalid decision %q for ambiguity Q (allowed: sync / preserve / defer)", decision)
+		}
+	case "target-has-no-canon":
+		switch decision {
+		case "keep", "delete":
+			return nil
+		default:
+			return fmt.Errorf("resolve: invalid decision %q for target-has-no-canon Q (allowed: keep / delete)", decision)
+		}
+	default:
+		return fmt.Errorf("resolve: unknown Q type %q", qType)
+	}
+}
+
+// annotateResolvedQ appends ` → resolved as <decision> (Director-set)` to the
+// Q line at lineIdx. Director-set per Q1 (append, preserves audit trail).
+// AC116 Part B.
+func annotateResolvedQ(acBody string, lineIdx int, decision string) string {
+	lines := strings.Split(acBody, "\n")
+	if lineIdx < 0 || lineIdx >= len(lines) {
+		return acBody
+	}
+	suffix := fmt.Sprintf(" → resolved as %s (Director-set)", decision)
+	// Trim trailing period if present so the suffix flows naturally.
+	line := lines[lineIdx]
+	lines[lineIdx] = strings.TrimRight(line, " ") + suffix
+	return strings.Join(lines, "\n")
+}
+
+// appendInScopeLine appends a line to the `## In Scope` section body of the AC.
+// Inserts the line after the last existing body line (before the trailing blank
+// or next section heading). Returns the modified AC body.
+func appendInScopeLine(acBody, newLine string) (string, error) {
+	lines := strings.Split(acBody, "\n")
+	// Find `## In Scope` heading line.
+	var headingIdx, nextSectionIdx int = -1, -1
+	for i, line := range lines {
+		if line == "## In Scope" {
+			headingIdx = i
+			continue
+		}
+		if headingIdx >= 0 && strings.HasPrefix(line, "## ") {
+			nextSectionIdx = i
+			break
+		}
+	}
+	if headingIdx < 0 {
+		return acBody, fmt.Errorf("appendInScopeLine: no `## In Scope` section")
+	}
+	if nextSectionIdx < 0 {
+		nextSectionIdx = len(lines)
+	}
+	// Find the last non-blank line in the body before the next section.
+	insertAt := nextSectionIdx
+	for j := nextSectionIdx - 1; j > headingIdx; j-- {
+		if strings.TrimSpace(lines[j]) != "" {
+			insertAt = j + 1
+			break
+		}
+	}
+	// Replace `None.` body if that's the entire body.
+	bodyLines := lines[headingIdx+1 : nextSectionIdx]
+	bodyTrimmed := strings.TrimSpace(strings.Join(bodyLines, "\n"))
+	if bodyTrimmed == "None." || strings.HasPrefix(bodyTrimmed, "None — ") {
+		// Replace the None body with the new line.
+		newBody := append([]string(nil), lines[:headingIdx+1]...)
+		newBody = append(newBody, "")
+		newBody = append(newBody, newLine)
+		newBody = append(newBody, "")
+		newBody = append(newBody, lines[nextSectionIdx:]...)
+		return strings.Join(newBody, "\n"), nil
+	}
+	// Insert the new line at insertAt.
+	newLines := append([]string(nil), lines[:insertAt]...)
+	newLines = append(newLines, newLine)
+	newLines = append(newLines, lines[insertAt:]...)
+	return strings.Join(newLines, "\n"), nil
+}
+
+// nextATNumber counts existing `**ATn**` occurrences in the AC's
+// `## Acceptance Tests` body and returns max + 1. Returns 1 when no ATs exist
+// or the section is `None — ...`.
+func nextATNumber(acBody string) int {
+	atBody, atStart := extractSection(acBody, "Acceptance Tests")
+	if atStart < 0 {
+		return 1
+	}
+	re := regexp.MustCompile(`\*\*AT(\d+)\*\*`)
+	max := 0
+	for _, m := range re.FindAllStringSubmatch(atBody, -1) {
+		n, _ := strconv.Atoi(m[1])
+		if n > max {
+			max = n
+		}
+	}
+	return max + 1
+}
+
+// appendATScaffold appends a new AT line to `## Acceptance Tests`. Inserts
+// before the next section.
+func appendATScaffold(acBody, newAT string) (string, error) {
+	lines := strings.Split(acBody, "\n")
+	var headingIdx, nextSectionIdx int = -1, -1
+	for i, line := range lines {
+		if line == "## Acceptance Tests" {
+			headingIdx = i
+			continue
+		}
+		if headingIdx >= 0 && strings.HasPrefix(line, "## ") {
+			nextSectionIdx = i
+			break
+		}
+	}
+	if headingIdx < 0 {
+		return acBody, fmt.Errorf("appendATScaffold: no `## Acceptance Tests` section")
+	}
+	if nextSectionIdx < 0 {
+		nextSectionIdx = len(lines)
+	}
+	insertAt := nextSectionIdx
+	for j := nextSectionIdx - 1; j > headingIdx; j-- {
+		if strings.TrimSpace(lines[j]) != "" {
+			insertAt = j + 1
+			break
+		}
+	}
+	bodyLines := lines[headingIdx+1 : nextSectionIdx]
+	bodyTrimmed := strings.TrimSpace(strings.Join(bodyLines, "\n"))
+	if strings.HasPrefix(bodyTrimmed, "None ") || bodyTrimmed == "None." {
+		newBody := append([]string(nil), lines[:headingIdx+1]...)
+		newBody = append(newBody, "")
+		newBody = append(newBody, newAT)
+		newBody = append(newBody, "")
+		newBody = append(newBody, lines[nextSectionIdx:]...)
+		return strings.Join(newBody, "\n"), nil
+	}
+	newLines := append([]string(nil), lines[:insertAt]...)
+	newLines = append(newLines, "")
+	newLines = append(newLines, newAT)
+	newLines = append(newLines, lines[insertAt:]...)
+	return strings.Join(newLines, "\n"), nil
+}
+
+// readACFlavor extracts the flavor from the AC's `Canon: governa @ <sha>, flavor `<f>“
+// line under `## Implementation Notes`. Returns "" if not found.
+func readACFlavor(acBody string) string {
+	re := regexp.MustCompile("Canon: governa @ \\S+, flavor `([^`]+)`")
+	if m := re.FindStringSubmatch(acBody); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// applySyncResolution mutates the AC body for an ambiguity Q resolved as sync.
+// Adds an `## In Scope` line and an `## Acceptance Tests` AT scaffold (with
+// byte-equality check against canon read from tfs at the AC's flavor / SHA).
+// Director-set per Q1 (annotation), Q6 (canon source = current binary EmbeddedFS).
+// AC116 Part B.
+func applySyncResolution(acBody, filePath, targetRoot string, tfs fs.FS) (string, error) {
+	flavor := readACFlavor(acBody)
+	if flavor == "" {
+		return acBody, fmt.Errorf("applySyncResolution: cannot determine flavor from AC body")
+	}
+	// Read canon content for the file from current binary's EmbeddedFS (Q6).
+	gcfg := governance.Config{Mode: governance.ModeApply, Target: targetRoot, RepoName: governance.InferRepoName(targetRoot)}
+	switch flavor {
+	case "code":
+		gcfg.Type = governance.RepoTypeCode
+		stack := governance.InferStack(targetRoot)
+		if stack == "" {
+			return acBody, fmt.Errorf("applySyncResolution: cannot infer stack for code flavor at %s", targetRoot)
+		}
+		gcfg.Stack = stack
+	case "doc":
+		gcfg.Type = governance.RepoTypeDoc
+	}
+	canon, err := governance.RenderCanonicalFiles(tfs, gcfg, targetRoot)
+	if err != nil {
+		return acBody, fmt.Errorf("applySyncResolution: render canon: %w", err)
+	}
+	canonContent, ok := canon[filePath]
+	if !ok {
+		return acBody, fmt.Errorf("applySyncResolution: file %q not in canon for flavor %s", filePath, flavor)
+	}
+	inScopeLine := fmt.Sprintf("- `%s` — sync to canon (Director-set)", filePath)
+	body, err := appendInScopeLine(acBody, inScopeLine)
+	if err != nil {
+		return acBody, err
+	}
+	atN := nextATNumber(body)
+	atLine := fmt.Sprintf("**AT%d** [Automated] — `%s` synced to canon (Director-set). %s", atN, filePath, byteEqualityCheck(filePath, canonContent))
+	body, err = appendATScaffold(body, atLine)
+	if err != nil {
+		return acBody, err
+	}
+	return body, nil
+}
+
+// applyPreserveResolution adds a CHANGELOG marker-backfill line to In Scope.
+// AC116 Part B.
+func applyPreserveResolution(acBody, filePath string) (string, error) {
+	line := fmt.Sprintf("- add preserve marker for `%s` in CHANGELOG.md row at next release prep (Director-set)", filePath)
+	return appendInScopeLine(acBody, line)
+}
+
+// applyDeferResolution appends a pre-rubric defer IE entry to plan.md.
+// Director-set per Q2: pre-rubric one-liner shape. AC body unchanged.
+// AC116 Part B.
+func applyDeferResolution(targetRoot, filePath, acID string) error {
+	planPath := filepath.Join(targetRoot, "plan.md")
+	planContent, err := os.ReadFile(planPath)
+	if err != nil {
+		return fmt.Errorf("applyDeferResolution: read plan.md: %w", err)
+	}
+	nextN, err := nextIENumber(targetRoot)
+	if err != nil {
+		return fmt.Errorf("applyDeferResolution: nextIENumber: %w", err)
+	}
+	ieLine := fmt.Sprintf("- IE%d: `%s` deferred from %s (Director resolved as defer; follow-on AC TBD)", nextN, filePath, acID)
+	newPlan, err := insertIEsIntoPlan(string(planContent), []string{ieLine})
+	if err != nil {
+		return fmt.Errorf("applyDeferResolution: insert IE: %w", err)
+	}
+	return os.WriteFile(planPath, []byte(newPlan), 0o644)
+}
+
+// applyKeepResolution: no AC body or plan.md mutation. The Q-line annotation
+// alone records the resolution. AC116 Part C.
+func applyKeepResolution(acBody string) (string, error) {
+	return acBody, nil
+}
+
+// applyDeleteResolution adds a removal line to In Scope. AC116 Part C.
+func applyDeleteResolution(acBody, filePath string) (string, error) {
+	line := fmt.Sprintf("- `%s` — delete (Director-set)", filePath)
+	return appendInScopeLine(acBody, line)
+}
+
+// readACID extracts an AC ID like "AC4" from the AC's title.
+func readACID(acBody string) string {
+	re := regexp.MustCompile(`# (AC\d+) Drift-Scan`)
+	if m := re.FindStringSubmatch(acBody); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// Resolve mutates the staged AC at acPath per the Director's decision on the
+// numbered Q. Per Director-set Q5 (best-effort write order): AC body written
+// first, then plan.md when defer mutation involves it. On partial failure,
+// returns an error describing both states.
+//
+// AC116 entry point combining Parts A/B/C.
+func Resolve(acPath string, qNum int, decision string, tfs fs.FS) error {
+	content, err := os.ReadFile(acPath)
+	if err != nil {
+		return fmt.Errorf("resolve: read %s: %w", acPath, err)
+	}
+	body := string(content)
+	qType, filePath, qLineIdx, err := parseDirectorReviewQ(body, qNum)
+	if err != nil {
+		return err
+	}
+	if err := validateDecision(qType, decision); err != nil {
+		return err
+	}
+	targetRoot := filepath.Dir(filepath.Dir(acPath)) // <target>/docs/<ac>.md → <target>
+	// Apply per-decision body mutation.
+	var newBody string
+	switch decision {
+	case "sync":
+		newBody, err = applySyncResolution(body, filePath, targetRoot, tfs)
+	case "preserve":
+		newBody, err = applyPreserveResolution(body, filePath)
+	case "defer":
+		newBody = body
+	case "keep":
+		newBody, err = applyKeepResolution(body)
+	case "delete":
+		newBody, err = applyDeleteResolution(body, filePath)
+	default:
+		// Validated above; defensive.
+		return fmt.Errorf("resolve: unhandled decision %q (validation gap)", decision)
+	}
+	if err != nil {
+		return err
+	}
+	// Annotate Q line in Director Review.
+	newBody = annotateResolvedQ(newBody, qLineIdx, decision)
+	// Write AC body first (Q5 best-effort order).
+	if err := os.WriteFile(acPath, []byte(newBody), 0o644); err != nil {
+		return fmt.Errorf("resolve: write AC body: %w", err)
+	}
+	// Then plan.md mutation (defer only).
+	if decision == "defer" {
+		acID := readACID(body)
+		if acID == "" {
+			return fmt.Errorf("resolve: AC body written successfully BUT cannot extract AC ID from title for plan.md IE; reconcile manually")
+		}
+		if err := applyDeferResolution(targetRoot, filePath, acID); err != nil {
+			return fmt.Errorf("resolve: AC body written successfully BUT plan.md mutation failed: %w (reconcile manually)", err)
+		}
+	}
+	return nil
+}
+
+// RunResolveCLI dispatches the resolve subcommand. AC116 Part A.
+func RunResolveCLI(args []string, tfs fs.FS, out io.Writer) (int, error) {
+	if len(args) != 3 {
+		fmt.Fprintln(os.Stderr, "usage: governa drift-scan resolve <ac-path> <Q-num> <decision>")
+		return ExitUsage, nil
+	}
+	qNum, err := strconv.Atoi(args[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resolve: Q-num must be an integer: %v\n", err)
+		return ExitUsage, nil
+	}
+	if err := Resolve(args[0], qNum, args[2], tfs); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1, nil
+	}
+	fmt.Fprintf(out, "resolved Q%d as %s\n", qNum, args[2])
 	return ExitOK, nil
 }
