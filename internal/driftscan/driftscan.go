@@ -500,6 +500,51 @@ func isFormatDefining(relpath string) bool {
 	return formatDefiningCanonPaths[relpath]
 }
 
+// governaOnlyPathPrefixes is the registry of path prefixes that exist ONLY
+// in governa, not in any consumer overlay. Tool-emitted text into the staged
+// consumer AC must qualify any reference to one of these paths via
+// qualifyGovernaPath; bare references resolve in governa but break in the
+// consumer (see docs/drift-scan.md `## Reference qualification`).
+//
+// Paths shared with consumer overlays (docs/ac-template.md,
+// docs/critique-protocol.md, AGENTS.md, CHANGELOG.md, etc.) stay out of this
+// registry — those references are target-relative when emitted into the
+// staged AC and must NOT be qualified.
+//
+// AC107 AT2 walks the staged body and trips on any unqualified governa-only
+// path; forgetting qualifyGovernaPath at a future emission site fails the
+// test on the first run. Adding a future governa-only prefix to this
+// registry extends coverage without rewriting the test.
+var governaOnlyPathPrefixes = []string{
+	"docs/drift-scan.md",
+	"docs/development-cycle.md",
+	"docs/development-guidelines.md",
+	"docs/build-release.md",
+	"internal/",
+	"cmd/governa/",
+}
+
+// isGovernaOnlyPath reports whether relpath has a prefix in
+// governaOnlyPathPrefixes — i.e. references to it must be qualified when
+// emitted into a consumer artifact.
+func isGovernaOnlyPath(relpath string) bool {
+	for _, prefix := range governaOnlyPathPrefixes {
+		if strings.HasPrefix(relpath, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// qualifyGovernaPath returns the qualified form `governa @ <sha>: <path>`
+// used in tool-emitted text inside the staged consumer AC. Use this at
+// every emission site that references a governa-only path so the consumer
+// reader can resolve the reference (see docs/drift-scan.md
+// `## Reference qualification`).
+func qualifyGovernaPath(sha, path string) string {
+	return "governa @ " + sha + ": " + path
+}
+
 // CoherenceFailure records a single canon-coherence violation.
 type CoherenceFailure struct {
 	Rule     string // human-readable rule name (e.g. "Objective Fit form")
@@ -1158,7 +1203,7 @@ func buildACStub(acN int, sha string, report *Report) string {
 	// header note replaces None as the body.
 	fmt.Fprintln(&b, "## In Scope")
 	fmt.Fprintln(&b)
-	headerNote := "_In Scope expands as Director resolves Q1–Q" + strconv.Itoa(directorReviewOpenQs) + ". Sync resolutions add a sync line here; preserve resolutions add a CHANGELOG marker-backfill line here at the same time. See `docs/drift-scan.md ## Resolution protocol`._"
+	headerNote := "_In Scope expands as Director resolves Q1–Q" + strconv.Itoa(directorReviewOpenQs) + ". Sync resolutions add a sync line here; preserve resolutions add a CHANGELOG marker-backfill line here at the same time. See `" + qualifyGovernaPath(sha, "docs/drift-scan.md") + " ## Resolution protocol`._"
 	switch {
 	case inScopeEmpty && directorReviewOpenQs > 0:
 		// Header note replaces None body.
@@ -1171,7 +1216,7 @@ func buildACStub(acN int, sha string, report *Report) string {
 			fmt.Fprintln(&b)
 		}
 		for _, f := range formatDefining {
-			fmt.Fprintf(&b, "- `%s` — sync to canon (format-defining; hard-routed per `docs/drift-scan.md ## Format-defining files`)\n", f.Relpath)
+			fmt.Fprintf(&b, "- `%s` — sync to canon (format-defining; hard-routed per `%s ## Format-defining files`)\n", f.Relpath, qualifyGovernaPath(sha, "docs/drift-scan.md"))
 		}
 		for _, f := range clearSync {
 			fmt.Fprintf(&b, "- `%s` — sync to canon\n", f.Relpath)
@@ -1182,12 +1227,23 @@ func buildACStub(acN int, sha string, report *Report) string {
 	}
 	fmt.Fprintln(&b)
 
-	// Out Of Scope
+	// Out Of Scope (with class-H follow-on header note per AC107: scaffolds
+	// the defer-resolution landing convention when Director Review has open
+	// Qs, mirroring AC106's In Scope header note for sync/preserve).
 	fmt.Fprintln(&b, "## Out Of Scope")
 	fmt.Fprintln(&b)
-	if len(preserves) == 0 {
+	ooHeaderNote := "_Defer resolutions add a bullet here naming the file and the follow-on AC pointer added to plan.md as a new IE. See `" + qualifyGovernaPath(sha, "docs/drift-scan.md") + " ## Resolution protocol`._"
+	ooEmpty := len(preserves) == 0
+	switch {
+	case ooEmpty && directorReviewOpenQs > 0:
+		fmt.Fprintln(&b, ooHeaderNote)
+	case ooEmpty:
 		fmt.Fprintln(&b, "None.")
-	} else {
+	default:
+		if directorReviewOpenQs > 0 {
+			fmt.Fprintln(&b, ooHeaderNote)
+			fmt.Fprintln(&b)
+		}
 		for _, f := range preserves {
 			fmt.Fprintf(&b, "- `%s` — preserve marker present:\n", f.Relpath)
 			for _, m := range f.Markers {
@@ -1224,7 +1280,7 @@ func buildACStub(acN int, sha string, report *Report) string {
 	if len(formatDefining) > 0 {
 		fmt.Fprintln(&b, "### Format-defining file routing")
 		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "The following files are in the format-defining-canon registry (`docs/drift-scan.md ## Format-defining files`). They are auto-routed to `## In Scope` as sync regardless of raw classification, because the staged AC's auto-emitted form already adopts canon's form for these files; routing them as anything other than sync would leave the AC self-contradictory. Director Review questions for these files are suppressed.")
+		fmt.Fprintf(&b, "The following files are in the format-defining-canon registry (`%s ## Format-defining files`). They are auto-routed to `## In Scope` as sync regardless of raw classification, because the staged AC's auto-emitted form already adopts canon's form for these files; routing them as anything other than sync would leave the AC self-contradictory. Director Review questions for these files are suppressed.\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
 		fmt.Fprintln(&b)
 		for _, f := range formatDefining {
 			fmt.Fprintf(&b, "- `%s` — raw classification: %s; auto-routed to In Scope as sync.\n", f.Relpath, f.Classification)
@@ -1416,10 +1472,20 @@ func buildACStub(acN int, sha string, report *Report) string {
 	// staging step, not this AC's deliverable.
 	fmt.Fprintln(&b, "## Acceptance Tests")
 	fmt.Fprintln(&b)
-	if len(clearSync) == 0 && len(missingCreate) == 0 && len(formatDefining) == 0 {
+	atHeaderNote := "_Each sync resolution adds a paired byte-equality AT here. See `" + qualifyGovernaPath(sha, "docs/drift-scan.md") + " ## Resolution protocol`._"
+	atEmpty := len(clearSync) == 0 && len(missingCreate) == 0 && len(formatDefining) == 0
+	switch {
+	case atEmpty && directorReviewOpenQs > 0:
+		fmt.Fprintln(&b, atHeaderNote)
+		fmt.Fprintln(&b)
+	case atEmpty:
 		fmt.Fprintln(&b, "None — this AC ships only the staged plan.md IE entry; nothing to verify in target.")
 		fmt.Fprintln(&b)
-	} else {
+	default:
+		if directorReviewOpenQs > 0 {
+			fmt.Fprintln(&b, atHeaderNote)
+			fmt.Fprintln(&b)
+		}
 		atN := 1
 		for _, f := range formatDefining {
 			fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` synced to canon (format-defining hard-route). %s\n\n", atN, f.Relpath, byteEqualityCheck(f.Relpath, f.CanonContent))

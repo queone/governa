@@ -1231,3 +1231,226 @@ func TestClassA_DepthNHeterogeneousNoFalseCoupling(t *testing.T) {
 		t.Errorf("AC106 Class A: heterogeneous depth-N content must not couple via directory; expected 4 groups, got %d: %v", len(groups), groups)
 	}
 }
+
+// AC107 AT1 — qualifyGovernaPath helper returns the form `governa @ <sha>: <path>`.
+func TestClassJ_QualifyGovernaPathHelper(t *testing.T) {
+	got := qualifyGovernaPath("abcdef0", "docs/drift-scan.md")
+	const want = "governa @ abcdef0: docs/drift-scan.md"
+	if got != want {
+		t.Errorf("qualifyGovernaPath: got %q, want %q", got, want)
+	}
+}
+
+// stagedACWithOpenQs builds a synthetic Report that produces a staged AC
+// hitting all five qualified-form emission sites: In Scope header note,
+// In Scope format-defining sync line, `### Format-defining file routing`
+// rationale, Out Of Scope header note, AT header note. Includes a
+// format-defining-divergent file (docs/ac-template.md is in the registry)
+// plus an ambiguity (so Director Review has open Qs and all header notes
+// fire) plus clear-sync and preserve files for AT and Out Of Scope body.
+func stagedACWithOpenQs(t *testing.T) string {
+	t.Helper()
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "preserved.md", Classification: ClassPreserve, Markers: []string{"| 0.1.0 | preserve preserved.md customization |"}},
+			{Relpath: "ambiguity.md", Classification: ClassAmbiguity, Commits: []string{"abc subject"}},
+			{Relpath: "clear.md", Classification: ClassClearSync, CanonContent: "# clear\n"},
+			{Relpath: "docs/ac-template.md", Classification: ClassAmbiguity, Commits: []string{"def subject"}, CanonContent: "# AC template\n"},
+		},
+	}
+	return buildACStub(1, "abcdef0", report)
+}
+
+// stagedACNoOpenQs builds a synthetic Report whose staged AC has no open
+// Director Review Qs (no ambiguities, no target-has-no-canon files).
+// Used to assert the inverse: header notes are NOT emitted.
+func stagedACNoOpenQs(t *testing.T) string {
+	t.Helper()
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "clear.md", Classification: ClassClearSync, CanonContent: "# clear\n"},
+		},
+	}
+	return buildACStub(1, "abcdef0", report)
+}
+
+// AC107 AT2 — registry-driven: every backticked governa-only path token in
+// the staged body is preceded by `governa @ <sha>: ` in the same backtick
+// span. Adding a new prefix to governaOnlyPathPrefixes extends coverage.
+func TestClassJ_NoBareGovernaOnlyPathInStagedBody(t *testing.T) {
+	body := stagedACWithOpenQs(t)
+	// Tokenize backticked spans, then for each whitespace-split token
+	// inside, check whether it has a governa-only prefix and whether it is
+	// qualified (preceded somewhere in the same span by `governa @ `).
+	spanRe := regexp.MustCompile("`([^`]+)`")
+	for _, m := range spanRe.FindAllStringSubmatch(body, -1) {
+		span := m[1]
+		qualified := strings.Contains(span, "governa @ ")
+		for tok := range strings.FieldsSeq(span) {
+			tok = strings.TrimRight(tok, ".,;:)")
+			if !isGovernaOnlyPath(tok) {
+				continue
+			}
+			if !qualified {
+				t.Errorf("AC107 AT2: bare governa-only path %q in span `%s` — must be qualified via qualifyGovernaPath()", tok, span)
+			}
+		}
+	}
+}
+
+// AC107 AT2 (positive sub-assertion) — the qualified form
+// `governa @ abcdef0: docs/drift-scan.md` appears at all five known sites
+// (3 legacy + 2 new header notes).
+func TestClassJ_QualifiedFormAtKnownSites(t *testing.T) {
+	body := stagedACWithOpenQs(t)
+	const qualified = "`governa @ abcdef0: docs/drift-scan.md "
+	count := strings.Count(body, qualified)
+	if count < 5 {
+		t.Errorf("AC107 AT2 positive: expected ≥5 occurrences of qualified `governa @ <sha>: docs/drift-scan.md ...`, got %d:\n%s", count, body)
+	}
+}
+
+// AC107 AT3 — when Director Review has open Qs, `## Out Of Scope` carries
+// the new header note as its first body line (or as the body itself when
+// no preserve markers exist).
+func TestClassH_OutOfScopeHeaderNote_OpenQs(t *testing.T) {
+	body := stagedACWithOpenQs(t)
+	const note = "_Defer resolutions add a bullet here naming the file and the follow-on AC pointer added to plan.md as a new IE. See `governa @ abcdef0: docs/drift-scan.md ## Resolution protocol`._"
+	if !strings.Contains(body, note) {
+		t.Errorf("AC107 AT3: Out Of Scope must carry defer-resolution header note when Director Review has open Qs, got:\n%s", body)
+	}
+	// Verify placement: note appears between `## Out Of Scope` and the
+	// next `## ` heading.
+	startIdx := strings.Index(body, "## Out Of Scope")
+	if startIdx < 0 {
+		t.Fatalf("missing ## Out Of Scope")
+	}
+	tail := body[startIdx:]
+	endIdx := strings.Index(tail[len("## Out Of Scope"):], "\n## ")
+	if endIdx < 0 {
+		t.Fatalf("could not find next ## section after Out Of Scope")
+	}
+	section := tail[:len("## Out Of Scope")+endIdx]
+	if !strings.Contains(section, note) {
+		t.Errorf("AC107 AT3: header note must appear inside `## Out Of Scope` body, got section:\n%s", section)
+	}
+}
+
+// AC107 AT4 — when Director Review has open Qs, `## Acceptance Tests`
+// carries the new header note as its first body line.
+func TestClassH_AcceptanceTestsHeaderNote_OpenQs(t *testing.T) {
+	body := stagedACWithOpenQs(t)
+	const note = "_Each sync resolution adds a paired byte-equality AT here. See `governa @ abcdef0: docs/drift-scan.md ## Resolution protocol`._"
+	if !strings.Contains(body, note) {
+		t.Errorf("AC107 AT4: AT section must carry sync-resolution header note when Director Review has open Qs, got:\n%s", body)
+	}
+	startIdx := strings.Index(body, "## Acceptance Tests")
+	if startIdx < 0 {
+		t.Fatalf("missing ## Acceptance Tests")
+	}
+	tail := body[startIdx:]
+	endIdx := strings.Index(tail[len("## Acceptance Tests"):], "\n## ")
+	if endIdx < 0 {
+		t.Fatalf("could not find next ## section after Acceptance Tests")
+	}
+	section := tail[:len("## Acceptance Tests")+endIdx]
+	if !strings.Contains(section, note) {
+		t.Errorf("AC107 AT4: header note must appear inside `## Acceptance Tests` body, got section:\n%s", section)
+	}
+}
+
+// AC107 AT5 — when Director Review is `None.`, neither header note from
+// AT3/AT4 is emitted (no-open-Qs path).
+func TestClassH_HeaderNotes_NoOpenQs(t *testing.T) {
+	body := stagedACNoOpenQs(t)
+	const ooNote = "_Defer resolutions add a bullet here"
+	const atNote = "_Each sync resolution adds a paired byte-equality AT here"
+	if strings.Contains(body, ooNote) {
+		t.Errorf("AC107 AT5: Out Of Scope header note must NOT appear when Director Review has no open Qs, got:\n%s", body)
+	}
+	if strings.Contains(body, atNote) {
+		t.Errorf("AC107 AT5: AT header note must NOT appear when Director Review has no open Qs, got:\n%s", body)
+	}
+}
+
+// AC107 AT6 — docs/drift-scan.md carries `## Reference qualification` section.
+func TestClassJ_ReferenceQualificationDocumented(t *testing.T) {
+	data, err := os.ReadFile("../../docs/drift-scan.md")
+	if err != nil {
+		t.Fatalf("read drift-scan.md: %v", err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, "## Reference qualification") {
+		t.Error("AC107 AT6: drift-scan.md missing `## Reference qualification` section")
+	}
+	if !strings.Contains(doc, "governa @ <sha>: <path>") {
+		t.Error("AC107 AT6: drift-scan.md `## Reference qualification` missing rule statement")
+	}
+}
+
+// AC107 AT7 — docs/drift-scan.md `## What the tool emits` Out Of Scope
+// and Acceptance Tests bullets describe the new header notes.
+func TestClassH_NewHeaderNotesDocumented(t *testing.T) {
+	data, err := os.ReadFile("../../docs/drift-scan.md")
+	if err != nil {
+		t.Fatalf("read drift-scan.md: %v", err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, "Defer resolutions add a bullet here") {
+		t.Error("AC107 AT7: drift-scan.md `## What the tool emits` Out Of Scope bullet missing defer-resolution header-note description")
+	}
+	if !strings.Contains(doc, "Each sync resolution adds a paired byte-equality AT here") {
+		t.Error("AC107 AT7: drift-scan.md `## What the tool emits` Acceptance Tests bullet missing sync-resolution header-note description")
+	}
+}
+
+// AC107 AT8 — docs/drift-scan.md carries `## Scaffold emission policy` subsection.
+func TestClassM_ScaffoldEmissionPolicyDocumented(t *testing.T) {
+	data, err := os.ReadFile("../../docs/drift-scan.md")
+	if err != nil {
+		t.Fatalf("read drift-scan.md: %v", err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, "## Scaffold emission policy") {
+		t.Error("AC107 AT8: drift-scan.md missing `## Scaffold emission policy` section")
+	}
+	if !strings.Contains(doc, "stamps only") {
+		t.Error("AC107 AT8: drift-scan.md `## Scaffold emission policy` missing stamps-only rule")
+	}
+}
+
+// AC107 AT9 (Class M) — staged AC body contains no empty sub-section: any
+// `### <X>` heading is followed by at least one non-blank, non-`#` body
+// line before the next `## ` or `### ` heading.
+func TestClassM_NoEmptySubSections(t *testing.T) {
+	bodies := []string{
+		stagedACWithOpenQs(t),
+		stagedACNoOpenQs(t),
+	}
+	for _, body := range bodies {
+		lines := strings.Split(body, "\n")
+		for i, line := range lines {
+			if !strings.HasPrefix(line, "### ") {
+				continue
+			}
+			heading := line
+			hasBody := false
+			for j := i + 1; j < len(lines); j++ {
+				next := lines[j]
+				if strings.HasPrefix(next, "## ") || strings.HasPrefix(next, "### ") {
+					break
+				}
+				trimmed := strings.TrimSpace(next)
+				if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+					hasBody = true
+					break
+				}
+			}
+			if !hasBody {
+				t.Errorf("AC107 AT9: empty sub-section %q (no body before next heading) in staged AC body:\n%s", heading, body)
+			}
+		}
+	}
+}
