@@ -715,3 +715,150 @@ func TestUsage(t *testing.T) {
 		}
 	}
 }
+
+// AC110 AT1 — parseModuleBasename returns the module path basename or "" when
+// go.mod is missing/malformed.
+func TestParseModuleBasename(t *testing.T) {
+	t.Run("returns basename for valid go.mod", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/queone/governa\n\ngo 1.24\n")
+		if got := parseModuleBasename(dir); got != "governa" {
+			t.Errorf("got %q, want %q", got, "governa")
+		}
+	})
+	t.Run("returns empty for missing go.mod", func(t *testing.T) {
+		dir := t.TempDir()
+		if got := parseModuleBasename(dir); got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+	t.Run("returns empty for go.mod without module line", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "go.mod"), "go 1.24\n")
+		if got := parseModuleBasename(dir); got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+	t.Run("handles trailing comment after module path", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/queone/utils\n")
+		if got := parseModuleBasename(dir); got != "utils" {
+			t.Errorf("got %q, want %q", got, "utils")
+		}
+	})
+}
+
+// AC110 AT2 — When cmd/<basename>/main.go and another cmd/*/main.go both
+// declare programVersion, only the primary is in the returned targets.
+func TestDetectVersionTargets_PrimaryBumpedSecondariesSkipped(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/queone/governa\n")
+	mustWrite(t, filepath.Join(dir, "cmd", "governa", "main.go"),
+		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+	mustWrite(t, filepath.Join(dir, "cmd", "driftscan", "main.go"),
+		"package main\n\nconst programVersion = \"0.99.0\"\n\nfunc main() {}\n")
+
+	targets, warning, err := detectVersionTargets(dir)
+	if err != nil {
+		t.Fatalf("detectVersionTargets: %v", err)
+	}
+	var pvPaths []string
+	for _, t := range targets {
+		if t.kind == "programVersion" {
+			pvPaths = append(pvPaths, t.path)
+		}
+	}
+	wantPath := filepath.Join(dir, "cmd", "governa", "main.go")
+	if len(pvPaths) != 1 || pvPaths[0] != wantPath {
+		t.Errorf("AC110 AT2: expected only primary %q in targets, got %v", wantPath, pvPaths)
+	}
+	if !strings.Contains(warning, "primary cmd/governa/main.go bumped") {
+		t.Errorf("AC110 AT2: warning must announce primary bump + secondary skip, got %q", warning)
+	}
+	if !strings.Contains(warning, "cmd/driftscan/main.go") {
+		t.Errorf("AC110 AT2: warning must list skipped secondary, got %q", warning)
+	}
+}
+
+// AC110 AT2 (primary-only variant) — When only cmd/<basename>/main.go has
+// programVersion, it bumps with no warning.
+func TestDetectVersionTargets_PrimaryOnlyNoSecondaries(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/queone/governa\n")
+	mustWrite(t, filepath.Join(dir, "cmd", "governa", "main.go"),
+		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+
+	targets, warning, err := detectVersionTargets(dir)
+	if err != nil {
+		t.Fatalf("detectVersionTargets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].kind != "programVersion" {
+		t.Errorf("AC110 AT2 (primary-only): expected single primary target, got %v", targets)
+	}
+	if warning != "" {
+		t.Errorf("AC110 AT2 (primary-only): no warning expected, got %q", warning)
+	}
+}
+
+// AC110 AT3 — When no cmd/<basename>/main.go exists and exactly one
+// cmd/*/main.go declares programVersion, it is bumped (fallback behavior
+// preserved for repos where the sole utility is named differently from
+// the module).
+func TestDetectVersionTargets_NoPrimaryFallsBackToSingleUtility(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/queone/something\n")
+	mustWrite(t, filepath.Join(dir, "cmd", "foo", "main.go"),
+		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
+
+	targets, warning, err := detectVersionTargets(dir)
+	if err != nil {
+		t.Fatalf("detectVersionTargets: %v", err)
+	}
+	if len(targets) != 1 || filepath.Base(filepath.Dir(targets[0].path)) != "foo" {
+		t.Errorf("AC110 AT3: expected fallback bump of cmd/foo, got %v", targets)
+	}
+	if warning != "" {
+		t.Errorf("AC110 AT3: no warning expected for single-utility fallback, got %q", warning)
+	}
+}
+
+// AC110 AT4 — Utils-style repo: no cmd/<basename>/, multiple cmd/*/main.go
+// with programVersion → all skipped + multi-utility warning preserved.
+func TestDetectVersionTargets_NoPrimaryMultiUtility(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/queone/utils\n")
+	for _, name := range []string{"brew-update", "dl", "pgen"} {
+		mustWrite(t, filepath.Join(dir, "cmd", name, "main.go"),
+			"package main\n\nconst programVersion = \"1.0.0\"\n\nfunc main() {}\n")
+	}
+
+	targets, warning, err := detectVersionTargets(dir)
+	if err != nil {
+		t.Fatalf("detectVersionTargets: %v", err)
+	}
+	for _, t2 := range targets {
+		if t2.kind == "programVersion" {
+			t.Errorf("AC110 AT4: utils-style multi-utility must skip all programVersion targets, %s leaked", t2.path)
+		}
+	}
+	if !strings.Contains(warning, "multi-utility") || !strings.Contains(warning, "no primary cmd/utils/main.go") {
+		t.Errorf("AC110 AT4: expected multi-utility warning naming missing primary, got %q", warning)
+	}
+}
+
+// AC110 AT5 — internal/templates/overlays/.../preptool.go.tmpl is byte-identical
+// to internal/preptool/preptool.go (two-site propagation per AGENTS.md project
+// rule). Validates AC110 didn't drift the overlay.
+func TestPreptoolOverlayByteIdenticalToSource(t *testing.T) {
+	src, err := os.ReadFile("../../internal/preptool/preptool.go")
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	tmpl, err := os.ReadFile("../../internal/templates/overlays/code/files/internal/preptool/preptool.go.tmpl")
+	if err != nil {
+		t.Fatalf("read overlay tmpl: %v", err)
+	}
+	if !bytes.Equal(src, tmpl) {
+		t.Errorf("AC110 AT5: preptool.go and preptool.go.tmpl must be byte-identical (two-site propagation)")
+	}
+}

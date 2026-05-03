@@ -11,6 +11,26 @@ import (
 	"testing"
 )
 
+// sectionBody returns the body of the named `## <name>` section in the AC,
+// anchored on heading-at-start-of-line. Necessary because rationale paragraphs
+// (e.g. format-defining-routing, missing-in-target-routing) carry literal
+// substrings like "`## Director Review`" or "`## In Scope`" as backticked
+// section references; bare strings.Index would match inside those paragraphs.
+// Returns ("", false) when the section is not found.
+func sectionBody(body, name string) (string, bool) {
+	heading := "\n## " + name + "\n"
+	idx := strings.Index(body, heading)
+	if idx < 0 {
+		return "", false
+	}
+	tail := body[idx+1:]
+	endIdx := strings.Index(tail[len("## "+name)+1:], "\n## ")
+	if endIdx < 0 {
+		return tail, true
+	}
+	return tail[:len("## "+name)+1+endIdx], true
+}
+
 // gitInit initializes a git repo at dir with one commit so `git log` works.
 // Uses a fixed name/email so tests don't depend on user git config.
 func gitInit(t *testing.T, dir string) {
@@ -609,21 +629,25 @@ func TestDirectorReviewAutoPopulate(t *testing.T) {
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
-	// docFixture's AGENTS.md and docs/ac-template.md exist with stub content +
-	// one commit → both classify as ambiguity. Plus plan.md is expected-divergence
-	// (no Director Review entry). So Director Review should have 2 numbered entries.
-	if !strings.Contains(ac, "## Director Review\n\n1. Should `") {
-		t.Errorf("expected Director Review to start with numbered routing question, got:\n%s", ac)
+	// AC111 Class X: Director Review opens with the bulleted routing-menu
+	// block (when at least one Q exists), then numbered per-Q entries
+	// leading with the file in backticks.
+	dr, ok := sectionBody(ac, "Director Review")
+	if !ok {
+		t.Fatalf("missing Director Review section, got:\n%s", ac)
 	}
-	if !strings.Contains(ac, "synced to canon, preserved with a marker") {
-		t.Errorf("expected sync/preserve/defer routing prompt, got:\n%s", ac)
+	if !strings.Contains(dr, "**Routing menu** (pick one per Q):") {
+		t.Errorf("expected bulleted routing-menu block at start of Director Review, got:\n%s", dr)
+	}
+	if !strings.Contains(dr, "1. **`") {
+		t.Errorf("expected first per-Q entry to lead with `1. **`<file>`**`, got:\n%s", dr)
 	}
 }
 
-// AT-B1: Routing summary table is the first sub-subsection of `##
-// Implementation Notes` (after the Counts line, asymmetry note, and
-// sister-file cross-ref). It must precede `### Match evidence`.
-func TestImplementationNotes_RoutingSummaryTableFirst(t *testing.T) {
+// AC112 Class Y (formerly AT-B1, inverted) — Routing summary table is no
+// longer emitted. `What diverged` lives in per-file Divergent files blocks;
+// leans live only in Director Review per-Q. Single source of truth.
+func TestClassY_NoRoutingSummaryTable(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
 	captureOut(t, func(f *os.File) {
@@ -632,17 +656,11 @@ func TestImplementationNotes_RoutingSummaryTableFirst(t *testing.T) {
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
-	rsIdx := strings.Index(ac, "### Routing summary")
-	meIdx := strings.Index(ac, "### Match evidence")
-	if rsIdx < 0 {
-		t.Fatalf("expected `### Routing summary` sub-subsection, got:\n%s", ac)
+	if strings.Contains(ac, "### Routing summary") {
+		t.Errorf("AC112 Class Y: `### Routing summary` heading must not appear (table dropped), got:\n%s", ac)
 	}
-	if meIdx > 0 && meIdx < rsIdx {
-		t.Errorf("`### Routing summary` must precede `### Match evidence`; rsIdx=%d meIdx=%d", rsIdx, meIdx)
-	}
-	// Table header must follow.
-	if !strings.Contains(ac[rsIdx:], "| File | Local edit source | What diverged | Operator lean (as of staging) |") {
-		t.Errorf("expected routing summary table header, got:\n%s", ac[rsIdx:])
+	if strings.Contains(ac, "| File | What diverged | Operator lean (as of staging) |") {
+		t.Errorf("AC112 Class Y: legacy 3-column routing-summary header must not appear, got:\n%s", ac)
 	}
 }
 
@@ -779,17 +797,24 @@ func TestCoupling_ShellBinary(t *testing.T) {
 	// AC106 Part B: Q-per-file emission. Each file gets its own Director
 	// Review Q. Ambiguity files emit a Q with "Should `<path>` be synced"
 	// shape.
-	drStart := strings.Index(ac, "## Director Review")
+	// Anchor on the heading at start of line — the format-defining-routing
+	// rationale paragraph contains the literal substring "## Director Review"
+	// (as a backticked section reference), so a bare strings.Index would
+	// match inside that paragraph instead of the heading.
+	drStart := strings.Index(ac, "\n## Director Review\n")
 	if drStart < 0 {
 		t.Fatalf("no Director Review section, got:\n%s", ac)
 	}
 	dr := ac[drStart:]
-	drEnd := strings.Index(dr, "\n## ")
+	drEnd := strings.Index(dr[1:], "\n## ")
 	if drEnd > 0 {
-		dr = dr[:drEnd]
+		dr = dr[:drEnd+1]
 	}
+	// AC109 Class V: per-Q text leads with the file in backticks instead
+	// of the "Should `<file>` be synced" boilerplate. Coupling is purely
+	// informational via `### Coupled sets`.
 	for _, rel := range []string{"cmd/rel/main.go", "rel.sh"} {
-		want := "Should `" + rel + "` be synced"
+		want := "**`" + rel + "`**"
 		if !strings.Contains(dr, want) {
 			t.Errorf("Q-per-file: expected per-file Q for %q, got:\n%s", rel, dr)
 		}
@@ -823,11 +848,10 @@ func TestAcceptanceTests_NoneWhenInScopeEmpty(t *testing.T) {
 	}
 }
 
-// AC106 Part B: For divergent files with no coupled siblings under the
-// unified rule, the per-file block must render `Coupled-with: None`
-// (not omit the line). Replaces the prior `Coupled local-only files`
-// rendering — directory-sibling enumeration is no longer used.
-func TestPerFileBlock_CoupledWithNoneRendered(t *testing.T) {
+// AC108 Class R: For divergent files with no coupled siblings, the per-file
+// block must NOT emit any Coupled-with line (silence is clearer than
+// negative-state noise). Reverses AC106's `Coupled-with: None` requirement.
+func TestPerFileBlock_NoCoupledWithLineWhenUncoupled(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
 	captureOut(t, func(f *os.File) {
@@ -835,8 +859,8 @@ func TestPerFileBlock_CoupledWithNoneRendered(t *testing.T) {
 	})
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
-	if !strings.Contains(ac, "Coupled-with: None") {
-		t.Errorf("expected `Coupled-with: None` line for at least one divergent file, got:\n%s", ac)
+	if strings.Contains(ac, "Coupled-with: None") {
+		t.Errorf("AC108 Class R: legacy `Coupled-with: None` line must NOT appear; uncoupled files emit no Coupled-with line, got:\n%s", ac)
 	}
 }
 
@@ -887,24 +911,11 @@ func TestBuildSisterDiffs_NoDivergent(t *testing.T) {
 	}
 }
 
-// QA-9: Commit subjects containing `|` would otherwise break the routing
-// summary markdown table; the cell renderer must escape them.
-func TestRoutingSummary_EscapesPipeInCommitSubject(t *testing.T) {
-	report := &Report{
-		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
-		Files: []FileResult{
-			{
-				Relpath:        "foo.md",
-				Classification: ClassAmbiguity,
-				Commits:        []string{"abcdef AC1: tweaked | the | thing"},
-			},
-		},
-	}
-	out := buildACStub(1, "abcdef0", report)
-	if !strings.Contains(out, `AC1: tweaked \| the \| thing`) {
-		t.Errorf("expected `|` escaped as `\\|` in routing summary cell, got:\n%s", out)
-	}
-}
+// QA-9 retired by AC108 Class S: the routing summary table no longer
+// carries the Local edit source column, so commit-subject pipe escaping
+// is no longer relevant. Per-file blocks emit commit subjects in markdown
+// list items where `|` does not break formatting. AC108 AT9 asserts the
+// table is 3 columns (no Local edit source).
 
 // AT-C4: Operator-lean placeholder in `## Director Review` uses
 // `<!-- TBD by Operator -->`, not the legacy `<TBD>` form, so the convention
@@ -918,20 +929,19 @@ func TestDirectorReview_LeanPlaceholderMarker(t *testing.T) {
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
-	drStart := strings.Index(ac, "## Director Review")
-	if drStart < 0 {
+	dr, ok := sectionBody(ac, "Director Review")
+	if !ok {
 		t.Fatalf("no Director Review section, got:\n%s", ac)
 	}
-	dr := ac[drStart:]
-	drEnd := strings.Index(dr, "\n## ")
-	if drEnd > 0 {
-		dr = dr[:drEnd]
-	}
-	if !strings.Contains(dr, "Operator lean: <!-- TBD by Operator -->") {
-		t.Errorf("expected Operator-lean placeholder `<!-- TBD by Operator -->`, got:\n%s", dr)
+	// AC109 Class V: per-Q lead is `<N>. **`<file>`** — <placeholder>. Why: <placeholder>.`
+	// — the literal `<!-- TBD by Operator -->` placeholder still anchors the
+	// lean position; the `Operator lean:` label was dropped along with the
+	// "Should ... synced/preserved/deferred" boilerplate.
+	if !strings.Contains(dr, "** — <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.") {
+		t.Errorf("expected per-Q placeholder shape `** — <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.`, got:\n%s", dr)
 	}
 	// Legacy `<TBD>` must not appear.
-	if strings.Contains(dr, "Operator lean: <TBD>") {
+	if strings.Contains(dr, "<TBD>") {
 		t.Errorf("legacy `<TBD>` placeholder must be removed; got:\n%s", dr)
 	}
 }
@@ -975,11 +985,10 @@ func TestClassC_FormatDefiningHardRoutes(t *testing.T) {
 		t.Errorf("expected `### Format-defining file routing` sub-subsection, got:\n%s", ac)
 	}
 	// Director Review must NOT carry a Q for ac-template.md.
-	drStart := strings.Index(ac, "## Director Review")
-	if drStart < 0 {
+	dr, ok := sectionBody(ac, "Director Review")
+	if !ok {
 		t.Fatalf("no Director Review section, got:\n%s", ac)
 	}
-	dr := ac[drStart:]
 	if strings.Contains(dr, "Should `docs/ac-template.md`") {
 		t.Errorf("class C violation: Director Review must not emit a Q for format-defining file; got:\n%s", dr)
 	}
@@ -1087,24 +1096,34 @@ func TestClassI_TargetHasNoCanonGetsQ(t *testing.T) {
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
-	// Director Review must carry a Q for the target-has-no-canon file
-	// with keep/delete/migrate-to-canon options.
-	drStart := strings.Index(ac, "## Director Review")
-	if drStart < 0 {
+	// Director Review must carry a Q for the target-has-no-canon file with
+	// the `(target-has-no-canon)` annotation. AC109 Class V moved the
+	// keep/delete/migrate-to-canon menu wording to the section's routing-menu
+	// stamp; per-Q text only carries the file + `(target-has-no-canon)` +
+	// placeholders.
+	dr, ok := sectionBody(ac, "Director Review")
+	if !ok {
 		t.Fatalf("no Director Review section, got:\n%s", ac)
 	}
-	dr := ac[drStart:]
 	if !strings.Contains(dr, "(target-has-no-canon)") {
 		t.Errorf("class I: expected target-has-no-canon Q in Director Review, got:\n%s", dr)
 	}
-	if !strings.Contains(dr, "kept as a per-repo addition, deleted, or migrated into canon") {
-		t.Errorf("class I: expected keep/delete/migrate-to-canon options in Q text, got:\n%s", dr)
+	// AC111 Class X: keep/delete/migrate-to-canon menu lives in the
+	// bulleted routing-menu block at the top of Director Review.
+	if !strings.Contains(dr, "`keep` / `delete` / `migrate-to-canon`") {
+		t.Errorf("class I: expected keep/delete/migrate-to-canon menu in bulleted routing-menu block, got:\n%s", dr)
 	}
 }
 
 // AC106 AT4: Routing summary table carries the staging-time stamp
 // directly under the heading. Class B discipline against staleness.
-func TestRoutingSummary_StagingStamp(t *testing.T) {
+// AC112 Class Y (formerly AC111 inverse, made vacuous by table removal) —
+// the routing-summary table is gone entirely; legacy staging stamp absent
+// is now trivially true. Test retired.
+
+// AC111 Class X (formerly AC106 AT5 with-content, inverted) — In Scope no
+// longer carries the expansion header note. Body is the routed lines directly.
+func TestClassX_InScopeNoHeaderNote_WithContent(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
 	captureOut(t, func(f *os.File) {
@@ -1113,40 +1132,16 @@ func TestRoutingSummary_StagingStamp(t *testing.T) {
 	matches := findStagedACs(t, dir)
 	ac := mustRead(t, matches[0])
 
-	const stamp = "_Operator lean below reflects staging-time analysis. Director-resolved routing lives in the Director Review section below; this table does not auto-update on resolution._"
-	if !strings.Contains(ac, stamp) {
-		t.Errorf("AC106 AT4: expected staging stamp under `### Routing summary`, got:\n%s", ac)
+	const legacyNote = "_In Scope expands as Director resolves Q1–Q"
+	if strings.Contains(ac, legacyNote) {
+		t.Errorf("AC111: In Scope must not carry the legacy expansion header note, got:\n%s", ac)
 	}
 }
 
-// AC106 AT5 (with-content variant): when In Scope has body content AND
-// Director Review has open Qs, the header note appears at the top of
-// In Scope, before the body items.
-func TestInScopeHeaderNote_WithContent(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	matches := findStagedACs(t, dir)
-	ac := mustRead(t, matches[0])
-
-	// docFixture has missing-in-target candidates and ambiguity files,
-	// so In Scope has body and Director Review has Qs — the header note
-	// must appear.
-	const noteFragment = "_In Scope expands as Director resolves Q1–Q"
-	if !strings.Contains(ac, noteFragment) {
-		t.Errorf("AC106 AT5 (with-content): expected In Scope header note when Director Review has open Qs, got:\n%s", ac)
-	}
-}
-
-// AC106 AT5 (None-replacement variant): when In Scope is otherwise
-// `None` and Director Review has open Qs, the header note replaces
-// the `None` body.
-func TestInScopeHeaderNote_NoneReplacement(t *testing.T) {
-	// Construct a report where every divergent file is preserve (no
-	// In Scope body) but ambiguity exists in the Q list. We can do this
-	// with a hand-built Report passed to buildACStub directly.
+// AC111 Class X (replaces AC106 AT5 None-replacement variant) — when
+// In Scope is otherwise empty AND Director Review has open Qs, body is
+// the terse one-liner `None — body lands as Director resolves Q1–Q<N>.`
+func TestClassX_InScopeEmptyWithOpenQsTerseOneLiner(t *testing.T) {
 	report := &Report{
 		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
 		Files: []FileResult{
@@ -1155,26 +1150,14 @@ func TestInScopeHeaderNote_NoneReplacement(t *testing.T) {
 		},
 	}
 	out := buildACStub(1, "abcdef0", report)
-
-	// In Scope body should be the header note, not "None.".
-	const noteFragment = "_In Scope expands as Director resolves Q1–Q"
-	if !strings.Contains(out, noteFragment) {
-		t.Errorf("AC106 AT5 (None-replacement): expected In Scope header note as body, got:\n%s", out)
+	const want = "None — body lands as Director resolves Q1–Q1."
+	if !strings.Contains(out, want) {
+		t.Errorf("AC111: expected terse one-liner %q in In Scope when empty + open Qs, got:\n%s", want, out)
 	}
-	// The literal "None." should not appear as the In Scope body when
-	// the header note replaces it.
-	inScopeIdx := strings.Index(out, "## In Scope")
-	if inScopeIdx < 0 {
-		t.Fatalf("missing ## In Scope section, got:\n%s", out)
-	}
-	tail := out[inScopeIdx:]
-	bodyEnd := strings.Index(tail, "## Out Of Scope")
-	if bodyEnd < 0 {
-		bodyEnd = len(tail)
-	}
-	body := tail[:bodyEnd]
-	if strings.Contains(body, "\nNone.\n") {
-		t.Errorf("AC106 AT5 (None-replacement): `None.` must not appear as body when header note replaces it, got body:\n%s", body)
+	// Legacy header note must NOT appear.
+	const legacyNote = "_In Scope expands as Director resolves Q1–Q"
+	if strings.Contains(out, legacyNote) {
+		t.Errorf("AC111: legacy In Scope expansion header note must not appear, got:\n%s", out)
 	}
 }
 
@@ -1300,78 +1283,53 @@ func TestClassJ_NoBareGovernaOnlyPathInStagedBody(t *testing.T) {
 	}
 }
 
-// AC107 AT2 (positive sub-assertion) — the qualified form
-// `governa @ abcdef0: docs/drift-scan.md` appears at all five known sites
-// (3 legacy + 2 new header notes).
+// AC107 AT2 (positive sub-assertion) — qualified form appears at the
+// post-AC111 emission sites: format-defining sync line, format-defining
+// rationale paragraph, Director Review menu's target-has-no-canon bullet.
+// (Pre-AC111 also emitted at In Scope / Out Of Scope / AT header notes;
+// AC111 removed those stamps.)
 func TestClassJ_QualifiedFormAtKnownSites(t *testing.T) {
 	body := stagedACWithOpenQs(t)
 	const qualified = "`governa @ abcdef0: docs/drift-scan.md "
 	count := strings.Count(body, qualified)
-	if count < 5 {
-		t.Errorf("AC107 AT2 positive: expected ≥5 occurrences of qualified `governa @ <sha>: docs/drift-scan.md ...`, got %d:\n%s", count, body)
+	if count < 3 {
+		t.Errorf("AC107 AT2 positive (post-AC111): expected ≥3 occurrences of qualified `governa @ <sha>: docs/drift-scan.md ...`, got %d:\n%s", count, body)
 	}
 }
 
-// AC107 AT3 — when Director Review has open Qs, `## Out Of Scope` carries
-// the new header note as its first body line (or as the body itself when
-// no preserve markers exist).
-func TestClassH_OutOfScopeHeaderNote_OpenQs(t *testing.T) {
+// AC111 Class X (formerly AC107 AT3, inverted) — Out Of Scope section must
+// NOT carry the AC107-era defer-resolution header note. The recap stamp was
+// removed; the routing-menu lives only in Director Review.
+func TestClassX_OutOfScopeNoHeaderNote(t *testing.T) {
 	body := stagedACWithOpenQs(t)
-	const note = "_Defer resolutions add a bullet here naming the file and the follow-on AC pointer added to plan.md as a new IE. See `governa @ abcdef0: docs/drift-scan.md ## Resolution protocol`._"
-	if !strings.Contains(body, note) {
-		t.Errorf("AC107 AT3: Out Of Scope must carry defer-resolution header note when Director Review has open Qs, got:\n%s", body)
-	}
-	// Verify placement: note appears between `## Out Of Scope` and the
-	// next `## ` heading.
-	startIdx := strings.Index(body, "## Out Of Scope")
-	if startIdx < 0 {
-		t.Fatalf("missing ## Out Of Scope")
-	}
-	tail := body[startIdx:]
-	endIdx := strings.Index(tail[len("## Out Of Scope"):], "\n## ")
-	if endIdx < 0 {
-		t.Fatalf("could not find next ## section after Out Of Scope")
-	}
-	section := tail[:len("## Out Of Scope")+endIdx]
-	if !strings.Contains(section, note) {
-		t.Errorf("AC107 AT3: header note must appear inside `## Out Of Scope` body, got section:\n%s", section)
+	const note = "_Defer resolutions add a bullet here"
+	if strings.Contains(body, note) {
+		t.Errorf("AC111: Out Of Scope must NOT carry the legacy defer-resolution header note, got:\n%s", body)
 	}
 }
 
-// AC107 AT4 — when Director Review has open Qs, `## Acceptance Tests`
-// carries the new header note as its first body line.
-func TestClassH_AcceptanceTestsHeaderNote_OpenQs(t *testing.T) {
+// AC111 Class X (formerly AC107 AT4, inverted) — AT section must NOT carry
+// the AC107-era sync-resolution header note.
+func TestClassX_AcceptanceTestsNoHeaderNote(t *testing.T) {
 	body := stagedACWithOpenQs(t)
-	const note = "_Each sync resolution adds a paired byte-equality AT here. See `governa @ abcdef0: docs/drift-scan.md ## Resolution protocol`._"
-	if !strings.Contains(body, note) {
-		t.Errorf("AC107 AT4: AT section must carry sync-resolution header note when Director Review has open Qs, got:\n%s", body)
-	}
-	startIdx := strings.Index(body, "## Acceptance Tests")
-	if startIdx < 0 {
-		t.Fatalf("missing ## Acceptance Tests")
-	}
-	tail := body[startIdx:]
-	endIdx := strings.Index(tail[len("## Acceptance Tests"):], "\n## ")
-	if endIdx < 0 {
-		t.Fatalf("could not find next ## section after Acceptance Tests")
-	}
-	section := tail[:len("## Acceptance Tests")+endIdx]
-	if !strings.Contains(section, note) {
-		t.Errorf("AC107 AT4: header note must appear inside `## Acceptance Tests` body, got section:\n%s", section)
+	const note = "_Each sync resolution adds a paired byte-equality AT here"
+	if strings.Contains(body, note) {
+		t.Errorf("AC111: Acceptance Tests must NOT carry the legacy sync-resolution header note, got:\n%s", body)
 	}
 }
 
-// AC107 AT5 — when Director Review is `None.`, neither header note from
-// AT3/AT4 is emitted (no-open-Qs path).
-func TestClassH_HeaderNotes_NoOpenQs(t *testing.T) {
+// AC111 Class X (formerly AC107 AT5, simplified) — header notes are gone in
+// every state, not just when Director Review is None. The inverse-of-OpenQs
+// fixture still passes because the same negative assertions hold.
+func TestClassX_NoHeaderNotesNoOpenQsEither(t *testing.T) {
 	body := stagedACNoOpenQs(t)
 	const ooNote = "_Defer resolutions add a bullet here"
 	const atNote = "_Each sync resolution adds a paired byte-equality AT here"
 	if strings.Contains(body, ooNote) {
-		t.Errorf("AC107 AT5: Out Of Scope header note must NOT appear when Director Review has no open Qs, got:\n%s", body)
+		t.Errorf("AC111: Out Of Scope must not carry legacy header note, got:\n%s", body)
 	}
 	if strings.Contains(body, atNote) {
-		t.Errorf("AC107 AT5: AT header note must NOT appear when Director Review has no open Qs, got:\n%s", body)
+		t.Errorf("AC111: AT section must not carry legacy header note, got:\n%s", body)
 	}
 }
 
@@ -1390,34 +1348,35 @@ func TestClassJ_ReferenceQualificationDocumented(t *testing.T) {
 	}
 }
 
-// AC107 AT7 — docs/drift-scan.md `## What the tool emits` Out Of Scope
-// and Acceptance Tests bullets describe the new header notes.
-func TestClassH_NewHeaderNotesDocumented(t *testing.T) {
+// AC111 Class X (formerly AC107 AT7, inverted) — drift-scan.md no longer
+// documents the AC107-era header-note descriptions; the recap stamps were
+// removed and their descriptions stripped from `## What the tool emits`.
+func TestClassX_NewHeaderNotesNotDocumented(t *testing.T) {
 	data, err := os.ReadFile("../../docs/drift-scan.md")
 	if err != nil {
 		t.Fatalf("read drift-scan.md: %v", err)
 	}
 	doc := string(data)
-	if !strings.Contains(doc, "Defer resolutions add a bullet here") {
-		t.Error("AC107 AT7: drift-scan.md `## What the tool emits` Out Of Scope bullet missing defer-resolution header-note description")
+	if strings.Contains(doc, "Defer resolutions add a bullet here") {
+		t.Error("AC111: drift-scan.md must not retain the legacy defer-resolution header-note description")
 	}
-	if !strings.Contains(doc, "Each sync resolution adds a paired byte-equality AT here") {
-		t.Error("AC107 AT7: drift-scan.md `## What the tool emits` Acceptance Tests bullet missing sync-resolution header-note description")
+	if strings.Contains(doc, "Each sync resolution adds a paired byte-equality AT here") {
+		t.Error("AC111: drift-scan.md must not retain the legacy sync-resolution header-note description")
 	}
 }
 
-// AC107 AT8 — docs/drift-scan.md carries `## Scaffold emission policy` subsection.
-func TestClassM_ScaffoldEmissionPolicyDocumented(t *testing.T) {
+// AC111 Class X (formerly AC107 AT8, inverted) — drift-scan.md no longer
+// carries the `## Scaffold emission policy` section. The umbrella rationale
+// was tied to the now-removed stamps; the no-empty-`###` rule survives as
+// test-internal discipline (TestClassM_NoEmptySubSections still passes).
+func TestClassX_NoScaffoldEmissionPolicySection(t *testing.T) {
 	data, err := os.ReadFile("../../docs/drift-scan.md")
 	if err != nil {
 		t.Fatalf("read drift-scan.md: %v", err)
 	}
 	doc := string(data)
-	if !strings.Contains(doc, "## Scaffold emission policy") {
-		t.Error("AC107 AT8: drift-scan.md missing `## Scaffold emission policy` section")
-	}
-	if !strings.Contains(doc, "stamps only") {
-		t.Error("AC107 AT8: drift-scan.md `## Scaffold emission policy` missing stamps-only rule")
+	if strings.Contains(doc, "## Scaffold emission policy") {
+		t.Error("AC111: drift-scan.md must not retain `## Scaffold emission policy` section")
 	}
 }
 
@@ -1451,6 +1410,526 @@ func TestClassM_NoEmptySubSections(t *testing.T) {
 			if !hasBody {
 				t.Errorf("AC107 AT9: empty sub-section %q (no body before next heading) in staged AC body:\n%s", heading, body)
 			}
+		}
+	}
+}
+
+// stagedACAC108Fixture builds a synthetic Report exercising AC108's classes:
+// at least one divergent file with non-trivial diff (Class U Direction line),
+// at least one missing-in-target with non-empty canon (Class Q routing block
+// + counts annotation), at least one format-defining ambiguity (Class T
+// counts annotation + Class P AGENTS.md verification), and clear-sync /
+// preserve / ambiguity files for general per-file emission.
+func stagedACAC108Fixture(t *testing.T) string {
+	t.Helper()
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "preserved.md", Classification: ClassPreserve, Markers: []string{"| 0.1.0 | preserve preserved.md customization |"}, Diff: "--- canon/preserved.md\n+++ target/preserved.md\n@@ -1,2 +1,3 @@\n line\n+target-only\n-canon-only\n"},
+			{Relpath: "ambiguity.md", Classification: ClassAmbiguity, Commits: []string{"abc subject"}, Diff: "--- canon/ambiguity.md\n+++ target/ambiguity.md\n@@ -1,1 +1,3 @@\n+target-add-1\n+target-add-2\n line\n"},
+			{Relpath: "clear.md", Classification: ClassClearSync, CanonContent: "# clear\n", Diff: "--- canon/clear.md\n+++ target/clear.md\n@@ -1,1 +1,1 @@\n-canon-line\n+target-line\n"},
+			{Relpath: "AGENTS.md", Classification: ClassAmbiguity, Commits: []string{"def subject"}, CanonContent: "# AGENTS\n", Diff: "--- canon/AGENTS.md\n+++ target/AGENTS.md\n@@ -1,1 +1,1 @@\n-canon-agents\n+target-agents\n"},
+			{Relpath: "newfile.md", Classification: ClassMissingTarget, CanonContent: "# new\n"},
+		},
+	}
+	return buildACStub(1, "abcdef0", report)
+}
+
+// AC108 AT1 — each per-file block under `### Divergent files` carries a
+// `Direction:` line. Missing-in-target blocks (under `### Missing in target`)
+// are out of scope — they have no canon-vs-target diff.
+func TestClassU_DirectionLineEmitted(t *testing.T) {
+	body := stagedACAC108Fixture(t)
+	notes, ok := sectionBody(body, "Implementation Notes")
+	if !ok {
+		t.Fatalf("missing ## Implementation Notes")
+	}
+	dvIdx := strings.Index(notes, "### Divergent files")
+	if dvIdx < 0 {
+		t.Fatalf("missing ### Divergent files in Implementation Notes:\n%s", notes)
+	}
+	dvSection := notes[dvIdx:]
+	// Truncate at the next ### sub-subsection boundary so we only inspect
+	// per-file blocks under Divergent files.
+	if endIdx := strings.Index(dvSection[1:], "\n### "); endIdx > 0 {
+		dvSection = dvSection[:endIdx+1]
+	}
+	blocks := strings.Split(dvSection, "#### `")
+	for _, blk := range blocks[1:] {
+		if !strings.Contains(blk, "Direction:") {
+			t.Errorf("AC108 AT1: per-file block under Divergent files missing Direction line:\n%s", blk)
+		}
+	}
+}
+
+// AC108 AT2 — Direction labels target-leads / canon-leads / explicit-N/M
+// correctly based on diff content.
+func TestClassU_DirectionLabels(t *testing.T) {
+	cases := []struct {
+		name           string
+		diff           string
+		wantSubstrings []string
+	}{
+		{"target-leads", "--- canon/x\n+++ target/x\n@@ -0,0 +1,2 @@\n+a\n+b\n", []string{"target leads", "target carries 2 lines absent in canon"}},
+		{"canon-leads", "--- canon/x\n+++ target/x\n@@ -1,2 +0,0 @@\n-a\n-b\n", []string{"canon leads", "canon carries 2 lines absent in target"}},
+		{"mutual", "--- canon/x\n+++ target/x\n@@ -1,2 +1,2 @@\n-a\n+b\n-c\n+d\n", []string{"target carries 2 lines absent in canon", "canon carries 2 lines absent in target"}},
+		{"empty", "", []string{"no line-level divergence detected"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, t2 := computeDirection(tc.diff)
+			got := formatDirection(c, t2)
+			for _, want := range tc.wantSubstrings {
+				if !strings.Contains(got, want) {
+					t.Errorf("AC108 AT2 %s: expected %q in %q", tc.name, want, got)
+				}
+			}
+		})
+	}
+}
+
+// AC108 AT3 — Sister diffs file body opens with the convention stamp.
+func TestClassU_SisterConventionStamp(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "x.md", Classification: ClassAmbiguity, Diff: "--- canon/x\n+++ target/x\n@@ -1 +1 @@\n-a\n+b\n"},
+		},
+	}
+	out := buildSisterDiffs(1, "abcdef0", report)
+	const stamp = "_Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON."
+	if !strings.Contains(out, stamp) {
+		t.Errorf("AC108 AT3: sister diffs file missing convention stamp, got:\n%s", out)
+	}
+	// Stamp should appear before the first per-file ## section.
+	stampIdx := strings.Index(out, stamp)
+	firstSection := strings.Index(out, "## `")
+	if firstSection > 0 && stampIdx > firstSection {
+		t.Errorf("AC108 AT3: stamp must appear before first per-file section; stampIdx=%d firstSection=%d", stampIdx, firstSection)
+	}
+}
+
+// AC108 AT4 — formatDefiningCanonPaths registry contains AGENTS.md.
+func TestClassP_AGENTSMdInRegistry(t *testing.T) {
+	if !formatDefiningCanonPaths["AGENTS.md"] {
+		t.Error("AC108 AT4: formatDefiningCanonPaths must contain AGENTS.md after Class P registry broadening")
+	}
+}
+
+// AC108 AT5 — When AGENTS.md is divergent, `### Format-defining file routing`
+// block lists it.
+func TestClassP_AGENTSMdHardRouted(t *testing.T) {
+	body := stagedACAC108Fixture(t)
+	notes, ok := sectionBody(body, "Implementation Notes")
+	if !ok {
+		t.Fatalf("missing ## Implementation Notes")
+	}
+	if !strings.Contains(notes, "### Format-defining file routing") {
+		t.Fatalf("missing ### Format-defining file routing block")
+	}
+	// AGENTS.md should appear in the format-defining-routing block as
+	// raw classification ambiguity, auto-routed to In Scope as sync.
+	fdrIdx := strings.Index(notes, "### Format-defining file routing")
+	tail := notes[fdrIdx:]
+	if endIdx := strings.Index(tail[1:], "### "); endIdx > 0 {
+		tail = tail[:endIdx+1]
+	}
+	if !strings.Contains(tail, "`AGENTS.md`") {
+		t.Errorf("AC108 AT5: ### Format-defining file routing must list AGENTS.md when divergent, got:\n%s", tail)
+	}
+}
+
+// AC108 AT6 — When at least one missing-in-target with non-empty canon is
+// auto-routed, `### Missing-in-target file routing` is emitted with the
+// AGENTS.md Approval Boundaries citation.
+func TestClassQ_MissingInTargetRoutingBlock(t *testing.T) {
+	body := stagedACAC108Fixture(t)
+	notes, ok := sectionBody(body, "Implementation Notes")
+	if !ok {
+		t.Fatalf("missing ## Implementation Notes")
+	}
+	if !strings.Contains(notes, "### Missing-in-target file routing") {
+		t.Errorf("AC108 AT6: ### Missing-in-target file routing must be emitted when missing-in-target with non-empty canon exists, got:\n%s", notes)
+	}
+	if !strings.Contains(notes, "AGENTS.md Approval Boundaries") {
+		t.Errorf("AC108 AT6: missing-in-target routing block must cite AGENTS.md Approval Boundaries, got:\n%s", notes)
+	}
+}
+
+// AC108 AT7 — When no missing-in-target with non-empty canon exists, the
+// `### Missing-in-target file routing` block is NOT emitted.
+func TestClassQ_NoMissingInTargetRoutingWhenNone(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "x.md", Classification: ClassClearSync, CanonContent: "# x\n"},
+		},
+	}
+	body := buildACStub(1, "abcdef0", report)
+	if strings.Contains(body, "### Missing-in-target file routing") {
+		t.Errorf("AC108 AT7: ### Missing-in-target file routing must NOT appear when no missing-in-target files exist, got:\n%s", body)
+	}
+}
+
+// AC108 AT8 — Per-file Coupled-with line uses signal-name shape for coupled
+// files; emits no line for uncoupled.
+func TestClassR_CoupledWithSignalName(t *testing.T) {
+	// Coupled fixture: two .go files in the same package (Go same-package
+	// signal). Use a real temp dir so classifyCouplingSignal can read.
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "cmd", "demo")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"a.go", "b.go"} {
+		if err := os.WriteFile(filepath.Join(pkgDir, f), []byte("package demo\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0", Target: dir},
+		Files: []FileResult{
+			{Relpath: "cmd/demo/a.go", Classification: ClassAmbiguity, Commits: []string{"abc subject"}},
+			{Relpath: "cmd/demo/b.go", Classification: ClassAmbiguity, Commits: []string{"def subject"}},
+			{Relpath: "lonely.md", Classification: ClassAmbiguity, Commits: []string{"ghi subject"}},
+		},
+		RoutingGroups: [][]string{
+			{"cmd/demo/a.go", "cmd/demo/b.go"},
+			{"lonely.md"},
+		},
+	}
+	body := buildACStub(1, "abcdef0", report)
+	// Coupled files: signal-name shape.
+	if !strings.Contains(body, "Coupled-with: Go same-package set (see § Coupled sets)") {
+		t.Errorf("AC108 AT8 (coupled): expected `Coupled-with: Go same-package set (see § Coupled sets)`, got:\n%s", body)
+	}
+	// Uncoupled file: no Coupled-with line at all (silence > negative-state noise).
+	notes, _ := sectionBody(body, "Implementation Notes")
+	lonelyIdx := strings.Index(notes, "#### `lonely.md`")
+	if lonelyIdx < 0 {
+		t.Fatalf("missing per-file block for lonely.md")
+	}
+	tail := notes[lonelyIdx:]
+	if endIdx := strings.Index(tail[1:], "#### `"); endIdx > 0 {
+		tail = tail[:endIdx+1]
+	}
+	if strings.Contains(tail, "Coupled-with:") {
+		t.Errorf("AC108 AT8 (uncoupled): per-file block must not emit Coupled-with line, got:\n%s", tail)
+	}
+}
+
+// AC112 Class Y (formerly AC108 AT9 / Class S, made obsolete) — the routing
+// summary table is dropped entirely; column-shape assertions are vacuous.
+// Replaced by TestClassY_NoRoutingSummaryTable above.
+
+// AC108 AT10 — Counts line carries hard-routed-format-defining annotation
+// when format-defining files are divergent, and auto-routed-create-from-canon
+// annotation when missing-in-target with non-empty canon files exist.
+func TestClassT_CountsLineAnnotated(t *testing.T) {
+	body := stagedACAC108Fixture(t)
+	if !strings.Contains(body, "ambiguity (1 hard-routed via format-defining)") {
+		t.Errorf("AC108 AT10: counts line missing hard-routed-via-format-defining annotation, got:\n%s", body)
+	}
+	if !strings.Contains(body, "missing-in-target (1 auto-routed as create-from-canon)") {
+		t.Errorf("AC108 AT10: counts line missing auto-routed-as-create-from-canon annotation, got:\n%s", body)
+	}
+}
+
+// AC112 Class Y (formerly AC108 AT11) — counts annotation still emitted in
+// `## Implementation Notes` Counts line; reconciliation against the now-dropped
+// routing-summary table is no longer applicable. The annotated counts still
+// surface format-defining hard-routes and missing-in-target auto-routes (covered
+// by TestClassT_CountsLineAnnotated above).
+func TestClassY_CountsAnnotationStillEmitted(t *testing.T) {
+	body := stagedACAC108Fixture(t)
+	// AGENTS.md is hard-routed via format-defining; counts annotation present.
+	if !strings.Contains(body, "2 ambiguity (1 hard-routed via format-defining)") {
+		t.Errorf("AC112 Class Y: counts annotation still required post-table-removal, got:\n%s", body)
+	}
+	// Routing summary table is gone — verify negative.
+	if strings.Contains(body, "### Routing summary") {
+		t.Errorf("AC112 Class Y: ### Routing summary must not appear, got:\n%s", body)
+	}
+}
+
+// AC109 AT1 — Director Review opens with a routing-menu stamp when at least
+// one Q exists. Stamp documents both menus (ambiguity: sync/preserve/defer;
+// target-has-no-canon: keep/delete/migrate-to-canon) and references the
+// qualified Resolution-protocol path.
+func TestClassV_RoutingMenuStampEmitted(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "amb.md", Classification: ClassAmbiguity, Commits: []string{"abc subject"}},
+			{Relpath: "no-canon.md", Classification: ClassTargetNoCanon},
+		},
+	}
+	body := buildACStub(1, "abcdef0", report)
+	dr, ok := sectionBody(body, "Director Review")
+	if !ok {
+		t.Fatalf("missing Director Review")
+	}
+	// AC111 Class X: bulleted-block format. Verify the heading + each bullet.
+	wants := []string{
+		"**Routing menu** (pick one per Q):",
+		"- `sync` — file moves to In Scope",
+		"- `preserve` — file stays in Out Of Scope; backfill `preserve <path> <qualifier>` in CHANGELOG.md at next release prep",
+		"- `defer` — file becomes a follow-on AC pointer (new IE in `plan.md`)",
+		"- For `target-has-no-canon` files: `keep` / `delete` / `migrate-to-canon` instead. See `governa @ abcdef0: docs/drift-scan.md ## Resolution protocol`.",
+	}
+	for _, want := range wants {
+		if !strings.Contains(dr, want) {
+			t.Errorf("AC111: bulleted routing-menu block missing %q, got:\n%s", want, dr)
+		}
+	}
+}
+
+// AC109 AT2 — Per-Q ambiguity entries match the new shape: file in backticks,
+// then `— <placeholder>. Why: <placeholder>.` No "Should ... synced/preserved"
+// boilerplate; no per-Q `Coupled-with:` annotation.
+func TestClassV_AmbiguityQShape(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "amb.md", Classification: ClassAmbiguity, Commits: []string{"abc subject"}},
+		},
+		RoutingGroups: [][]string{{"amb.md"}},
+	}
+	body := buildACStub(1, "abcdef0", report)
+	dr, ok := sectionBody(body, "Director Review")
+	if !ok {
+		t.Fatalf("missing Director Review")
+	}
+	const wantShape = "1. **`amb.md`** — <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->."
+	if !strings.Contains(dr, wantShape) {
+		t.Errorf("AC109 AT2: expected ambiguity Q shape %q, got:\n%s", wantShape, dr)
+	}
+	// Negative: legacy boilerplate must NOT appear.
+	if strings.Contains(dr, "be synced to canon, preserved with a marker") {
+		t.Errorf("AC109 AT2: legacy `Should ... synced/preserved/deferred` boilerplate must be removed, got:\n%s", dr)
+	}
+	// Negative: per-Q `Coupled-with:` annotation must NOT appear (coupling
+	// info lives in `### Coupled sets`).
+	if strings.Contains(dr, "Coupled-with:") {
+		t.Errorf("AC109 AT2: per-Q `Coupled-with:` annotation must be removed (info lives in `### Coupled sets`), got:\n%s", dr)
+	}
+}
+
+// AC109 AT3 — Per-Q target-has-no-canon entries carry `(target-has-no-canon)`
+// annotation between file and placeholder; no per-Q keep/delete/migrate
+// boilerplate.
+func TestClassV_TargetHasNoCanonQShape(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "no-canon.md", Classification: ClassTargetNoCanon},
+		},
+	}
+	body := buildACStub(1, "abcdef0", report)
+	dr, ok := sectionBody(body, "Director Review")
+	if !ok {
+		t.Fatalf("missing Director Review")
+	}
+	const wantShape = "1. **`no-canon.md`** (target-has-no-canon) — <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->."
+	if !strings.Contains(dr, wantShape) {
+		t.Errorf("AC109 AT3: expected target-has-no-canon Q shape %q, got:\n%s", wantShape, dr)
+	}
+	// Negative: legacy per-Q "kept as a per-repo addition, deleted, or
+	// migrated into canon" boilerplate must NOT appear (menu lives in stamp).
+	if strings.Contains(dr, "kept as a per-repo addition, deleted, or migrated into canon") {
+		t.Errorf("AC109 AT3: legacy keep/delete/migrate per-Q boilerplate must be removed (menu lives in stamp), got:\n%s", dr)
+	}
+}
+
+// AC109 AT4 — When Director Review is `None.`, no routing-menu stamp is
+// emitted.
+func TestClassV_NoStampWhenDirectorReviewNone(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "x.md", Classification: ClassClearSync, CanonContent: "# x\n"},
+		},
+	}
+	body := buildACStub(1, "abcdef0", report)
+	dr, ok := sectionBody(body, "Director Review")
+	if !ok {
+		t.Fatalf("missing Director Review")
+	}
+	if !strings.Contains(dr, "None.") {
+		t.Errorf("AC109 AT4: expected `None.` body when no Qs, got:\n%s", dr)
+	}
+	if strings.Contains(dr, "_Routing menu —") {
+		t.Errorf("AC109 AT4: routing-menu stamp must NOT be emitted when Director Review is None, got:\n%s", dr)
+	}
+}
+
+// AC109 AT5 — `docs/drift-scan.md` documents the routing-matrix shape and the
+// tool-emission exception to `docs/ac-template.md`'s question-form rule.
+func TestClassV_DocumentedInDriftScanMd(t *testing.T) {
+	data, err := os.ReadFile("../../docs/drift-scan.md")
+	if err != nil {
+		t.Fatalf("read drift-scan.md: %v", err)
+	}
+	doc := string(data)
+	if !strings.Contains(doc, "routing-matrix shape") {
+		t.Errorf("AC109 AT5: drift-scan.md must document the routing-matrix shape")
+	}
+	if !strings.Contains(doc, "Tool-emission exception") {
+		t.Errorf("AC109 AT5: drift-scan.md must call out the tool-emission exception to ac-template.md's question-form rule")
+	}
+}
+
+// AC112 AT2 — each per-file Divergent files block carries a `What diverged: <!-- TBD by Operator -->`
+// line positioned between `Direction:` and `Local commits:`.
+func TestClassY_PerFileWhatDivergedLine(t *testing.T) {
+	body := stagedACAC108Fixture(t)
+	notes, ok := sectionBody(body, "Implementation Notes")
+	if !ok {
+		t.Fatalf("missing ## Implementation Notes")
+	}
+	dvIdx := strings.Index(notes, "### Divergent files")
+	if dvIdx < 0 {
+		t.Fatalf("missing ### Divergent files in:\n%s", notes)
+	}
+	dvSection := notes[dvIdx:]
+	if endIdx := strings.Index(dvSection[1:], "\n### "); endIdx > 0 {
+		dvSection = dvSection[:endIdx+1]
+	}
+	blocks := strings.Split(dvSection, "#### `")
+	for _, blk := range blocks[1:] {
+		if !strings.Contains(blk, "What diverged: <!-- TBD by Operator -->") {
+			t.Errorf("AC112 AT2: per-file block missing `What diverged: <!-- TBD by Operator -->` line:\n%s", blk)
+		}
+		// Sequencing: Direction must precede What diverged.
+		dirIdx := strings.Index(blk, "Direction:")
+		wdIdx := strings.Index(blk, "What diverged:")
+		if dirIdx < 0 || wdIdx < 0 || dirIdx >= wdIdx {
+			t.Errorf("AC112 AT2: `Direction:` must precede `What diverged:` in per-file block:\n%s", blk)
+		}
+	}
+}
+
+// AC112 AT3 — Director Review carries the convention footer when ≥1 Q exists.
+func TestClassY_DirectorReviewConventionFooter(t *testing.T) {
+	body := stagedACAC108Fixture(t)
+	dr, ok := sectionBody(body, "Director Review")
+	if !ok {
+		t.Fatalf("missing Director Review")
+	}
+	const want = "_Director Review form follows the drift-scan tool-emission convention. See `governa @ abcdef0: docs/drift-scan.md ## Director Review` for the documented exception to your local docs/ac-template.md question-form rule._"
+	if !strings.Contains(dr, want) {
+		t.Errorf("AC112 AT3: Director Review must carry convention footer when Qs exist, got:\n%s", dr)
+	}
+}
+
+// AC112 AT4 — When Director Review is `None.`, the convention footer is NOT emitted.
+func TestClassY_NoConventionFooterWhenDirectorReviewNone(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "x.md", Classification: ClassClearSync, CanonContent: "# x\n"},
+		},
+	}
+	body := buildACStub(1, "abcdef0", report)
+	dr, ok := sectionBody(body, "Director Review")
+	if !ok {
+		t.Fatalf("missing Director Review")
+	}
+	if !strings.Contains(dr, "None.") {
+		t.Errorf("AC112 AT4: expected `None.` when no Qs, got:\n%s", dr)
+	}
+	if strings.Contains(dr, "Director Review form follows the drift-scan tool-emission convention") {
+		t.Errorf("AC112 AT4: convention footer must NOT appear when Director Review is None, got:\n%s", dr)
+	}
+}
+
+// AC112 AT5 — name-reference body scan surfaces target-only files referenced
+// from a divergent target file. Fixture: a divergent rel.sh references
+// ./cmd/foo/color.go which is target-only (no canon).
+func TestClassZ_NameReferenceBodyScan(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n")
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	// Divergent rel.sh referencing target-only color.go.
+	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/foo/main.go ./cmd/foo/color.go \"$@\"\n")
+	// Target-only files (no canon counterpart).
+	mustWrite(t, filepath.Join(dir, "cmd/foo/main.go"), "package main\nfunc main() {}\n")
+	mustWrite(t, filepath.Join(dir, "cmd/foo/color.go"), "package main\nfunc col() {}\n")
+	gitInit(t, dir)
+	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// cmd/foo/color.go should appear under target-has-no-canon (via name-reference).
+	if !strings.Contains(ac, "`cmd/foo/color.go`") {
+		t.Errorf("AC112 AT5: name-referenced target-only `cmd/foo/color.go` must surface, got:\n%s", ac)
+	}
+	// Director Review Q with target-has-no-canon annotation.
+	dr, _ := sectionBody(ac, "Director Review")
+	if !strings.Contains(dr, "**`cmd/foo/color.go`** (target-has-no-canon)") {
+		t.Errorf("AC112 AT5: Director Review must carry (target-has-no-canon) Q for color.go, got:\n%s", dr)
+	}
+}
+
+// AC112 AT6 — name-reference scan does not false-positive on canon-resident refs.
+func TestClassZ_NoFalsePositiveOnCanonResidentRef(t *testing.T) {
+	// rel.sh references ./cmd/rel/main.go which IS in canon (DOC overlay).
+	// Should NOT trigger target-has-no-canon for main.go.
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/rel/main.go \"$@\"\n")
+	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\nfunc main() {}\n")
+	gitAddCommit(t, dir, "rel.sh refs canon-resident main.go")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	matches := findStagedACs(t, dir)
+	ac := mustRead(t, matches[0])
+
+	// main.go is in canon — must not appear with target-has-no-canon annotation.
+	if strings.Contains(ac, "**`cmd/rel/main.go`** (target-has-no-canon)") {
+		t.Errorf("AC112 AT6: canon-resident main.go must NOT trigger target-has-no-canon, got:\n%s", ac)
+	}
+}
+
+// AC112 AT7 — docs/drift-scan.md `## What the Operator fills` is in imperative
+// form: contains `the Operator MUST` at least twice; carries five numbered
+// fill-spot subsections plus `### Handoff verification`; the Post-merge audit
+// subsection contains a 5-step numbered procedure; the AC4-AT-label-rule
+// concrete failure is cited verbatim.
+func TestClassesAABB_OperatorFillsImperative(t *testing.T) {
+	data, err := os.ReadFile("../../docs/drift-scan.md")
+	if err != nil {
+		t.Fatalf("read drift-scan.md: %v", err)
+	}
+	doc := string(data)
+	if strings.Count(doc, "the Operator MUST") < 2 {
+		t.Errorf("AC112 AT7: `## What the Operator fills` must use imperative `the Operator MUST` at least twice")
+	}
+	wants := []string{
+		"### 1. Per-file `What diverged`",
+		"### 2. Director Review per-Q lean + why",
+		"### 3. Post-merge coherence audit",
+		"### 4. Summary",
+		"### 5. Objective Fit",
+		"### Handoff verification",
+		"AC4 in tips",
+		"AT-label timing-axis",
+	}
+	for _, want := range wants {
+		if !strings.Contains(doc, want) {
+			t.Errorf("AC112 AT7: drift-scan.md ## What the Operator fills missing %q", want)
 		}
 	}
 }

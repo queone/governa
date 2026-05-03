@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.107.0 | AC108+AC109+AC110+AC111+AC112: drift-scan + preptool cleanup |
 | 0.106.0 | AC107: drift-scan emission hygiene (class J + H follow-on) |
 | 0.105.0 | AC106: drift-scan staged-AC self-consistency hardening |
 | 0.104.0 | AC105: drift-scan coupling-aware grouping, sister diffs, decision-first AC |

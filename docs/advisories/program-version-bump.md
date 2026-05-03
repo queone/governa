@@ -1,6 +1,8 @@
 # Advisory: programVersion Bump Regex + Semantics
 
-**Status: RESOLVED.** governa AC100 landed the in-place dual-form regex + safe auto-detect fix in `internal/preptool/`. preptool stays template (the convention-coupling test rejected library extraction); consumer repos that want the fix pull it manually by reading the updated source on their own AC. Origin: surfaced in the `utils` consumer repo during AC25 release prep on 2026-04-28. Tracked in `utils` as IE9 / AC26.
+**Status: RESOLVED-AGAIN (AC110).** governa AC100 landed the in-place dual-form regex + safe auto-detect fix. governa AC110 extended the auto-detect with a primary-cmd convention to fix governa's own bump gap (AC100's "exactly 1 → bump, >1 → skip-all" rule treated `cmd/governa/main.go` + `cmd/driftscan/main.go` as multi-utility and froze governa's `programVersion` at `0.101.0` while the repo shipped through `0.106.0`). Under AC110, `cmd/<go-mod-basename>/main.go` is the primary and bumps with the repo; other `cmd/*/main.go` are secondaries with independent versioning. Utils-style multi-utility repos (no `cmd/utils/main.go`) keep the existing skip-all behavior unchanged.
+
+**Status (historical): RESOLVED (AC100).** governa AC100 landed the in-place dual-form regex + safe auto-detect fix in `internal/preptool/`. preptool stays template (the convention-coupling test rejected library extraction); consumer repos that want the fix pull it manually by reading the updated source on their own AC. Origin: surfaced in the `utils` consumer repo during AC25 release prep on 2026-04-28. Tracked in `utils` as IE9 / AC26.
 
 ## Two valid mitigation patterns
 

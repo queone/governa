@@ -331,13 +331,40 @@ type versionTarget struct {
 	kind string // "programVersion", "TemplateVersion", "TEMPLATE_VERSION"
 }
 
+// parseModuleBasename returns the basename of the module path declared in
+// repoRoot/go.mod (e.g., "governa" for `module github.com/queone/governa`).
+// Returns "" when go.mod is missing, unreadable, or has no `module` line.
+// Used by detectVersionTargets to apply the primary-cmd convention (AC110):
+// cmd/<basename>/main.go is the primary binary and bumps with the repo;
+// other cmd/*/main.go are secondaries with independent versioning.
+func parseModuleBasename(repoRoot string) string {
+	content, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for line := range strings.SplitSeq(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "module ") && !strings.HasPrefix(trimmed, "module\t") {
+			continue
+		}
+		modulePath := strings.TrimSpace(strings.TrimPrefix(trimmed, "module"))
+		if modulePath == "" {
+			return ""
+		}
+		return filepath.Base(modulePath)
+	}
+	return ""
+}
+
 // detectVersionTargets scans the repo for programVersion declarations and
-// template-version targets. The programVersion scan applies a safe auto-detect
-// filter: if exactly one cmd/*/main.go declares programVersion, it is bumped
-// (single-utility repo, repo-tracked behavior). If multiple declare it, all
-// are dropped from the target list (multi-utility repo, per-utility-independent
-// behavior — each utility owns its own version per its own AC). The skip is
-// announced via the returned warning, which the caller logs.
+// template-version targets. The programVersion scan applies a primary-cmd
+// convention (AC110): if cmd/<module-basename>/main.go declares programVersion,
+// that file is the primary and is bumped; other cmd/*/main.go are secondaries
+// (independent versioning, never bumped by prep). When no primary exists, fall
+// back to the historical auto-detect: 1 target → bump (single-utility repo);
+// >1 → skip all with multi-utility warning (utils-style, per-utility-independent
+// default). The skip avoids the clobber risk of bumping every utility to the
+// repo release version.
 func detectVersionTargets(repoRoot string) ([]versionTarget, string, error) {
 	var targets []versionTarget
 	var warning string
@@ -364,19 +391,56 @@ func detectVersionTargets(repoRoot string) ([]versionTarget, string, error) {
 			}
 		}
 	}
-	// Safe auto-detect: 1 target → bump (repo-tracked); >1 targets → skip all
-	// (multi-utility repo, per-utility-independent default). The skip avoids
-	// the clobber risk of bumping every utility to the repo release version.
+
+	// AC110 primary-cmd convention: cmd/<module-basename>/main.go is the
+	// primary binary and bumps with the repo. Other cmd/*/main.go are
+	// secondaries — independent versioning, like utils-style multi-utility
+	// repos. Only kicks in when go.mod is parseable AND the primary cmd
+	// has programVersion; otherwise falls through to the historical
+	// auto-detect (1 → bump, >1 → skip-all).
+	basename := parseModuleBasename(repoRoot)
+	var primaryTarget *versionTarget
+	var secondaries []versionTarget
+	if basename != "" {
+		primaryPath := filepath.Join(repoRoot, "cmd", basename, "main.go")
+		for i := range pvTargets {
+			if pvTargets[i].path == primaryPath {
+				t := pvTargets[i]
+				primaryTarget = &t
+			} else {
+				secondaries = append(secondaries, pvTargets[i])
+			}
+		}
+	}
+
 	switch {
+	case primaryTarget != nil:
+		// Primary-cmd convention applies. Bump the primary; secondaries
+		// are independent and skipped (announced when present).
+		targets = append(targets, *primaryTarget)
+		if len(secondaries) > 0 {
+			paths := make([]string, len(secondaries))
+			for i, t := range secondaries {
+				paths[i] = t.path
+			}
+			warning = fmt.Sprintf("primary cmd/%s/main.go bumped; %d secondary programVersion target(s) skipped (independent versioning, each utility owns its own version per its own AC). Skipped: %s",
+				basename, len(secondaries), strings.Join(paths, ", "))
+		}
 	case len(pvTargets) == 1:
+		// Fallback: single utility, repo-tracked. Bump it.
 		targets = append(targets, pvTargets[0])
 	case len(pvTargets) > 1:
+		// Fallback: multi-utility, no primary → skip all + warning.
 		paths := make([]string, len(pvTargets))
 		for i, t := range pvTargets {
 			paths[i] = t.path
 		}
-		warning = fmt.Sprintf("multi-utility repo detected (%d programVersion targets): per-utility programVersion bumps skipped (each utility owns its own version per its own AC). Skipped: %s",
-			len(pvTargets), strings.Join(paths, ", "))
+		primaryHint := "no go.mod-derived primary cmd"
+		if basename != "" {
+			primaryHint = fmt.Sprintf("no primary cmd/%s/main.go", basename)
+		}
+		warning = fmt.Sprintf("multi-utility repo detected (%d programVersion targets, %s): per-utility programVersion bumps skipped (each utility owns its own version per its own AC). Skipped: %s",
+			len(pvTargets), primaryHint, strings.Join(paths, ", "))
 	}
 
 	// Template-version targets (TEMPLATE_VERSION + internal/templates/version.go)

@@ -287,6 +287,31 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		})
 	}
 
+	// AC112 Class Z: name-reference body scan — the asymmetry note's second
+	// branch. Surface target-only files referenced from divergent target
+	// files (e.g., rel.sh references ./cmd/rel/color.go which is target-only).
+	// Same `target-has-no-canon` classification as the cross-flavor case;
+	// shared Director Review Q (keep / delete / migrate-to-canon).
+	var divergentForScan []FileResult
+	for _, f := range report.Files {
+		if isDivergentClass(f.Classification) {
+			divergentForScan = append(divergentForScan, f)
+		}
+	}
+	alreadySurfaced := map[string]bool{}
+	for _, f := range report.Files {
+		if f.Classification == ClassTargetNoCanon {
+			alreadySurfaced[f.Relpath] = true
+		}
+	}
+	for _, rel := range nameReferencedTargetOnlyFiles(cfg.Target, divergentForScan, canon, otherCanon, alreadySurfaced) {
+		report.Files = append(report.Files, FileResult{
+			Relpath:        rel,
+			Classification: ClassTargetNoCanon,
+			CanonRef:       fmt.Sprintf("(no canon path for flavor %s — name-referenced from a divergent target file)", flavor),
+		})
+	}
+
 	// Compute routing groups via the unified coupling rule (Part C, AC106).
 	// Directory-sibling enumeration is no longer used as a coupling proxy.
 	// The unified rule applies at all depths: Go same-package + shell→binary
@@ -472,10 +497,21 @@ var expectedDivergencePaths = map[string]bool{
 // docs/drift-scan.md `## Format-defining files`).
 //
 // A file belongs in this registry iff its content defines the form of a
-// section the staged AC itself emits — i.e., divergence in the file would
-// make the staged AC's own text contradict canon's specification of that
-// form. Importance, frequency-of-edit, or being-a-template are not
-// sufficient on their own.
+// section INSTANTIATED in the staged AC. Two shapes (AC108 Class P):
+//
+//  1. **Tool-emitted form** — canon file content defines the form of a
+//     section the staged AC's tool-emitted text instantiates (e.g.,
+//     docs/critique-protocol.md defines `## Director Review` round-append
+//     structure the tool emits on subsequent rounds).
+//
+//  2. **Operator-instantiated form** — canon file content defines the form
+//     of a section the staged AC's Operator-fill text instantiates (e.g.,
+//     AGENTS.md defines the `## Objective Fit` 3-part form the Operator
+//     fills, and the AT-label convention every AT line carries).
+//
+// Both shapes hard-route to sync via the same mechanic. Importance,
+// frequency-of-edit, or being-a-template are not sufficient on their own —
+// the file must define a form INSTANTIATED in the staged AC body.
 //
 // When any registry file is divergent (any classification other than
 // ClassMatch or ClassExpectedDivergence), the file is auto-routed into
@@ -484,15 +520,17 @@ var expectedDivergencePaths = map[string]bool{
 // under `## Implementation Notes` naming each one with the rationale. The
 // Director Review Q for these files is suppressed; the routing is forced.
 //
-// Initial registry: docs/ac-template.md (defines the shape of every AC's
-// sections), docs/critique-protocol.md (defines round-append structure and
-// the four-field terminator the AC uses on later rounds).
+// Initial registry:
+//   - docs/ac-template.md (tool-emit + Operator-fill: defines every AC's section shape)
+//   - docs/critique-protocol.md (tool-emit: round-append structure + four-field terminator)
+//   - AGENTS.md (Operator-fill: Objective Fit 3-part form, AT-label convention)
 //
 // Addition criterion: a future canon file is added to this registry when
-// (and only when) it passes the inclusion test above.
+// (and only when) it passes the inclusion test above (either shape).
 var formatDefiningCanonPaths = map[string]bool{
 	"docs/ac-template.md":       true,
 	"docs/critique-protocol.md": true,
+	"AGENTS.md":                 true,
 }
 
 // isFormatDefining reports whether relpath is in the format-defining registry.
@@ -1142,23 +1180,21 @@ func buildACStub(acN int, sha string, report *Report) string {
 		return formatDefining[i].Relpath < formatDefining[j].Relpath
 	})
 
-	// Build per-file coupledWith map from routing groups (Part B/C).
-	// Sourced from report.RoutingGroups so when Part C's coupling-rule
-	// rewrite lands, this map automatically reflects build-relationship
-	// + name-reference signals instead of directory-sibling enumeration.
-	coupledWith := map[string][]string{}
+	// Build per-file signalByFile map (AC108 Class R): each file in a coupled
+	// group gets its set's signal name (e.g. "Shell→binary"). Per-file blocks
+	// emit `Coupled-with: <signal> set (see § Coupled sets)` instead of the
+	// (redundant with the aggregated `### Coupled sets` block) full file list.
+	// AC109 Class V dropped the per-Q Coupled-with annotation in `## Director
+	// Review` for the same reason — coupling info already lives in the
+	// `### Coupled sets` aggregated block.
+	signalByFile := map[string]string{}
 	for _, g := range report.RoutingGroups {
-		for _, rel := range g {
-			for _, other := range g {
-				if other == rel {
-					continue
-				}
-				coupledWith[rel] = append(coupledWith[rel], other)
+		if len(g) >= 2 {
+			signal := classifyCouplingSignal(g, report.Header.Target)
+			for _, rel := range g {
+				signalByFile[rel] = signal
 			}
 		}
-	}
-	for k := range coupledWith {
-		sort.Strings(coupledWith[k])
 	}
 
 	// Split missing-in-target by canon-emptiness: non-empty canon files are
@@ -1198,23 +1234,18 @@ func buildACStub(acN int, sha string, report *Report) string {
 
 	// In Scope: clear-sync files + missing-in-target with non-empty canon
 	// + format-defining-divergent files (Part A: hard-routed to sync).
-	// Header note (class B) is prepended when Director Review has open Qs;
-	// when In Scope body is otherwise None and there are open Qs, the
-	// header note replaces None as the body.
+	// AC111 Class X: header note removed (Director Review menu carries the
+	// resolution mechanic; recap was noise). Empty body with open Qs gets a
+	// terse one-liner; empty body without open Qs gets the existing
+	// "ships only the staged plan.md IE entry" message.
 	fmt.Fprintln(&b, "## In Scope")
 	fmt.Fprintln(&b)
-	headerNote := "_In Scope expands as Director resolves Q1–Q" + strconv.Itoa(directorReviewOpenQs) + ". Sync resolutions add a sync line here; preserve resolutions add a CHANGELOG marker-backfill line here at the same time. See `" + qualifyGovernaPath(sha, "docs/drift-scan.md") + " ## Resolution protocol`._"
 	switch {
 	case inScopeEmpty && directorReviewOpenQs > 0:
-		// Header note replaces None body.
-		fmt.Fprintln(&b, headerNote)
+		fmt.Fprintf(&b, "None — body lands as Director resolves Q1–Q%d.\n", directorReviewOpenQs)
 	case inScopeEmpty:
 		fmt.Fprintln(&b, "None.")
 	default:
-		if directorReviewOpenQs > 0 {
-			fmt.Fprintln(&b, headerNote)
-			fmt.Fprintln(&b)
-		}
 		for _, f := range formatDefining {
 			fmt.Fprintf(&b, "- `%s` — sync to canon (format-defining; hard-routed per `%s ## Format-defining files`)\n", f.Relpath, qualifyGovernaPath(sha, "docs/drift-scan.md"))
 		}
@@ -1227,23 +1258,15 @@ func buildACStub(acN int, sha string, report *Report) string {
 	}
 	fmt.Fprintln(&b)
 
-	// Out Of Scope (with class-H follow-on header note per AC107: scaffolds
-	// the defer-resolution landing convention when Director Review has open
-	// Qs, mirroring AC106's In Scope header note for sync/preserve).
+	// Out Of Scope. AC111 Class X: header note removed (Director Review menu
+	// carries the resolution mechanic; recap was noise).
 	fmt.Fprintln(&b, "## Out Of Scope")
 	fmt.Fprintln(&b)
-	ooHeaderNote := "_Defer resolutions add a bullet here naming the file and the follow-on AC pointer added to plan.md as a new IE. See `" + qualifyGovernaPath(sha, "docs/drift-scan.md") + " ## Resolution protocol`._"
 	ooEmpty := len(preserves) == 0
 	switch {
-	case ooEmpty && directorReviewOpenQs > 0:
-		fmt.Fprintln(&b, ooHeaderNote)
 	case ooEmpty:
 		fmt.Fprintln(&b, "None.")
 	default:
-		if directorReviewOpenQs > 0 {
-			fmt.Fprintln(&b, ooHeaderNote)
-			fmt.Fprintln(&b)
-		}
 		for _, f := range preserves {
 			fmt.Fprintf(&b, "- `%s` — preserve marker present:\n", f.Relpath)
 			for _, m := range f.Markers {
@@ -1258,7 +1281,15 @@ func buildACStub(acN int, sha string, report *Report) string {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Canon: governa @ %s, flavor `%s`. Comparison: `governa drift-scan` against the embedded canon.\n", sha, report.Header.Flavor)
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "Counts: %s.\n", tallyClassifications(report.Files))
+	// AC108 Class T: annotate counts line so it reconciles with routing-table
+	// row count. Format-defining files are suppressed from per-file routing
+	// (hard-routed to In Scope); missing-in-target with non-empty canon is
+	// auto-routed as create-from-canon. Both annotations make the suppressions
+	// explicit so the Operator does not have to mentally reconcile counts and
+	// rows.
+	fdHardRouted := len(formatDefining)
+	mitAutoRouted := len(missingCreate)
+	fmt.Fprintf(&b, "Counts: %s.\n", tallyClassificationsAnnotated(report.Files, fdHardRouted, mitAutoRouted))
 	fmt.Fprintln(&b)
 
 	// Scan asymmetry note (Part B). Same verbatim text as the console
@@ -1280,10 +1311,27 @@ func buildACStub(acN int, sha string, report *Report) string {
 	if len(formatDefining) > 0 {
 		fmt.Fprintln(&b, "### Format-defining file routing")
 		fmt.Fprintln(&b)
-		fmt.Fprintf(&b, "The following files are in the format-defining-canon registry (`%s ## Format-defining files`). They are auto-routed to `## In Scope` as sync regardless of raw classification, because the staged AC's auto-emitted form already adopts canon's form for these files; routing them as anything other than sync would leave the AC self-contradictory. Director Review questions for these files are suppressed.\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
+		fmt.Fprintf(&b, "The following files are in the format-defining-canon registry (`%s ## Format-defining files`). They are auto-routed to `## In Scope` as sync regardless of raw classification, because the staged AC instantiates canon's form for these files — both tool-emitted sections (`## Director Review` round-append, `## Acceptance Tests` scaffolding) and Operator-fill sections (`## Objective Fit`, AT labels) — so routing them as anything other than sync would leave the AC self-contradictory. Director Review questions for these files are suppressed.\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
 		fmt.Fprintln(&b)
 		for _, f := range formatDefining {
 			fmt.Fprintf(&b, "- `%s` — raw classification: %s; auto-routed to In Scope as sync.\n", f.Relpath, f.Classification)
+		}
+		fmt.Fprintln(&b)
+	}
+
+	// Missing-in-target file routing (AC108 Class Q). Emitted when any
+	// missing-in-target file with non-empty canon is auto-routed to In
+	// Scope as create-from-canon. Cites AGENTS.md Approval Boundaries so
+	// the Operator sees the auto-route is approval-gated by the AC critique
+	// itself, not unilateral. Parallel structure with the format-defining
+	// routing block above.
+	if len(missingCreate) > 0 {
+		fmt.Fprintln(&b, "### Missing-in-target file routing")
+		fmt.Fprintln(&b)
+		fmt.Fprintf(&b, "The following files exist in canon but not in target. They are auto-routed to `## In Scope` as create-from-canon because canon prescribes them. Per AGENTS.md Approval Boundaries (create requires explicit approval), this AC's critique gate IS the approval surface — Director routes to `## Out Of Scope` to keep absent. See `%s ## Missing-in-target file routing`.\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
+		fmt.Fprintln(&b)
+		for _, f := range missingCreate {
+			fmt.Fprintf(&b, "- `%s` — canon prescribes; target absent; auto-routed to In Scope as create-from-canon.\n", f.Relpath)
 		}
 		fmt.Fprintln(&b)
 	}
@@ -1298,28 +1346,16 @@ func buildACStub(acN int, sha string, report *Report) string {
 	// duplicate resolved state or carry an explicit "as of staging" marker.
 	// Format-defining files (hard-routed) are excluded — their routing is
 	// not a Director decision.
+	// AC112 Class Y: routing-summary table dropped. Operator-fill `What
+	// diverged` moved to per-file Divergent files blocks (where Direction
+	// line is co-located, killing the diff-direction-inversion failure mode
+	// from F1). Operator-fill leans live only in Director Review per-Q —
+	// single source of truth for routing decisions. The `divergent` slice is
+	// still computed because Divergent files emission below uses it.
 	divergent := []FileResult{}
 	divergent = append(divergent, preserves...)
 	divergent = append(divergent, ambiguities...)
 	divergent = append(divergent, clearSync...)
-	if len(divergent) > 0 {
-		fmt.Fprintln(&b, "### Routing summary")
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "_Operator lean below reflects staging-time analysis. Director-resolved routing lives in the Director Review section below; this table does not auto-update on resolution._")
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "| File | Local edit source | What diverged | Operator lean (as of staging) |")
-		fmt.Fprintln(&b, "|---|---|---|---|")
-		for _, f := range divergent {
-			editSrc := "—"
-			if len(f.Commits) > 0 {
-				_, subject, _ := strings.Cut(f.Commits[0], " ")
-				// Escape | so it doesn't break the table cell.
-				editSrc = strings.ReplaceAll(subject, "|", `\|`)
-			}
-			fmt.Fprintf(&b, "| `%s` | %s | <!-- TBD by Operator --> | <!-- TBD by Operator --> |\n", f.Relpath, editSrc)
-		}
-		fmt.Fprintln(&b)
-	}
 
 	// Match evidence (true byte-equal only).
 	if len(matches) > 0 {
@@ -1345,21 +1381,27 @@ func buildACStub(acN int, sha string, report *Report) string {
 
 	// Divergent file detail (preserve, ambiguity, clear-sync). `divergent`
 	// was declared earlier for the routing summary table. The Coupled-with
-	// line draws from coupledWith (built from report.RoutingGroups) and
-	// stays informational — routing decisions are per-file in
-	// `## Director Review`, not driven by coupling.
+	// line (AC108 Class R) names the coupling signal and points at the
+	// aggregated `### Coupled sets` block; uncoupled files emit no
+	// Coupled-with line at all (silence is clearer than negative-state noise).
+	// The Direction line (AC108 Class U) summarizes diff direction so the
+	// Operator does not have to read +/- glyphs to determine which side leads.
 	if len(divergent) > 0 {
 		fmt.Fprintln(&b, "### Divergent files")
 		fmt.Fprintln(&b)
 		for _, f := range divergent {
 			fmt.Fprintf(&b, "#### `%s` — %s\n\n", f.Relpath, f.Classification)
 			fmt.Fprintf(&b, "Canon: %s\n\n", f.CanonRef)
-			if cw := coupledWith[f.Relpath]; len(cw) > 0 {
-				fmt.Fprintf(&b, "Coupled-with: %s\n\n", strings.Join(quoteAll(cw), ", "))
-			} else {
-				fmt.Fprintln(&b, "Coupled-with: None")
-				fmt.Fprintln(&b)
+			if signal := signalByFile[f.Relpath]; signal != "" {
+				fmt.Fprintf(&b, "Coupled-with: %s set (see § Coupled sets)\n\n", signal)
 			}
+			canonOnly, targetOnly := computeDirection(f.Diff)
+			fmt.Fprintf(&b, "%s\n\n", formatDirection(canonOnly, targetOnly))
+			// AC112 Class Y: per-file `What diverged` Operator-fill, placed
+			// AFTER `Direction:` so the Operator reads direction first and
+			// can't invert when characterizing the change.
+			fmt.Fprintln(&b, "What diverged: <!-- TBD by Operator -->")
+			fmt.Fprintln(&b)
 			if len(f.Commits) > 0 {
 				fmt.Fprintln(&b, "Local commits (`git log -n 5 --follow`):")
 				fmt.Fprintln(&b)
@@ -1433,9 +1475,10 @@ func buildACStub(acN int, sha string, report *Report) string {
 			}
 		}
 		if len(multi) > 0 {
+			// AC111 Class X: lead-in stamp removed. The heading qualifier
+			// `(informational — routing decisions per Q above)` already
+			// signals the section's nature.
 			fmt.Fprintln(&b, "### Coupled sets (informational — routing decisions per Q above)")
-			fmt.Fprintln(&b)
-			fmt.Fprintln(&b, "_The list below names files linked by build-relationship or name-reference signal. It is informational. Routing decisions are made per-file in the Director Review questions above._")
 			fmt.Fprintln(&b)
 			for _, g := range multi {
 				signal := classifyCouplingSignal(g, report.Header.Target)
@@ -1470,22 +1513,16 @@ func buildACStub(acN int, sha string, report *Report) string {
 	// missing). Preserve-marker ATs and the IE-pointer AT were dropped —
 	// they verified scaffolding placed by earlier ACs / by this scan's
 	// staging step, not this AC's deliverable.
+	// AC111 Class X: header note removed (Director Review menu carries the
+	// resolution mechanic; recap was noise).
 	fmt.Fprintln(&b, "## Acceptance Tests")
 	fmt.Fprintln(&b)
-	atHeaderNote := "_Each sync resolution adds a paired byte-equality AT here. See `" + qualifyGovernaPath(sha, "docs/drift-scan.md") + " ## Resolution protocol`._"
 	atEmpty := len(clearSync) == 0 && len(missingCreate) == 0 && len(formatDefining) == 0
 	switch {
-	case atEmpty && directorReviewOpenQs > 0:
-		fmt.Fprintln(&b, atHeaderNote)
-		fmt.Fprintln(&b)
 	case atEmpty:
 		fmt.Fprintln(&b, "None — this AC ships only the staged plan.md IE entry; nothing to verify in target.")
 		fmt.Fprintln(&b)
 	default:
-		if directorReviewOpenQs > 0 {
-			fmt.Fprintln(&b, atHeaderNote)
-			fmt.Fprintln(&b)
-		}
 		atN := 1
 		for _, f := range formatDefining {
 			fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` synced to canon (format-defining hard-route). %s\n\n", atN, f.Relpath, byteEqualityCheck(f.Relpath, f.CanonContent))
@@ -1514,37 +1551,47 @@ func buildACStub(acN int, sha string, report *Report) string {
 	// in the Q text — no "must route together" or any other routing
 	// constraint claim survives. Class-G negative-regex test enforces
 	// no prescriptive language across the full staged-AC body.
+	// AC109 Class V: routing-matrix shape replaces the verbose per-Q
+	// question form. One menu stamp at the top documents both routing
+	// menus (sync/preserve/defer for ambiguity, keep/delete/migrate-to-canon
+	// for target-has-no-canon); per-Q text leads with the file in backticks
+	// + lean placeholder + why placeholder. Coupled-with annotations are
+	// dropped from per-Q text (already in `### Coupled sets`); per-Q
+	// backfill-marker boilerplate is dropped (covered by the menu stamp's
+	// "preserve → ... marker backfilled at next release prep" mention).
+	// Tool-emission exception to docs/ac-template.md's question-form rule
+	// is documented in docs/drift-scan.md.
 	fmt.Fprintln(&b, "## Director Review")
 	fmt.Fprintln(&b)
 	totalQs := len(ambiguities) + len(noCanon)
 	if totalQs == 0 {
 		fmt.Fprintln(&b, "None.")
 	} else {
+		// AC111 Class X: dense italic menu replaced with a human-readable
+		// bulleted block. Bold heading + per-option line so the Director
+		// can scan the choices without parsing a one-line italic blob.
+		fmt.Fprintln(&b, "**Routing menu** (pick one per Q):")
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "- `sync` — file moves to In Scope")
+		fmt.Fprintln(&b, "- `preserve` — file stays in Out Of Scope; backfill `preserve <path> <qualifier>` in CHANGELOG.md at next release prep")
+		fmt.Fprintln(&b, "- `defer` — file becomes a follow-on AC pointer (new IE in `plan.md`)")
+		fmt.Fprintf(&b, "- For `target-has-no-canon` files: `keep` / `delete` / `migrate-to-canon` instead. See `%s ## Resolution protocol`.\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
+		fmt.Fprintln(&b)
 		qN := 1
 		for _, f := range ambiguities {
-			coupled := coupledWith[f.Relpath]
-			coupledClause := ""
-			if len(coupled) > 0 {
-				coupledClause = fmt.Sprintf(" Coupled-with: %s.", strings.Join(quoteAll(coupled), ", "))
-			}
-			fmt.Fprintf(&b,
-				"%d. Should `%s` be synced to canon, preserved with a marker (backfill `preserve %s <qualifier>` in CHANGELOG.md), or deferred to a later AC?%s Operator lean: <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n",
-				qN, f.Relpath, f.Relpath, coupledClause,
-			)
+			fmt.Fprintf(&b, "%d. **`%s`** — <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n", qN, f.Relpath)
 			qN++
 		}
 		for _, f := range noCanon {
-			coupled := coupledWith[f.Relpath]
-			coupledClause := ""
-			if len(coupled) > 0 {
-				coupledClause = fmt.Sprintf(" Coupled-with: %s.", strings.Join(quoteAll(coupled), ", "))
-			}
-			fmt.Fprintf(&b,
-				"%d. Should `%s` (target-has-no-canon) be kept as a per-repo addition, deleted, or migrated into canon (governa-side AC)?%s Operator lean: <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n",
-				qN, f.Relpath, coupledClause,
-			)
+			fmt.Fprintf(&b, "%d. **`%s`** (target-has-no-canon) — <!-- TBD by Operator -->. Why: <!-- TBD by Operator -->.\n", qN, f.Relpath)
 			qN++
 		}
+		// AC112 Class Y: convention footer pointing at the documented
+		// tool-emission exception. Folds F3 — consumer agents reading the
+		// staged AC can follow the qualified ref to read why the form
+		// deviates from their local docs/ac-template.md question-form rule.
+		fmt.Fprintln(&b)
+		fmt.Fprintf(&b, "_Director Review form follows the drift-scan tool-emission convention. See `%s ## Director Review` for the documented exception to your local docs/ac-template.md question-form rule._\n", qualifyGovernaPath(sha, "docs/drift-scan.md"))
 	}
 	fmt.Fprintln(&b)
 
@@ -1626,6 +1673,85 @@ func byteEqualityCheck(relpath, canonContent string) string {
 	h := sha256.Sum256([]byte(canonContent))
 	sum := hex.EncodeToString(h[:])
 	return fmt.Sprintf("Verify SHA-256: `[ \"$(shasum -a 256 %s | awk '{print $1}')\" = \"%s\" ]` (canon SHA-256: `%s`).", relpath, sum, sum)
+}
+
+// computeDirection counts canon-only and target-only lines in a unified diff
+// (AC108 Class U). Returns (canonOnly, targetOnly): canonOnly counts lines
+// starting with `-` (excluding `---` header); targetOnly counts lines starting
+// with `+` (excluding `+++` header). Hunk headers (`@@ ...`) are skipped.
+// Empty diff returns (0, 0).
+func computeDirection(diff string) (canonOnly, targetOnly int) {
+	for line := range strings.SplitSeq(diff, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
+			continue
+		case strings.HasPrefix(line, "@@"):
+			continue
+		case strings.HasPrefix(line, "+"):
+			targetOnly++
+		case strings.HasPrefix(line, "-"):
+			canonOnly++
+		}
+	}
+	return canonOnly, targetOnly
+}
+
+// formatDirection renders a one-line Direction summary for the staged AC's
+// per-file block (AC108 Class U). Mitigates the diff-direction Operator-fill
+// trap: the Operator no longer has to read +/- conventions backward to
+// determine which side carries the divergence.
+//
+// When N > 0, M == 0: "target leads (canon stub or canon yet-to-adopt)".
+// When M > 0, N == 0: "canon leads (target yet-to-adopt or target reverted)".
+// Both nonzero: explicit N/M numbers, no qualitative label (mutual divergence,
+// judgment-grade — direction symmetry is itself the signal).
+func formatDirection(canonOnly, targetOnly int) string {
+	switch {
+	case targetOnly > 0 && canonOnly == 0:
+		return fmt.Sprintf("Direction: target leads (canon stub or canon yet-to-adopt) — target carries %d lines absent in canon.", targetOnly)
+	case canonOnly > 0 && targetOnly == 0:
+		return fmt.Sprintf("Direction: canon leads (target yet-to-adopt or target reverted) — canon carries %d lines absent in target.", canonOnly)
+	case targetOnly > 0 && canonOnly > 0:
+		return fmt.Sprintf("Direction: target carries %d lines absent in canon; canon carries %d lines absent in target.", targetOnly, canonOnly)
+	default:
+		return "Direction: no line-level divergence detected."
+	}
+}
+
+// tallyClassificationsAnnotated extends tallyClassifications with parenthetical
+// suppression annotations (AC108 Class T). When fdHardRouted > 0, the
+// "ambiguity" entry carries "(M hard-routed via format-defining)"; when
+// mitAutoRouted > 0, the "missing-in-target" entry carries "(M auto-routed
+// as create-from-canon)". Reconciles the counts line with the routing-table
+// row count, which suppresses these classes by registry rule.
+func tallyClassificationsAnnotated(files []FileResult, fdHardRouted, mitAutoRouted int) string {
+	order := []Classification{
+		ClassMatch, ClassExpectedDivergence, ClassPreserve, ClassAmbiguity,
+		ClassClearSync, ClassMissingTarget, ClassTargetNoCanon,
+	}
+	counts := map[Classification]int{}
+	for _, f := range files {
+		counts[f.Classification]++
+	}
+	var parts []string
+	for _, c := range order {
+		n := counts[c]
+		if n == 0 {
+			continue
+		}
+		entry := fmt.Sprintf("%d %s", n, c)
+		switch {
+		case c == ClassAmbiguity && fdHardRouted > 0:
+			entry += fmt.Sprintf(" (%d hard-routed via format-defining)", fdHardRouted)
+		case c == ClassMissingTarget && mitAutoRouted > 0:
+			entry += fmt.Sprintf(" (%d auto-routed as create-from-canon)", mitAutoRouted)
+		}
+		parts = append(parts, entry)
+	}
+	if len(parts) == 0 {
+		return "0 files"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // quoteAll wraps each input string in backticks. Used for rendering
@@ -1942,6 +2068,12 @@ var EmbeddedFS = templates.EmbeddedFS
 func buildSisterDiffs(acN int, sha string, report *Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Diffs for AC%d (drift-scan from governa @ %s)\n\n", acN, sha)
+	// Convention stamp (AC108 Class U): the diff direction is easy to
+	// invert-read; this stamp pins the convention up front so the
+	// Operator can route correctly without re-deriving direction from
+	// the +/- glyphs each time.
+	fmt.Fprintln(&b, "_Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON. `+` is \"target has this; canon does not\"; `-` is \"canon has this; target does not\". Routing leans depend on direction — read the per-file `Direction:` summary in the AC body before drawing conclusions._")
+	fmt.Fprintln(&b)
 	var divergent []FileResult
 	for _, f := range report.Files {
 		if isDivergentClass(f.Classification) {
@@ -2041,6 +2173,101 @@ func targetGovernanceFilesNotInCanon(target string, ourCanon map[string]string, 
 				out = append(out, rel)
 			}
 		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// nameReferencedPathRe forms the AC112 Class Z extraction set: backticked,
+// double-quoted, and bare paths after `go run` or `exec` keywords. The
+// captured path must start with `.` or `/` (relative or absolute) so we
+// don't false-positive on prose tokens like backticked words.
+var (
+	backtickedPathRe      = regexp.MustCompile("`([./][^`]+)`")
+	quotedPathRe          = regexp.MustCompile(`"([./][^"]+)"`)
+	goRunOrExecLineTailRe = regexp.MustCompile(`(?m)(?:go run|exec)\s+(.+)$`)
+)
+
+// extractPathReferences returns path-like substrings found in content via
+// three forms: backticked paths starting with . or /, double-quoted paths,
+// and bare path tokens following `go run` or `exec` keywords. Used by the
+// name-reference body scan (AC112 Class Z) to find target-only files
+// referenced from divergent target files.
+func extractPathReferences(content string) []string {
+	var refs []string
+	for _, m := range backtickedPathRe.FindAllStringSubmatch(content, -1) {
+		refs = append(refs, m[1])
+	}
+	for _, m := range quotedPathRe.FindAllStringSubmatch(content, -1) {
+		refs = append(refs, m[1])
+	}
+	for _, m := range goRunOrExecLineTailRe.FindAllStringSubmatch(content, -1) {
+		for tok := range strings.FieldsSeq(m[1]) {
+			if strings.HasPrefix(tok, "./") || strings.HasPrefix(tok, "/") {
+				refs = append(refs, tok)
+			}
+		}
+	}
+	return refs
+}
+
+// normalizeRefPath resolves a path reference to a target-relative path.
+// Absolute paths (leading `/`) are treated as target-rooted (drop the slash);
+// `./X` is treated as relative to the referrer's directory; bare relative
+// paths are also resolved against the referrer's directory.
+func normalizeRefPath(ref, refererRel string) string {
+	switch {
+	case strings.HasPrefix(ref, "/"):
+		return strings.TrimPrefix(ref, "/")
+	case strings.HasPrefix(ref, "./"):
+		stripped := strings.TrimPrefix(ref, "./")
+		refererDir := filepath.Dir(refererRel)
+		if refererDir == "." || refererDir == "" {
+			return stripped
+		}
+		return filepath.ToSlash(filepath.Join(refererDir, stripped))
+	default:
+		refererDir := filepath.Dir(refererRel)
+		return filepath.ToSlash(filepath.Join(refererDir, ref))
+	}
+}
+
+// nameReferencedTargetOnlyFiles scans divergent target files for path
+// references to other target files that have no canon counterpart in
+// either flavor. Returns the deduplicated, sorted list. Implements the
+// asymmetry note's second branch (AC112 Class Z): name-reference body scan.
+func nameReferencedTargetOnlyFiles(target string, divergent []FileResult, ourCanon map[string]string, otherCanon map[string]bool, alreadySurfaced map[string]bool) []string {
+	found := map[string]bool{}
+	for _, f := range divergent {
+		content, err := os.ReadFile(filepath.Join(target, f.Relpath))
+		if err != nil {
+			continue
+		}
+		for _, ref := range extractPathReferences(string(content)) {
+			resolved := normalizeRefPath(ref, f.Relpath)
+			if resolved == "" || resolved == f.Relpath {
+				continue
+			}
+			absPath := filepath.Join(target, resolved)
+			info, err := os.Stat(absPath)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			if _, inOurs := ourCanon[resolved]; inOurs {
+				continue
+			}
+			if otherCanon[resolved] {
+				continue
+			}
+			if alreadySurfaced[resolved] {
+				continue
+			}
+			found[resolved] = true
+		}
+	}
+	var out []string
+	for k := range found {
+		out = append(out, k)
 	}
 	sort.Strings(out)
 	return out
