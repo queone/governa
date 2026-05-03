@@ -3,6 +3,7 @@ package driftscan
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -130,9 +131,15 @@ func TestStagingHappy(t *testing.T) {
 	for _, want := range []string{
 		"# AC1 Drift-Scan from governa @",
 		"## Summary\n\n<!-- TBD by Operator -->",
-		"## Objective Fit\n\n<!-- TBD by Operator -->",
+		// AC114 Part A: Objective Fit pre-fills with target's local form
+		// (canon-3-part fallback when target ac-template missing). For docFixture
+		// the local ac-template is empty, so fallback fires.
+		"## Objective Fit\n\n1. **Outcome** <!-- TBD by Operator -->",
 		"## Status\n\n`PENDING` — awaiting Director critique.",
-		"### Post-merge coherence audit\n\n<!-- TBD by Operator -->",
+		// AC114 Parts B+C: post-merge audit pre-fills based on sync/preserve state.
+		// docFixture has 1 missing-in-target (.gitignore) ambiguity files but no
+		// preserve markers → vacuous preserve-empty body fires.
+		"### Post-merge coherence audit",
 		"Counts: ",
 	} {
 		if !strings.Contains(acContent, want) {
@@ -1932,4 +1939,374 @@ func TestClassesAABB_OperatorFillsImperative(t *testing.T) {
 			t.Errorf("AC112 AT7: drift-scan.md ## What the Operator fills missing %q", want)
 		}
 	}
+}
+
+// =====================================================================
+// AC114 — Drift-Scan Staging Promotions + Verify Subcommand
+// =====================================================================
+
+// AC114 AT1 — parseObjectiveFitForm returns the ordered heading list for
+// 3-part / 4-part templates; nil for missing file / missing section / no items.
+func TestAC114_AT1_ParseObjectiveFitForm(t *testing.T) {
+	t.Run("3-part canon form", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "docs/ac-template.md"),
+			"## Objective Fit\n\n1. **Outcome.** What this delivers.\n2. **Priority.** Why this.\n3. **Dependencies.** Prior ACs.\n\n## In Scope\n")
+		got := parseObjectiveFitForm(dir)
+		want := []string{"Outcome.", "Priority.", "Dependencies."}
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("got[%d]=%q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+	t.Run("4-part target form", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "docs/ac-template.md"),
+			"## Objective Fit\n\n1. **Which part?** Tie to objective.\n2. **Why not higher?** Trade-off.\n3. **What existing decision?** Reference.\n4. **Intentional pivot?** If yes.\n\n## In Scope\n")
+		got := parseObjectiveFitForm(dir)
+		if len(got) != 4 {
+			t.Fatalf("expected 4 headings, got %d: %v", len(got), got)
+		}
+	})
+	t.Run("missing file returns nil", func(t *testing.T) {
+		dir := t.TempDir()
+		if got := parseObjectiveFitForm(dir); got != nil {
+			t.Errorf("expected nil for missing file, got %v", got)
+		}
+	})
+}
+
+// AC114 AT2 — staged AC `## Objective Fit` is a numbered scaffold matching
+// target's parsed form.
+func TestAC114_AT2_ObjectiveFitScaffold(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"),
+		"## Objective Fit\n\n1. **Which part?** Tie.\n2. **Why not?** TO.\n3. **Existing?** Ref.\n4. **Pivot?** If.\n\n## In Scope\n")
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0", Target: dir},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	for _, want := range []string{
+		"## Objective Fit\n\n1. **Which part?** <!-- TBD by Operator -->",
+		"2. **Why not?** <!-- TBD by Operator -->",
+		"3. **Existing?** <!-- TBD by Operator -->",
+		"4. **Pivot?** <!-- TBD by Operator -->",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+// AC114 AT3 — fallback to canon's 3-part form when target ac-template is
+// missing.
+func TestAC114_AT3_ObjectiveFitFallback(t *testing.T) {
+	dir := t.TempDir() // no docs/ac-template.md
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0", Target: dir},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	for _, want := range []string{
+		"## Objective Fit\n\n1. **Outcome** <!-- TBD by Operator -->",
+		"2. **Priority** <!-- TBD by Operator -->",
+		"3. **Dependencies** <!-- TBD by Operator -->",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing fallback %q in:\n%s", want, out)
+		}
+	}
+}
+
+// AC114 AT4 — named constant `imperativeRuleRe` exists with verbatim pattern.
+func TestAC114_AT4_ImperativeRuleReConstant(t *testing.T) {
+	const want = `(?i)\b(must|every|requires|shall|always|never|each)\b`
+	if got := imperativeRuleRe.String(); got != want {
+		t.Errorf("imperativeRuleRe.String() = %q, want %q", got, want)
+	}
+}
+
+// AC114 AT5 — extractRuleCandidates uses imperativeRuleRe and returns one
+// ruleCandidate per matching `+` line.
+func TestAC114_AT5_ExtractRuleCandidates(t *testing.T) {
+	diff := "--- canon/foo\n+++ target/foo\n" +
+		"@@ -1,5 +1,8 @@\n" +
+		" context line\n" +
+		"+You must do X.\n" +
+		"+Every AC labels stuff.\n" +
+		"+- Each AC labels each acceptance test.\n" +
+		"+just an addition no imperative\n" +
+		"+another plain line\n"
+	got := extractRuleCandidates("foo", diff)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 candidates, got %d: %+v", len(got), got)
+	}
+	for _, want := range []string{"You must do X.", "Every AC labels stuff.", "- Each AC labels each acceptance test."} {
+		found := false
+		for _, c := range got {
+			if strings.Contains(c.Excerpt, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing candidate matching %q in %+v", want, got)
+		}
+	}
+}
+
+// AC114 AT6 — integration: extractRuleCandidates output flows into rendered
+// `[TBD] R<N>:` checklist lines.
+func TestAC114_AT6_ChecklistIntegration(t *testing.T) {
+	diff := "--- canon/AGENTS.md\n+++ target/AGENTS.md\n" +
+		"@@ -1,3 +1,5 @@\n" +
+		" line\n" +
+		"+You must do X.\n" +
+		"+Every rule applies.\n"
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "AGENTS.md", Classification: ClassClearSync, CanonContent: "# A\n", Diff: diff},
+			{Relpath: "preserved.md", Classification: ClassPreserve, Markers: []string{"| 0.1.0 | preserve preserved.md customization |"}},
+		},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	candidates := extractRuleCandidates("AGENTS.md", diff)
+	if len(candidates) == 0 {
+		t.Fatalf("test setup: no candidates extracted")
+	}
+	for _, c := range candidates {
+		want := fmt.Sprintf("`%s` adds at line `%d`:", c.File, c.LineNum)
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered checklist missing %q for candidate %+v in:\n%s", want, c, out)
+		}
+	}
+}
+
+// AC114 AT7 — when sync ∧ preserve, audit body is the checklist scaffold.
+func TestAC114_AT7_AuditChecklistShape(t *testing.T) {
+	diff := "--- canon/A\n+++ target/A\n@@ -1,1 +1,2 @@\n line\n+must do X\n"
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "A.md", Classification: ClassClearSync, CanonContent: "# A\n", Diff: diff},
+			{Relpath: "B.md", Classification: ClassPreserve, Markers: []string{"| 0.1.0 | preserve B.md customization |"}},
+		},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	for _, want := range []string{
+		"### Post-merge coherence audit",
+		"**Synced files:** `A.md`",
+		"**Preserved files:** `B.md`",
+		"Rules added by sync (extracted mechanically",
+		"[TBD] R1:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+// AC114 AT8 — sync-empty: vacuous body, no `<!-- TBD by Operator -->`.
+func TestAC114_AT8_VacuousSyncEmpty(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "B.md", Classification: ClassPreserve, Markers: []string{"| 0.1.0 | preserve B.md customization |"}},
+		},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	if !strings.Contains(out, vacuousAuditSyncEmpty) {
+		t.Errorf("expected vacuous sync-empty body in:\n%s", out)
+	}
+	auditIdx := strings.Index(out, "### Post-merge coherence audit")
+	if auditIdx < 0 {
+		t.Fatalf("missing audit section")
+	}
+	tail := out[auditIdx:]
+	endIdx := strings.Index(tail[1:], "## ")
+	if endIdx > 0 {
+		tail = tail[:endIdx+1]
+	}
+	if strings.Contains(tail, "<!-- TBD by Operator -->") {
+		t.Errorf("audit section must not contain TBD when vacuous, got:\n%s", tail)
+	}
+}
+
+// AC114 AT9 — preserve-empty (sync non-empty): vacuous preserve-empty body.
+func TestAC114_AT9_VacuousPreserveEmpty(t *testing.T) {
+	report := &Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "abcdef0"},
+		Files: []FileResult{
+			{Relpath: "A.md", Classification: ClassClearSync, CanonContent: "# A\n"},
+		},
+	}
+	out := buildACStub(1, "abcdef0", report)
+	if !strings.Contains(out, vacuousAuditPreserveEmpty) {
+		t.Errorf("expected vacuous preserve-empty body in:\n%s", out)
+	}
+}
+
+// AC114 AT10 — Verify reports failures for any TBD substring in 4 sections.
+func TestAC114_AT10_VerifyTBDFailures(t *testing.T) {
+	cases := []struct {
+		name    string
+		acBody  string
+		wantSub string
+	}{
+		{"TBD in Summary", "# AC1\n\n## Summary\n\n<!-- TBD by Operator -->\n\n## Status\n", "Summary"},
+		{"TBD in DR lean (via check 1)", "# AC1\n\n## Director Review\n\n1. **`x.md`** — <!-- TBD by Operator -->. Why: actual reason.\n\n## Status\n", "Director Review"},
+		{"TBD in DR Why", "# AC1\n\n## Director Review\n\n1. **`x.md`** — preserve. Why: <!-- TBD by Operator -->.\n\n## Status\n", "Director Review"},
+		{"TBD in What diverged", "# AC1\n\n## Implementation Notes\n\n### Divergent files\n\n#### `x.md` — ambiguity\n\nWhat diverged: <!-- TBD by Operator -->\n\n## Status\n", "Implementation Notes"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "ac.md")
+			mustWrite(t, path, tc.acBody)
+			failures, err := Verify(path)
+			if err != nil {
+				t.Fatalf("Verify: %v", err)
+			}
+			if len(failures) == 0 {
+				t.Fatalf("expected ≥1 failure, got 0")
+			}
+			found := false
+			for _, f := range failures {
+				if strings.Contains(f.Section, tc.wantSub) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected failure in section containing %q, got %+v", tc.wantSub, failures)
+			}
+		})
+	}
+}
+
+// AC114 AT11 — check 5 sync ∧ preserve heuristic per pinned parse rules.
+func TestAC114_AT11_VerifyCheck5HeuristicEdgeCases(t *testing.T) {
+	makeAC := func(inScope, outOfScope, audit string) string {
+		return "# AC1\n\n## In Scope\n\n" + inScope + "\n\n## Out Of Scope\n\n" + outOfScope +
+			"\n\n## Implementation Notes\n\n### Post-merge coherence audit\n\n" + audit + "\n\n## Status\n\n`PENDING`\n"
+	}
+	t.Run("AT11a InScope-None + preserve-present → no fire", func(t *testing.T) {
+		body := makeAC("None — body lands as Director resolves Q1–Q3.",
+			"- `foo.md` — preserve marker present:\n  - `marker`",
+			vacuousAuditSyncEmpty)
+		if hasSyncItemsAndPreserveMarkers(body) {
+			t.Errorf("expected no fire (no sync items)")
+		}
+	})
+	t.Run("AT11b sync-present + OutOfScope-None → no fire", func(t *testing.T) {
+		body := makeAC("- `foo.md` — sync to canon",
+			"None.",
+			vacuousAuditPreserveEmpty)
+		if hasSyncItemsAndPreserveMarkers(body) {
+			t.Errorf("expected no fire (no preserve markers)")
+		}
+	})
+	t.Run("AT11c create-from-canon-only counts as sync", func(t *testing.T) {
+		body := makeAC("- `foo.md` — create from canon",
+			"- `bar.md` — preserve marker present:\n  - `marker`",
+			"clean reconciliation outcome documented")
+		if !hasSyncItemsAndPreserveMarkers(body) {
+			t.Errorf("expected fire (create-from-canon counts as sync)")
+		}
+	})
+	t.Run("AT11d both-present + audit has [TBD] → check 5 reports failure", func(t *testing.T) {
+		body := makeAC("- `foo.md` — sync to canon\n- `baz.md` — create from canon",
+			"- `bar.md` — preserve marker present:\n  - `marker`",
+			"Rules:\n- [TBD] R1: foo.md adds at line 3 — reconciliation: ?")
+		dir := t.TempDir()
+		path := filepath.Join(dir, "ac.md")
+		mustWrite(t, path, body)
+		failures, err := Verify(path)
+		if err != nil {
+			t.Fatalf("Verify: %v", err)
+		}
+		found := false
+		for _, f := range failures {
+			if strings.Contains(f.Description, "[TBD]") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected failure mentioning [TBD] in audit, got %+v", failures)
+		}
+	})
+	t.Run("AT11e both-present + audit clean → no [TBD] failure", func(t *testing.T) {
+		body := makeAC("- `foo.md` — sync to canon",
+			"- `bar.md` — preserve marker present:\n  - `marker`",
+			"Reconciliation outcome: R1 acknowledged in bar.md.")
+		dir := t.TempDir()
+		path := filepath.Join(dir, "ac.md")
+		mustWrite(t, path, body)
+		failures, err := Verify(path)
+		if err != nil {
+			t.Fatalf("Verify: %v", err)
+		}
+		for _, f := range failures {
+			if strings.Contains(f.Description, "[TBD]") {
+				t.Errorf("unexpected [TBD] failure when audit body is clean: %+v", f)
+			}
+		}
+	})
+}
+
+// AC114 AT12 — Verify returns zero failures for a clean filled AC body.
+func TestAC114_AT12_VerifyCleanAC(t *testing.T) {
+	body := "# AC1 Drift-Scan from governa @ abc\n\n## Summary\n\nFilled summary.\n\n## Objective Fit\n\n1. **Outcome** delivers X.\n2. **Priority** P.\n3. **Dependencies** D.\n\n## In Scope\n\n- `foo.md` — sync to canon\n\n## Out Of Scope\n\nNone.\n\n## Implementation Notes\n\n### Divergent files\n\n#### `foo.md` — ambiguity\n\nWhat diverged: target adds X.\n\n### Post-merge coherence audit\n\nReconciliation done.\n\n## Acceptance Tests\n\n**AT1** [Automated] — check.\n\n## Director Review\n\nNone.\n\n## Status\n\n`PENDING`\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ac.md")
+	mustWrite(t, path, body)
+	failures, err := Verify(path)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if len(failures) != 0 {
+		t.Errorf("expected zero failures, got: %+v", failures)
+	}
+}
+
+// AC114 AT13 — RunVerifyCLI prints failures + exits 1 on failures, 0 on clean.
+func TestAC114_AT13_VerifyCLI(t *testing.T) {
+	t.Run("failures present → exit 1", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "ac.md")
+		mustWrite(t, path, "# AC1\n\n## Summary\n\n<!-- TBD by Operator -->\n\n## Status\n")
+		var buf bytes.Buffer
+		exit, err := RunVerifyCLI([]string{path}, &buf)
+		if err != nil {
+			t.Fatalf("RunVerifyCLI: %v", err)
+		}
+		if exit != 1 {
+			t.Errorf("expected exit 1, got %d", exit)
+		}
+		out := buf.String()
+		if !strings.Contains(out, ":Summary:") {
+			t.Errorf("expected '<line>:Summary: ...' format, got:\n%s", out)
+		}
+	})
+	t.Run("clean AC → exit 0, no output", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "ac.md")
+		mustWrite(t, path, "# AC1\n\n## Summary\n\nFilled.\n\n## Status\n")
+		var buf bytes.Buffer
+		exit, err := RunVerifyCLI([]string{path}, &buf)
+		if err != nil {
+			t.Fatalf("RunVerifyCLI: %v", err)
+		}
+		if exit != 0 {
+			t.Errorf("expected exit 0, got %d", exit)
+		}
+		if buf.Len() != 0 {
+			t.Errorf("expected no output, got:\n%s", buf.String())
+		}
+	})
 }

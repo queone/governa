@@ -13,7 +13,7 @@ When the user invokes `drift-scan <repo-path>`, run `governa drift-scan <repo-pa
 
 When prerequisites exist, the tool stages two files in `<target>/docs/`:
 
-- **`ac<N>-drift-scan-from-<short-sha>.md`** — the AC stub (decision document). Carries routing summary table, per-file blocks (classification, canon ref, preserve markers, coupled local-only files, commit list), Director Review with one numbered question per ambiguity-or-target-has-no-canon file, ATs scoped to In Scope only.
+- **`ac<N>-drift-scan-from-<short-sha>.md`** — the AC stub (decision document). Carries per-file blocks (classification, canon ref, preserve markers, commit list), Director Review with one numbered question per ambiguity-or-target-has-no-canon file, ATs scoped to In Scope only.
 - **`ac<N>-drift-scan-from-<short-sha>-diffs.md`** — the sister diffs file (verification material). Carries one `## <relpath>` section per divergent file with the verbatim `diff -u` hunk. The AC's `## Implementation Notes` opens with a cross-ref line pointing at the sister. The sister body opens with a convention stamp (AC108 Class U): `_Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON. Routing leans depend on direction — read the per-file `Direction:` summary in the AC body before drawing conclusions._`
 
 Both files share the `docs/ac<N>-*.md` prefix, so the existing release-prep wildcard deletes them together at AC-ship time — no special handling required.
@@ -81,39 +81,63 @@ For each open Q in `## Director Review`, fill:
 
 **Sequencing constraint:** the Operator MUST fill step 1 before step 2. The per-file `What diverged` is the input to the lean rationale; filling leans first and characterizing diffs after invites confirmation-bias.
 
+**Failure mode:** filling the lean without the why (or vice versa) hands the Director half a decision. The lean alone doesn't tell the Director why the Operator chose it; the why alone doesn't tell the Director what the lean is. Both fields MUST be filled together.
+
 ### 3. Post-merge coherence audit (`### Post-merge coherence audit` under `## Implementation Notes`)
 
-Mentally apply the proposed routing AND verify cross-file invariants. The Operator MUST execute this procedure when the proposed routing has BOTH at least one synced file AND at least one preserved file:
+Mentally apply the proposed routing AND verify cross-file invariants. AC114 Parts B+C pre-fill the audit body based on sync/preserve state — Operator content depends on which branch fired:
 
-1. List every file routed to `## In Scope` as sync (clear-sync OR format-defining hard-route).
-2. For each synced file, read its sister-file diff. Identify every `+` line that mandates behavior — imperatives like "must", "every", "requires", "Each", or list items prescribing format/structure.
-3. List every file routed to `## Out Of Scope` as preserve.
-4. For each rule from step 2, verify each preserved file from step 3 either:
+- **Sync ∧ preserve fires (Part B):** tool emits a checklist scaffold with rules mechanically extracted from each synced file's diff via the `imperativeRuleRe` pattern (case-insensitive `\b(must|every|requires|shall|always|never|each)\b`). Each extracted rule appears as `- [TBD] R<N>: <synced-file> adds at line <N>: <excerpt> — reconciliation: ?`. The Operator MUST replace each `[TBD]` and `?` with the reconciliation outcome (acknowledged / intentional opt-out / contradiction). The Operator MAY augment manually if the heuristic missed any rules.
+- **Sync-empty (Part C):** tool emits the verbatim vacuous body `Cross-file rule reconciliation is trivially vacuous — no synced files in this AC, so no canon-side rules are introduced; preserved files cannot contradict what wasn't added.` No Operator action required.
+- **Preserve-empty (Part C):** tool emits the verbatim vacuous body `Cross-file rule reconciliation is trivially vacuous — no preserved files in this AC, so no opportunity for cross-file contradiction (everything either syncs to canon or defers).` No Operator action required.
+
+Procedure when sync ∧ preserve fires (the Operator MUST execute this on the pre-filled checklist):
+
+1. The tool has listed synced and preserved files at the top of the audit section. Confirm the lists are complete (no manually-added In Scope/Out Of Scope items missed).
+2. For each `[TBD] R<N>:` line, read the rule excerpt. If the rule is real (vs. a heuristic false positive on prose `must`/`each`/etc.), keep it; otherwise delete the line.
+3. For each remaining rule, verify each preserved file either:
    - **Acknowledges** the rule (consistent with it), OR
    - **Documents an intentional opt-out** — the preserve marker explanation makes the divergence intentional.
-5. Report each rule + reconciliation outcome in the audit body. **Silent contradiction is the worst outcome** — a future AT against a preserved file may fail because canon's added rule isn't reflected.
-
-If sync-set OR preserve-set is empty, the cross-file check is trivially vacuous — state explicitly.
+4. Replace each `[TBD]` with `acknowledged in <preserved-file>` / `intentional opt-out per <preserve-marker>` / `contradiction — <description>`.
+5. Augment with any rule the heuristic missed. **Silent contradiction is the worst outcome** — a future AT against a preserved file may fail because canon's added rule isn't reflected.
 
 **Concrete failure to avoid (from AC4 in tips):** synced AGENTS.md + docs/ac-template.md both reintroduced the AT-label timing-axis rule; preserved docs/release.md had no timing-axis paragraph. Three files ended up disagreeing post-sync. The audit didn't catch this because the Operator narrative didn't enumerate cross-file invariants per the procedure above.
 
 ### 4. Summary
 
-One short paragraph. Three buckets, in order: what's auto-routed (sync), what's preserved (with backfill markers), what's deferred. State the totals.
+One short paragraph. Frame all routing decisions as **Operator leans pending Director resolution**, not as decided routings — the Director Review section still has open Qs at handoff. Categorize counts by routing source separately:
 
-If `## In Scope` is `None` (every divergent file is either preserved or pending Director classification), state explicitly that the AC ships only itself plus the staged `plan.md` IE entry (no file edits).
+- hard-routed sync (format-defining registry)
+- leaned sync (Operator-leaned, ambiguity Q resolved as sync at staging)
+- marker-preserve (existing CHANGELOG preserve marker)
+- leaned-preserve (Operator-leaned, ambiguity Q resolved as preserve at staging)
+- leaned-defer (Operator-leaned, ambiguity Q resolved as defer at staging)
+- create-from-canon (missing-in-target auto-routed)
+- target-has-no-canon (Operator-leaned per Q type)
+
+State each total separately. **Do not aggregate across sources.**
+
+If `## In Scope` is `None` (every divergent file is preserved, pending Director classification, or absent from canon), state explicitly that the AC ships only itself plus the staged `plan.md` IE entry (no file edits).
+
+**Failure mode (F1 stance):** writing "six ambiguity files preserve" while Director Review presents them as open Qs implies decisions are made. Critique then reads the Summary as Director-set and the Director Review section as residual scaffolding. Both states co-exist in the AC; the Summary MUST acknowledge the lean-pending-resolution state.
+
+**Failure mode (F2/P3 categorization):** miscounting buckets when categories overlap (e.g., "preserved" can mean marker-preserve OR leaned-preserve; the totals diverge). Per-source separation prevents aggregation errors.
 
 ### 5. Objective Fit
 
-Three points per `docs/ac-template.md`: Outcome, Priority, Dependencies. Reference dependent ACs. Name intentional contradictions explicitly.
+Fill each numbered placeholder with content matching the form pre-filled by the tool. AC114 Part A pre-fills the scaffold by parsing target's local `docs/ac-template.md` Objective Fit section; if the target file is missing/unparseable, falls back to canon's 3-part form (`Outcome` / `Priority` / `Dependencies`). The Operator-fill content goes in each `<N>. **<heading>** <!-- TBD by Operator -->` slot. Reference dependent ACs. Name intentional contradictions explicitly.
 
 ### Handoff verification
 
-After all five fills, the Operator MUST verify:
+After all five fills, run `governa drift-scan verify <ac-path>` (AC114 Part D / R4.12). The subcommand performs five structural-compliance checks:
 
-- No `<!-- TBD by Operator -->` substring remains in the staged AC body (grep).
-- When sync ∧ preserve: the post-merge audit body lists each synced rule's reconciliation outcome.
-- Director Review leans match Operator-stated whys.
+1. No `<!-- TBD by Operator -->` substring remains anywhere.
+2. Each `### Divergent files` per-file block has a non-TBD `What diverged:` line.
+3. Each `## Director Review` numbered Q has a non-TBD lean.
+4. Each `## Director Review` numbered Q has a non-TBD `Why:`.
+5. When sync ∧ preserve indicated (per the pinned heuristic in `## Verify subcommand`), the `### Post-merge coherence audit` body has no `[TBD]` substring (Part B's checklist must be filled).
+
+Output: each failure as `<line>:<section>: <description>` (gcc/golangci-lint format for editor jump-to-error). Exit 0 = clean, exit 1 = failures present.
 
 Punting any spot to handoff is not a valid state.
 
@@ -160,9 +184,11 @@ Both shapes hard-route to sync via the same mechanic. Divergence in either shape
 
 **Hard-route-to-sync rule:** when any registry file is divergent (any classification other than `match` or `expected-divergence`), the file is auto-routed into `## In Scope` as a sync action regardless of its raw classification. The Director Review Q for these files is suppressed; the routing is forced. The staged AC carries a `### Format-defining file routing` sub-subsection under `## Implementation Notes` naming each one with the rationale: the staged AC instantiates canon's form for these files (tool-emitted sections + Operator-fill sections); routing as anything other than sync would leave the AC self-contradictory.
 
-**Note on the auto-emitted Director Review form:** the staged AC's `## Director Review` block uses the form prescribed by canon's `docs/ac-template.md`. Because that file is in this registry and force-synced when divergent, consumer-local divergence is reconciled every drift-scan run; the staged AC's own form therefore stays consistent with canon's form by construction. The same mechanic protects the Operator-fill `## Objective Fit` form via `AGENTS.md`.
+**Note on Operator-fill form via the registry.** The staged AC's `## Objective Fit` (Operator-fill) follows the form prescribed by canon's `AGENTS.md` and `docs/ac-template.md`. Because both files are in this registry and force-synced when divergent, consumer-local divergence is reconciled every drift-scan run; the Operator-fill form therefore stays consistent with canon's form by construction. The tool-emitted `## Director Review` form is governed by Class V's exception (documented under `## What the tool emits` `## Director Review` entry) — a routing-matrix shape distinct from canon's question-form rule.
 
-**Addition criterion:** a future canon file is added to the registry when (and only when) it passes the inclusion test above (either shape). Importance, frequency-of-edit, or being-a-template are not sufficient on their own.
+**Addition criterion:** the contributing AC MUST add a future canon file to the registry when (and only when) it passes the inclusion test above (either shape). Importance, frequency-of-edit, or being-a-template MUST NOT be used as standalone justification.
+
+**Failure mode:** registry bloat. Adding a file based on importance, being-a-template, or frequency-of-edit (without actual form-instantiation in the staged AC) inflates the hard-route surface. Each unnecessary entry forces an AC to sync that file even when divergence is intentional and Director would otherwise route preserve.
 
 ## Missing-in-target file routing
 
@@ -176,7 +202,9 @@ The `ExpectedDivergencePaths` registry lists canon files that are per-repo stubs
 
 **Initial registry:** `plan.md`.
 
-**Extension:** future per-repo stubs are added to the registry in the same code change that introduces them. The registry can be per-flavor if a stub is flavor-specific.
+**Extension:** when a future canon file is introduced as a per-repo stub, the contributing AC MUST add the file's path to `ExpectedDivergencePaths` in the same code change. The registry MAY be per-flavor if a stub is flavor-specific.
+
+**Failure mode:** introducing a per-repo stub without registering it in `ExpectedDivergencePaths` causes drift-scan to byte-compare the stub against target's filled content on every run, producing a stream of `clear-sync` (or worse, `ambiguity`) classifications that route to In Scope as "sync to canon" — silently overwriting target's per-repo content with the canon stub.
 
 ## Canon-coherence precondition
 
@@ -216,6 +244,29 @@ Tool-emitted text inside the staged consumer AC must qualify any reference to a 
 
 **Enforcement:** the registry-driven test (AC107 AT2) walks the staged AC body, tokenizes backticked paths, and trips on any unqualified governa-only path. Adding a future governa-only prefix to the registry extends coverage without rewriting the test; forgetting the helper at a new emission site fails the test on the first run.
 
+## Verify subcommand
+
+`governa drift-scan verify <ac-path>` runs structural-compliance checks on a staged AC file before handoff. AC114 Part D / R4.12 promotes the Operator-side Handoff verification rules to code.
+
+**Five checks:**
+
+1. **No `<!-- TBD by Operator -->` substring remains anywhere** — every Operator-fill placeholder must be replaced.
+2. **Each `### Divergent files` per-file block has a non-TBD `What diverged:` line** — per-file Operator-fill required.
+3. **Each `## Director Review` numbered Q has a non-TBD lean** — each Q's lean placeholder filled.
+4. **Each `## Director Review` numbered Q has a non-TBD `Why:`** — each Q's why placeholder filled.
+5. **When sync ∧ preserve indicated, the audit body has no `[TBD]` substring** — Part B's checklist must be filled.
+
+**Sync ∧ preserve heuristic (pinned parse rules):**
+
+- **Section bounds:** `## In Scope` body = lines after the `## In Scope` heading until (but not including) the next `## ` heading. Same shape for `## Out Of Scope`.
+- **Sync item (in In Scope body):** any line matching `` ^- `[^`]+` — (sync to canon|create from canon) ``. Both `sync to canon` (clear-sync + format-defining hard-route) and `create from canon` (missing-in-target auto-route) count — both write to target.
+- **Preserve marker (in Out Of Scope body):** any line matching `` ^- `[^`]+` — preserve marker present:``.
+- **Sync ∧ preserve fires:** at least one sync-item line in In Scope AND at least one preserve-marker line in Out Of Scope.
+
+**Output format:** `<line>:<section>: <description>` per failure (gcc/golangci-lint convention for editor jump-to-error). Exit 0 = clean, exit 1 = failures present, exit 2 = usage error.
+
+**Usage:** `governa drift-scan verify <ac-path>`. Run before handoff to the Director, after filling all five Operator-fill spots in the staged AC.
+
 ## Decision-surface coverage
 
 Every classification that requires a Director call pairs with an auto-emitted decision surface (a `## Director Review` Q). Classifications that are terminal — no Director call needed — emit no Q.
@@ -244,9 +295,9 @@ For every divergent file (classifications `preserve`, `ambiguity`, `clear-sync`)
 
 **Directory-sibling enumeration is no longer used as a coupling signal.** It was too coarse at any depth — heterogeneous content lives next to each other in many repo layouts (Jekyll site files at root next to release tooling, governance docs next to subcommand source, etc.). Sharing a directory does not imply build coupling.
 
-**Output:** each divergent file's per-file block carries a `Coupled-with: <list>` (or `Coupled-with: None`) line. The `### Coupled sets` reading-aid sub-subsection under `## Implementation Notes` summarizes the coupling graph as informational bullets naming the signal that produced each set.
+**Output:** each divergent file in a coupled set (≥2 files) carries a `Coupled-with: <signal-name> set (see § Coupled sets)` line; uncoupled files emit no `Coupled-with:` line. The `### Coupled sets` reading-aid sub-subsection under `## Implementation Notes` summarizes the coupling graph as informational bullets naming the signal that produced each set.
 
-`## Director Review` emits one numbered routing question per ambiguity file (not per coupled set). Coupling is surfaced informationally in the Q text (`Coupled-with:`) and in the `### Coupled sets` reading aid; routing is per-file and survives lean-split.
+`## Director Review` emits one numbered routing question per ambiguity file (not per coupled set). Coupling is surfaced informationally ONLY via the `### Coupled sets` reading aid; routing is per-file.
 
 ## Preserve-marker phrase set
 
@@ -267,18 +318,34 @@ For every `match`-classified file, the staged AC's `### Match evidence` sub-subs
 
 ## Refinement tracing
 
-When canonical text overwrites a section the target touched recently (check `git log -n 5 --follow -- <file>`), call out in `## Implementation Notes` which local wording is preserved verbatim in canon vs which is superseded. The Operator does this during their review of the staged AC's diff hunks.
+When a synced file's target had recent local commits (check the `Local commits:` block in the per-file Divergent files entry), the Operator MUST trace which local wording survives in canon vs. is superseded. Procedure:
+
+1. For each synced file with at least one local commit since canon adoption, open the per-file diff hunk in the sister diffs file.
+2. Identify each `+` line (target-side, what target carries that canon doesn't). These are local additions the sync would erase.
+3. Identify each `-` line (canon-side, what canon carries that target doesn't). These are canon additions that supersede prior local content.
+4. Document the trade-off in `## Implementation Notes` — narrative paragraph for one or two files, or a dedicated `### Refinement tracing` sub-subsection when multiple files need tracing. Cite each preserved-verbatim local phrase and each superseded local phrase.
+
+**Failure mode:** the Operator describes the post-merge state without acknowledging local wording about to be lost. The Director critiques the AC without realizing recent local intent is being overwritten — and may reverse the sync after critique discovers it. The trace surfaces the trade-off BEFORE the routing decision lands.
 
 ## Small-drift simplification
 
-When drift is one or two lines across one or two files: state this in the Summary, keep sections proportional. The Operator can leave Out Of Scope / Director Review as `None` and minimize ATs. The AC content requirements above still apply. Do not pad to look complete.
+When the AC's total drift is small (one or two divergent files, a handful of changed lines), the Operator MUST keep the AC proportional:
 
-When `In Scope` is otherwise `None` (every divergent file is either preserved or pending Director classification): state in the Summary that the AC ships only itself plus the staged `plan.md` IE entry (no file edits). If `## Director Review` has at least one open question, the In Scope header note replaces the `None` body — the note is the body. If Director Review is also `None`, the In Scope body remains `None — this AC ships only the staged plan.md IE entry; nothing to verify in target.`
+1. State the small-drift framing in the Summary's first sentence (e.g., "Single-line drift in one file: ...").
+2. Leave `## Out Of Scope` and `## Director Review` as `None.` if no items genuinely apply.
+3. Keep ATs minimal — one AT per actually-changed file is sufficient. Do not invent boundary-case ATs to inflate the AC.
+
+**Failure mode:** padding small-drift ACs with redundant ATs, speculative Director Review Qs, or extensive Out Of Scope lists makes them look like substantial work. Critique becomes a length-vs-substance review, not a content review. Disproportionate scaffolding signals scope creep where there is none.
+
+When `## In Scope` is otherwise `None` (every divergent file is preserved, pending Director classification, or absent from canon):
+
+- Tool emits the In Scope body as either `None — body lands as Director resolves Q1–Q<N>.` (when Director Review has open Qs) or `None — this AC ships only the staged plan.md IE entry; nothing to verify in target.` (when Director Review is `None.`).
+- Operator MUST state in the Summary that the AC ships only itself plus the staged `plan.md` IE entry (no file edits).
 
 ## Handoff
 
-After staging completes and the Operator has filled the placeholders, the report to the Director is a terse handoff — not a findings recap. The AC carries the findings; the chat message redirects.
+After all five Operator-fill spots are filled and `governa drift-scan verify <ac-path>` reports zero failures, the Operator MUST send a terse handoff message to the Director using EXACTLY the template below (substitute the actual filename and repo name):
 
 > Staged `docs/ac<N>-drift-scan-from-<short-sha>.md` in repo `<repo-name>`. Governa's part in this drift-scan run is complete. Please work with the `<repo-name>` agent there and follow AC cadence.
 
-Substitute the actual filename and repo name. Do not summarize the divergences, paste classification counts, or pad with next-step suggestions.
+**Failure mode:** the Operator pads the handoff with a findings recap (classification counts, per-file divergences, lean summaries). The Director already has the AC; recap noise wastes attention and signals that the Operator considers the chat thread the canonical record (it isn't — the AC is). The handoff redirects; it doesn't summarize.

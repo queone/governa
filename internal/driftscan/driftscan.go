@@ -147,6 +147,10 @@ Flags:
 
 // RunCLI is the cmd-layer entry point. Parses args, runs the scan, returns exit code.
 func RunCLI(args []string, tfs fs.FS) (int, error) {
+	// AC114 Part D: `governa drift-scan verify <ac-path>` subcommand.
+	if len(args) >= 1 && args[0] == "verify" {
+		return RunVerifyCLI(args[1:], os.Stdout)
+	}
 	cfg, help, err := ParseArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -1226,10 +1230,20 @@ func buildACStub(acN int, sha string, report *Report) string {
 	}
 	fmt.Fprintln(&b)
 
-	// Objective Fit placeholder
+	// Objective Fit (AC114 Part A / R4.11): pre-fill with the form parsed from
+	// target's local docs/ac-template.md. Falls back to canon's 3-part form
+	// (Outcome / Priority / Dependencies) when no parseable form is found.
+	// Eliminates F3/Class DD chicken-and-egg: Operator-fill matches target's
+	// CURRENT local form, not canon's post-sync form.
 	fmt.Fprintln(&b, "## Objective Fit")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
+	headings := parseObjectiveFitForm(report.Header.Target)
+	if headings == nil {
+		headings = []string{"Outcome", "Priority", "Dependencies"}
+	}
+	for i, h := range headings {
+		fmt.Fprintf(&b, "%d. **%s** <!-- TBD by Operator -->\n", i+1, h)
+	}
 	fmt.Fprintln(&b)
 
 	// In Scope: clear-sync files + missing-in-target with non-empty canon
@@ -1498,12 +1512,54 @@ func buildACStub(acN int, sha string, report *Report) string {
 		fmt.Fprintln(&b)
 	}
 
-	// Post-merge coherence audit placeholder.
+	// Post-merge coherence audit (AC114 Parts B+C / R4.6, R4.7). Emission
+	// branches on sync-set vs preserve-set state:
+	//   - sync-empty: vacuous body (no rules to extract).
+	//   - sync non-empty AND preserve-empty: vacuous body (no preserved files
+	//     to reconcile against).
+	//   - sync ∧ preserve: checklist scaffold with rules mechanically extracted
+	//     from each synced file's diff via extractRuleCandidates.
+	// Sync-set per the AC112 procedure = clearSync ∪ formatDefining (write to
+	// existing target files); create-from-canon files are out of audit scope.
 	fmt.Fprintln(&b, "### Post-merge coherence audit")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
-	if inScopeEmpty {
-		fmt.Fprintln(&b, "<!-- HINT: `## In Scope` is empty, so no canonical text lands in this AC — the audit has nothing to apply. Stating `Not applicable — In Scope is empty.` is sufficient. -->")
+	syncFilesForAudit := append([]FileResult{}, clearSync...)
+	syncFilesForAudit = append(syncFilesForAudit, formatDefining...)
+	switch {
+	case len(syncFilesForAudit) == 0:
+		fmt.Fprintln(&b, vacuousAuditSyncEmpty)
+	case len(preserves) == 0:
+		fmt.Fprintln(&b, vacuousAuditPreserveEmpty)
+	default:
+		// Sync ∧ preserve: emit checklist scaffold with extracted rules.
+		fmt.Fprint(&b, "**Synced files:** ")
+		syncedNames := make([]string, len(syncFilesForAudit))
+		for i, f := range syncFilesForAudit {
+			syncedNames[i] = "`" + f.Relpath + "`"
+		}
+		fmt.Fprintln(&b, strings.Join(syncedNames, ", "))
+		fmt.Fprint(&b, "**Preserved files:** ")
+		preservedNames := make([]string, len(preserves))
+		for i, f := range preserves {
+			preservedNames[i] = "`" + f.Relpath + "`"
+		}
+		fmt.Fprintln(&b, strings.Join(preservedNames, ", "))
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "Rules added by sync (extracted mechanically — Operator augments if any are missed):")
+		fmt.Fprintln(&b)
+		ruleN := 1
+		for _, f := range syncFilesForAudit {
+			for _, c := range extractRuleCandidates(f.Relpath, f.Diff) {
+				fmt.Fprintf(&b, "- [TBD] R%d: `%s` adds at line `%d`: `%s` — reconciliation: ?\n", ruleN, c.File, c.LineNum, c.Excerpt)
+				ruleN++
+			}
+		}
+		if ruleN == 1 {
+			// No imperative-tagged lines found; emit an explicit zero-rules note.
+			fmt.Fprintln(&b, "- (no imperative-tagged rules extracted from sync diffs; Operator may augment manually if any rules were missed by the heuristic)")
+		}
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "<!-- TBD by Operator: replace each `[TBD]` and `?` with the reconciliation outcome (acknowledged / intentional opt-out / contradiction). Add any rule the heuristic missed. -->")
 	}
 	fmt.Fprintln(&b)
 
@@ -1673,6 +1729,114 @@ func byteEqualityCheck(relpath, canonContent string) string {
 	h := sha256.Sum256([]byte(canonContent))
 	sum := hex.EncodeToString(h[:])
 	return fmt.Sprintf("Verify SHA-256: `[ \"$(shasum -a 256 %s | awk '{print $1}')\" = \"%s\" ]` (canon SHA-256: `%s`).", relpath, sum, sum)
+}
+
+// objectiveFitNumberedHeadingRe matches numbered-heading lines under
+// `## Objective Fit` in an ac-template.md file: `<N>. **<heading>**` followed
+// by description text. Captures the heading content (everything between the
+// `**` markers). AC114 Part A / R4.11.
+var objectiveFitNumberedHeadingRe = regexp.MustCompile(`^\d+\.\s+\*\*([^*]+)\*\*`)
+
+// imperativeRuleRe matches lines containing imperative rule tokens. Single
+// source of truth for AC114 Part B (R4.6) post-merge audit checklist
+// extraction. Spec references this constant by name; AC114 AT4 verifies the
+// pattern. Conservative: false negatives recoverable via Operator augmentation;
+// false positives cost a deletion.
+var imperativeRuleRe = regexp.MustCompile(`(?i)\b(must|every|requires|shall|always|never|each)\b`)
+
+// ruleCandidate is one imperative-tagged `+` line extracted from a sync diff
+// for the post-merge audit checklist. AC114 Part B / R4.6.
+type ruleCandidate struct {
+	File    string
+	LineNum int
+	Excerpt string
+}
+
+// extractRuleCandidates scans a unified diff hunk for `+` lines (excluding
+// `+++` header) where imperativeRuleRe matches. Each match becomes one
+// ruleCandidate. LineNum is the target-side line number tracked from the
+// `@@ -A,B +C,D @@` hunk header. Excerpt is the matched line's content
+// (without the `+` prefix), truncated to ~120 chars. AC114 Part B / R4.6.
+func extractRuleCandidates(file, diff string) []ruleCandidate {
+	var out []ruleCandidate
+	hunkHeaderRe := regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
+	targetLine := 0
+	for line := range strings.SplitSeq(diff, "\n") {
+		if m := hunkHeaderRe.FindStringSubmatch(line); m != nil {
+			fmt.Sscanf(m[1], "%d", &targetLine)
+			continue
+		}
+		if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		if content, ok := strings.CutPrefix(line, "+"); ok {
+			if imperativeRuleRe.MatchString(content) {
+				excerpt := content
+				if len(excerpt) > 120 {
+					excerpt = excerpt[:120] + "..."
+				}
+				out = append(out, ruleCandidate{File: file, LineNum: targetLine, Excerpt: excerpt})
+			}
+			targetLine++
+			continue
+		}
+		if !strings.HasPrefix(line, "-") {
+			// context line — advances target line counter
+			targetLine++
+		}
+	}
+	return out
+}
+
+// vacuousAuditSyncEmpty is the verbatim post-merge audit body emitted when
+// the sync-set is empty. AC114 Part C / R4.7.
+const vacuousAuditSyncEmpty = "Cross-file rule reconciliation is trivially vacuous — no synced files in this AC, so no canon-side rules are introduced; preserved files cannot contradict what wasn't added."
+
+// vacuousAuditPreserveEmpty is the verbatim post-merge audit body emitted when
+// the preserve-set is empty (and sync-set non-empty). AC114 Part C / R4.7.
+const vacuousAuditPreserveEmpty = "Cross-file rule reconciliation is trivially vacuous — no preserved files in this AC, so no opportunity for cross-file contradiction (everything either syncs to canon or defers)."
+
+// parseObjectiveFitForm reads `<targetRoot>/docs/ac-template.md`, locates the
+// `## Objective Fit` section, and returns the ordered list of numbered headings
+// (e.g., `["Outcome.", "Priority.", "Dependencies."]` for canon's 3-part form).
+// Returns nil if the file is missing, the section is absent, or no parseable
+// numbered headings are found. AC114 Part A / R4.11 — addresses F3/Class DD by
+// pre-filling the staged AC's Objective Fit with target's CURRENT local form.
+func parseObjectiveFitForm(targetRoot string) []string {
+	if targetRoot == "" {
+		return nil
+	}
+	content, err := os.ReadFile(filepath.Join(targetRoot, "docs", "ac-template.md"))
+	if err != nil {
+		return nil
+	}
+	const sectionMarker = "## Objective Fit"
+	body := string(content)
+	idx := strings.Index(body, "\n"+sectionMarker+"\n")
+	if idx < 0 && !strings.HasPrefix(body, sectionMarker+"\n") {
+		return nil
+	}
+	if idx < 0 {
+		idx = 0
+	} else {
+		idx++ // skip the leading newline
+	}
+	tail := body[idx+len(sectionMarker):]
+	// Truncate at next ## heading.
+	if endIdx := strings.Index(tail, "\n## "); endIdx >= 0 {
+		tail = tail[:endIdx]
+	}
+	var headings []string
+	for line := range strings.SplitSeq(tail, "\n") {
+		m := objectiveFitNumberedHeadingRe.FindStringSubmatch(line)
+		if m != nil {
+			headings = append(headings, strings.TrimSpace(m[1]))
+		}
+	}
+	if len(headings) == 0 {
+		return nil
+	}
+	return headings
 }
 
 // computeDirection counts canon-only and target-only lines in a unified diff
@@ -2271,4 +2435,260 @@ func nameReferencedTargetOnlyFiles(target string, divergent []FileResult, ourCan
 	}
 	sort.Strings(out)
 	return out
+}
+
+// VerifyFailure records one structural-compliance violation found in a staged
+// AC body. AC114 Part D / R4.12.
+type VerifyFailure struct {
+	LineNum     int
+	Section     string
+	Description string
+}
+
+// inScopeSyncItemRe matches a sync-item line in `## In Scope` body per the
+// pinned heuristic for AC114 Part D check 5. Both `sync to canon` (clear-sync
+// + format-defining hard-route) and `create from canon` (missing-in-target
+// auto-route) count — both write to target.
+var inScopeSyncItemRe = regexp.MustCompile("^- `[^`]+` — (sync to canon|create from canon)")
+
+// outOfScopePreserveMarkerRe matches a preserve-marker line in `## Out Of Scope`
+// body per the pinned heuristic for AC114 Part D check 5.
+var outOfScopePreserveMarkerRe = regexp.MustCompile("^- `[^`]+` — preserve marker present:")
+
+// directorReviewQRe matches a numbered Q in `## Director Review` body per the
+// AC109 Class V routing-matrix shape: `<N>. **`<file>`** — <lean>. Why: <why>.`
+// Captures the lean and the why.
+var directorReviewQRe = regexp.MustCompile("^\\d+\\. \\*\\*`[^`]+`\\*\\*(?:\\s+\\([^)]+\\))? — (.+?)\\. Why: (.+?)\\.\\s*$")
+
+// extractSection returns the body of the named `## <name>` section in the AC
+// body (lines from the line after the heading until the next `^## ` heading).
+// Returns ("", -1) if the section is not found. The startLine is 1-based and
+// points at the heading line; body lines start at startLine+1 (header is
+// included in returned content for line-number indexing convenience? No —
+// this returns body only; lines are returned without the heading).
+func extractSection(body, name string) (sectionBody string, headingLineNum int) {
+	heading := "## " + name
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if line == heading {
+			// Find end (next ## heading)
+			end := len(lines)
+			for j := i + 1; j < len(lines); j++ {
+				if strings.HasPrefix(lines[j], "## ") {
+					end = j
+					break
+				}
+			}
+			return strings.Join(lines[i+1:end], "\n"), i + 1
+		}
+	}
+	return "", -1
+}
+
+// extractSubSection returns the body of the named `### <name>` sub-section.
+// Otherwise mirrors extractSection.
+func extractSubSection(body, name string) (subSectionBody string, headingLineNum int) {
+	heading := "### " + name
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if line == heading {
+			end := len(lines)
+			for j := i + 1; j < len(lines); j++ {
+				if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
+					end = j
+					break
+				}
+			}
+			return strings.Join(lines[i+1:end], "\n"), i + 1
+		}
+	}
+	return "", -1
+}
+
+// hasSyncItemsAndPreserveMarkers implements the pinned heuristic for AC114
+// Part D check 5: returns true when the In Scope body has at least one
+// sync-item line AND the Out Of Scope body has at least one preserve-marker
+// line. Both regexes are pinned in the AC's Implementation Notes.
+func hasSyncItemsAndPreserveMarkers(body string) bool {
+	inScope, _ := extractSection(body, "In Scope")
+	outOfScope, _ := extractSection(body, "Out Of Scope")
+	hasSync := false
+	for line := range strings.SplitSeq(inScope, "\n") {
+		if inScopeSyncItemRe.MatchString(line) {
+			hasSync = true
+			break
+		}
+	}
+	if !hasSync {
+		return false
+	}
+	for line := range strings.SplitSeq(outOfScope, "\n") {
+		if outOfScopePreserveMarkerRe.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// Verify runs structural-compliance checks on a staged AC file and returns the
+// list of failures. AC114 Part D / R4.12. Five checks:
+//  1. No `<!-- TBD by Operator -->` substring remains anywhere.
+//  2. Each `### Divergent files` per-file block has a non-TBD `What diverged:` line.
+//  3. Each `## Director Review` numbered Q has a non-TBD lean.
+//  4. Each `## Director Review` numbered Q has a non-TBD `Why:`.
+//  5. When sync ∧ preserve indicated (per the pinned heuristic), the
+//     `### Post-merge coherence audit` body has no `[TBD]` substring.
+//
+// Returns ([]VerifyFailure{}, nil) when clean. Returns (nil, err) on IO error.
+func Verify(acPath string) ([]VerifyFailure, error) {
+	content, err := os.ReadFile(acPath)
+	if err != nil {
+		return nil, fmt.Errorf("verify: read %s: %w", acPath, err)
+	}
+	body := string(content)
+	lines := strings.Split(body, "\n")
+	var failures []VerifyFailure
+
+	// Check 1: any `<!-- TBD by Operator -->` substring.
+	for i, line := range lines {
+		if strings.Contains(line, "<!-- TBD by Operator -->") {
+			section := currentSectionAtLine(lines, i)
+			failures = append(failures, VerifyFailure{
+				LineNum:     i + 1,
+				Section:     section,
+				Description: "unfilled `<!-- TBD by Operator -->` placeholder",
+			})
+		}
+	}
+
+	// Check 2: each `### Divergent files` per-file block has a non-TBD
+	// `What diverged:` line.
+	notesBody, notesStart := extractSection(body, "Implementation Notes")
+	if notesStart > 0 {
+		dvBody, dvStart := extractSubSection(notesBody, "Divergent files")
+		if dvStart > 0 {
+			dvLines := strings.Split(dvBody, "\n")
+			currentFile := ""
+			currentFileLine := 0
+			sawWhatDiverged := false
+			for i, line := range dvLines {
+				if strings.HasPrefix(line, "#### ") {
+					if currentFile != "" && !sawWhatDiverged {
+						failures = append(failures, VerifyFailure{
+							LineNum:     notesStart + dvStart + currentFileLine,
+							Section:     "Divergent files / " + currentFile,
+							Description: "missing `What diverged:` line",
+						})
+					}
+					currentFile = strings.TrimPrefix(line, "#### ")
+					currentFileLine = i
+					sawWhatDiverged = false
+				}
+				if strings.HasPrefix(line, "What diverged:") {
+					sawWhatDiverged = true
+					content := strings.TrimSpace(strings.TrimPrefix(line, "What diverged:"))
+					if content == "" {
+						failures = append(failures, VerifyFailure{
+							LineNum:     notesStart + dvStart + i,
+							Section:     "Divergent files / " + currentFile,
+							Description: "empty `What diverged:` line",
+						})
+					}
+					// TBD case already caught by check 1.
+				}
+			}
+			if currentFile != "" && !sawWhatDiverged {
+				failures = append(failures, VerifyFailure{
+					LineNum:     notesStart + dvStart + currentFileLine,
+					Section:     "Divergent files / " + currentFile,
+					Description: "missing `What diverged:` line",
+				})
+			}
+		}
+	}
+
+	// Checks 3+4: each Director Review numbered Q has a non-TBD lean and Why.
+	drBody, drStart := extractSection(body, "Director Review")
+	if drStart > 0 {
+		drLines := strings.Split(drBody, "\n")
+		numberedQRe := regexp.MustCompile(`^\d+\. \*\*`)
+		for i, line := range drLines {
+			if !numberedQRe.MatchString(line) {
+				continue
+			}
+			m := directorReviewQRe.FindStringSubmatch(line)
+			lean := ""
+			why := ""
+			if m != nil {
+				lean = strings.TrimSpace(m[1])
+				why = strings.TrimSpace(m[2])
+			}
+			if m == nil || lean == "" || strings.Contains(lean, "<!-- TBD by Operator -->") {
+				failures = append(failures, VerifyFailure{
+					LineNum:     drStart + i,
+					Section:     "Director Review",
+					Description: "Q has missing or unfilled lean",
+				})
+			}
+			if m == nil || why == "" || strings.Contains(why, "<!-- TBD by Operator -->") {
+				failures = append(failures, VerifyFailure{
+					LineNum:     drStart + i,
+					Section:     "Director Review",
+					Description: "Q has missing or unfilled Why",
+				})
+			}
+		}
+	}
+
+	// Check 5: sync ∧ preserve heuristic + audit body `[TBD]` check.
+	if hasSyncItemsAndPreserveMarkers(body) {
+		auditBody, auditStart := extractSubSection(notesBody, "Post-merge coherence audit")
+		if auditStart > 0 {
+			auditLines := strings.Split(auditBody, "\n")
+			for i, line := range auditLines {
+				if strings.Contains(line, "[TBD]") {
+					failures = append(failures, VerifyFailure{
+						LineNum:     notesStart + auditStart + i,
+						Section:     "Post-merge coherence audit",
+						Description: "unfilled `[TBD]` reconciliation slot (sync ∧ preserve fires; audit must be filled)",
+					})
+				}
+			}
+		}
+	}
+
+	return failures, nil
+}
+
+// currentSectionAtLine returns the most recent `## <name>` heading at or
+// before lineIdx (0-based). Empty string if none found.
+func currentSectionAtLine(lines []string, lineIdx int) string {
+	for j := lineIdx; j >= 0; j-- {
+		if strings.HasPrefix(lines[j], "## ") && !strings.HasPrefix(lines[j], "### ") {
+			return strings.TrimPrefix(lines[j], "## ")
+		}
+	}
+	return ""
+}
+
+// RunVerifyCLI runs the verify subcommand: reads the AC path from args,
+// calls Verify, prints failures, returns exit code (0 = clean, 1 = failures,
+// 2 = usage error). AC114 Part D / R4.12.
+func RunVerifyCLI(args []string, out io.Writer) (int, error) {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: governa drift-scan verify <ac-path>")
+		return ExitUsage, nil
+	}
+	failures, err := Verify(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitEnvError, nil
+	}
+	for _, f := range failures {
+		fmt.Fprintf(out, "%d:%s: %s\n", f.LineNum, f.Section, f.Description)
+	}
+	if len(failures) > 0 {
+		return 1, nil
+	}
+	return ExitOK, nil
 }
