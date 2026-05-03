@@ -1,9 +1,8 @@
 // Package preptool stages a release: bumps version constants, inserts a
-// CHANGELOG row, deletes completed AC files (plus -critique.md and
-// -dispositions.md companions), runs validation builds around the write
-// phases, and prints the canonical release command. It does not run the
-// release itself; that remains the director's explicit approval via cmd/rel.
-// (AC60)
+// CHANGELOG row, deletes completed AC files, sweeps matching AC-pointer IE
+// lines from plan.md, runs validation builds around the write phases, and
+// prints the canonical release command. It does not run the release itself;
+// that remains the director's explicit approval via cmd/rel. (AC60)
 package preptool
 
 import (
@@ -45,6 +44,10 @@ var (
 	// acFileRe matches docs/ac<N>-<slug>.md and any companion suffix; we split
 	// the canonical AC file from companions by checking the suffix separately.
 	acFileRe = regexp.MustCompile(`^ac([0-9]+)-[^/]+\.md$`)
+	// iePointerRe matches an AC-pointer in a plan.md IE line. Per the plan.md
+	// convention, an AC-pointer ends in `→ docs/ac<N>-<slug>.md`. The trailing
+	// `-` after the digits disambiguates ac1 from ac10/ac11/etc.
+	iePointerRe = regexp.MustCompile(`→\s+docs/ac([0-9]+)-`)
 )
 
 const maxMessageLen = 80
@@ -165,18 +168,19 @@ func Run(cfg Config) error {
 
 	// Phase 6: parse AC refs from message and locate files.
 	acNums := parseACRefs(cfg.Message)
-	acFiles, critiqueFiles, dispFiles, err := findACCompanions(cfg.RepoRoot, acNums)
+	acFiles, err := findACFiles(cfg.RepoRoot, acNums)
 	if err != nil {
-		return fmt.Errorf("prep: find AC companions: %w", err)
+		return fmt.Errorf("prep: find AC files: %w", err)
 	}
-
-	// AC78: feedback-credit validation retired. Release messages no longer
-	// carry feedback markers; any such text in historical AC files is ignored.
 
 	versionStripped := strings.TrimPrefix(cfg.Version, "v")
 
 	if cfg.DryRun {
-		printDryRun(cfg.Out, versionTargets, changelogTargets, versionStripped, cfg.Message, acFiles, critiqueFiles, dispFiles)
+		ieLines, err := findACPointerIELines(cfg.RepoRoot, acNums)
+		if err != nil {
+			return fmt.Errorf("prep: scan plan.md for AC-pointer IEs: %w", err)
+		}
+		printDryRun(cfg.Out, versionTargets, changelogTargets, versionStripped, cfg.Message, acFiles, ieLines)
 		emitReleaseCommand(cfg.Out, cfg.Version, cfg.Message)
 		return nil
 	}
@@ -195,24 +199,26 @@ func Run(cfg Config) error {
 		}
 	}
 
-	// Phase 7c: delete AC + companion files.
+	// Phase 7c: delete AC files.
 	for _, path := range acFiles {
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("prep: delete %s: %w", path, err)
 		}
 		fmt.Fprintf(cfg.Out, "prep: deleted %s\n", path)
 	}
-	for _, path := range critiqueFiles {
-		if err := os.Remove(path); err != nil {
-			return fmt.Errorf("prep: delete %s: %w", path, err)
-		}
-		fmt.Fprintf(cfg.Out, "prep: deleted %s\n", path)
+
+	// Phase 7d: sweep AC-pointer IE lines from plan.md. Codifies the AGENTS.md
+	// Project Rule: "Remove AC-pointer IEs when their AC ships and the file is
+	// deleted at release prep — plan.md is not a historical record."
+	ieLines, err := findACPointerIELines(cfg.RepoRoot, acNums)
+	if err != nil {
+		return fmt.Errorf("prep: scan plan.md for AC-pointer IEs: %w", err)
 	}
-	for _, path := range dispFiles {
-		if err := os.Remove(path); err != nil {
-			return fmt.Errorf("prep: delete %s: %w", path, err)
-		}
-		fmt.Fprintf(cfg.Out, "prep: deleted %s\n", path)
+	if err := removeACPointerIELines(cfg.RepoRoot, ieLines); err != nil {
+		return fmt.Errorf("prep: sweep plan.md AC-pointer IEs: %w", err)
+	}
+	for _, line := range ieLines {
+		fmt.Fprintf(cfg.Out, "prep: removed plan.md IE line: %s\n", strings.TrimSpace(line))
 	}
 
 	// Phase 8: post-check build.
@@ -518,26 +524,28 @@ func parseACRefs(message string) []int {
 	return out
 }
 
-// findACCompanions locates per-AC files to act on. For each AC number,
-// finds the main AC file (docs/ac<N>-<slug>.md excluding companion suffixes),
-// its -critique.md and -dispositions.md companions. -feedback.md companions
-// are no longer a convention post-AC78 and are not enumerated.
-func findACCompanions(repoRoot string, acNums []int) (acFiles, critiqueFiles, dispFiles []string, err error) {
+// findACFiles locates the main per-AC files to delete: docs/ac<N>-<slug>.md
+// for each AC number named in the release message. Critique and disposition
+// content live inside the AC file (see docs/critique-protocol.md), so there
+// are no separate companion files to enumerate. ac-template.md is always
+// skipped.
+func findACFiles(repoRoot string, acNums []int) ([]string, error) {
 	if len(acNums) == 0 {
-		return nil, nil, nil, nil
+		return nil, nil
 	}
 	docsDir := filepath.Join(repoRoot, "docs")
 	entries, readErr := os.ReadDir(docsDir)
 	if readErr != nil {
 		if os.IsNotExist(readErr) {
-			return nil, nil, nil, nil
+			return nil, nil
 		}
-		return nil, nil, nil, readErr
+		return nil, readErr
 	}
 	wanted := make(map[int]bool, len(acNums))
 	for _, n := range acNums {
 		wanted[n] = true
 	}
+	var acFiles []string
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -557,23 +565,77 @@ func findACCompanions(repoRoot string, acNums []int) (acFiles, critiqueFiles, di
 		if !wanted[num] {
 			continue
 		}
-		full := filepath.Join(docsDir, name)
-		switch {
-		case strings.HasSuffix(name, "-critique.md"):
-			critiqueFiles = append(critiqueFiles, full)
-		case strings.HasSuffix(name, "-dispositions.md"):
-			dispFiles = append(dispFiles, full)
-		case strings.HasSuffix(name, "-feedback.md"):
-			// AC78: retired convention. Ignore silently.
-			continue
-		default:
-			acFiles = append(acFiles, full)
-		}
+		acFiles = append(acFiles, filepath.Join(docsDir, name))
 	}
 	sort.Strings(acFiles)
-	sort.Strings(critiqueFiles)
-	sort.Strings(dispFiles)
-	return acFiles, critiqueFiles, dispFiles, nil
+	return acFiles, nil
+}
+
+// findACPointerIELines reads plan.md and returns the IE lines whose
+// AC-pointer arrow targets one of the given AC numbers. Returns (nil, nil)
+// when plan.md is missing (consumer repos may not have one) or when no IE
+// lines match. Read-only: callers use removeACPointerIELines to write.
+func findACPointerIELines(repoRoot string, acNums []int) ([]string, error) {
+	if len(acNums) == 0 {
+		return nil, nil
+	}
+	planPath := filepath.Join(repoRoot, "plan.md")
+	content, err := os.ReadFile(planPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	wanted := make(map[int]bool, len(acNums))
+	for _, n := range acNums {
+		wanted[n] = true
+	}
+	var matches []string
+	for line := range strings.SplitSeq(string(content), "\n") {
+		m := iePointerRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		var num int
+		if _, err := fmt.Sscanf(m[1], "%d", &num); err != nil {
+			continue
+		}
+		if wanted[num] {
+			matches = append(matches, line)
+		}
+	}
+	return matches, nil
+}
+
+// removeACPointerIELines re-reads plan.md and writes it back with the given
+// lines removed. No-op when lines is empty. Callers obtain lines via
+// findACPointerIELines, which already returns nil when plan.md is missing,
+// so an empty-lines guard is sufficient — we never reach here without a
+// readable plan.md. Idempotent: re-running with the same lines after the
+// first sweep yields no further removals (matched lines are already gone).
+func removeACPointerIELines(repoRoot string, lines []string) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	planPath := filepath.Join(repoRoot, "plan.md")
+	content, err := os.ReadFile(planPath)
+	if err != nil {
+		return err
+	}
+	drop := make(map[string]bool, len(lines))
+	for _, line := range lines {
+		drop[line] = true
+	}
+	src := strings.Split(string(content), "\n")
+	keep := make([]string, 0, len(src))
+	for _, line := range src {
+		if drop[line] {
+			continue
+		}
+		keep = append(keep, line)
+	}
+	return os.WriteFile(planPath, []byte(strings.Join(keep, "\n")), 0o644)
 }
 
 func applyVersionBump(t versionTarget, versionStripped string) error {
@@ -643,7 +705,7 @@ func emitReleaseCommand(out io.Writer, version, message string) {
 	fmt.Fprintf(out, "\nrelease command:\n  ./build.sh %s %q\n", version, message)
 }
 
-func printDryRun(out io.Writer, versionTargets []versionTarget, changelogTargets []string, versionStripped, message string, acFiles, critiqueFiles, dispFiles []string) {
+func printDryRun(out io.Writer, versionTargets []versionTarget, changelogTargets []string, versionStripped, message string, acFiles, ieLines []string) {
 	fmt.Fprintln(out, "\n--- dry run (no writes) ---")
 	fmt.Fprintln(out, "version bumps:")
 	for _, t := range versionTargets {
@@ -657,11 +719,9 @@ func printDryRun(out io.Writer, versionTargets []versionTarget, changelogTargets
 	for _, p := range acFiles {
 		fmt.Fprintf(out, "  delete %s\n", p)
 	}
-	for _, p := range critiqueFiles {
-		fmt.Fprintf(out, "  delete %s (-critique companion)\n", p)
-	}
-	for _, p := range dispFiles {
-		fmt.Fprintf(out, "  delete %s (-dispositions companion)\n", p)
+	fmt.Fprintln(out, "plan.md AC-pointer IE removals:")
+	for _, line := range ieLines {
+		fmt.Fprintf(out, "  remove: %s\n", strings.TrimSpace(line))
 	}
 	fmt.Fprintln(out, "--- end dry run ---")
 }

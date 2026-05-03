@@ -431,9 +431,9 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "docs", "ac-template.md"), "# template\n")
 
 	acNums := parseACRefs("AC60: prep tool")
-	acFiles, _, _, err := findACCompanions(dir, acNums)
+	acFiles, err := findACFiles(dir, acNums)
 	if err != nil {
-		t.Fatalf("findACCompanions: %v", err)
+		t.Fatalf("findACFiles: %v", err)
 	}
 	if len(acFiles) != 1 || !strings.HasSuffix(acFiles[0], "ac60-prep-tool.md") {
 		t.Fatalf("single-AC: expected only ac60-prep-tool.md, got %v", acFiles)
@@ -441,9 +441,9 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 
 	// Composite message.
 	acNums = parseACRefs("AC60+AC61: bundle")
-	acFiles, _, _, err = findACCompanions(dir, acNums)
+	acFiles, err = findACFiles(dir, acNums)
 	if err != nil {
-		t.Fatalf("findACCompanions composite: %v", err)
+		t.Fatalf("findACFiles composite: %v", err)
 	}
 	if len(acFiles) != 2 {
 		t.Fatalf("composite: expected 2 AC files, got %v", acFiles)
@@ -452,29 +452,6 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 		if strings.HasSuffix(f, "ac-template.md") {
 			t.Fatalf("ac-template.md must never be included, got %v", acFiles)
 		}
-	}
-}
-
-// AT9b: -critique.md and -dispositions.md companions are deleted alongside AC.
-func TestPrepDeletesCritiqueAndDispositionsCompanions(t *testing.T) {
-	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "docs", "ac60-prep-tool.md"), "# AC60\n")
-	mustWrite(t, filepath.Join(dir, "docs", "ac60-prep-tool-critique.md"), "crit\n")
-	mustWrite(t, filepath.Join(dir, "docs", "ac60-prep-tool-dispositions.md"), "disp\n")
-
-	acNums := parseACRefs("AC60: prep")
-	ac, crit, disp, err := findACCompanions(dir, acNums)
-	if err != nil {
-		t.Fatalf("findACCompanions: %v", err)
-	}
-	if len(ac) != 1 {
-		t.Fatalf("ac files = %v", ac)
-	}
-	if len(crit) != 1 {
-		t.Fatalf("critique files = %v", crit)
-	}
-	if len(disp) != 1 {
-		t.Fatalf("dispositions files = %v", disp)
 	}
 }
 
@@ -713,6 +690,233 @@ func TestUsage(t *testing.T) {
 		if !strings.Contains(u, want) {
 			t.Errorf("Usage() missing %q. got:\n%s", want, u)
 		}
+	}
+}
+
+// Phase 7d: prep sweeps an AC-pointer IE line from plan.md when the AC it
+// points at is being deleted.
+func TestSweepACPointerIE_SingleACMatch(t *testing.T) {
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	mustWrite(t, planPath, "# Plan\n\n## Ideas To Explore\n\nIE14: prep IE sweep → docs/ac14-prep-ie-sweep.md\nIE15: keeper → docs/ac15-keeper.md\n")
+
+	acNums := parseACRefs("AC14: prep IE sweep")
+	matches, err := findACPointerIELines(dir, acNums)
+	if err != nil {
+		t.Fatalf("findACPointerIELines: %v", err)
+	}
+	if len(matches) != 1 || !strings.Contains(matches[0], "IE14:") {
+		t.Fatalf("expected only IE14 match, got %v", matches)
+	}
+	if err := removeACPointerIELines(dir, matches); err != nil {
+		t.Fatalf("removeACPointerIELines: %v", err)
+	}
+	got, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan.md: %v", err)
+	}
+	if strings.Contains(string(got), "IE14:") {
+		t.Errorf("plan.md still contains IE14 line after sweep:\n%s", string(got))
+	}
+	if !strings.Contains(string(got), "IE15:") {
+		t.Errorf("plan.md must retain IE15 line:\n%s", string(got))
+	}
+}
+
+// Phase 7d: composite release (multiple ACs in one message) sweeps every
+// matching IE line in one pass.
+func TestSweepACPointerIE_CompositeRelease(t *testing.T) {
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	mustWrite(t, planPath, "# Plan\n\nIE60: prep tool → docs/ac60-prep-tool.md\nIE61: another → docs/ac61-another.md\nIE99: untouched → docs/ac99-untouched.md\n")
+
+	acNums := parseACRefs("AC60+AC61: bundle")
+	matches, err := findACPointerIELines(dir, acNums)
+	if err != nil {
+		t.Fatalf("findACPointerIELines: %v", err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 matches, got %d: %v", len(matches), matches)
+	}
+	if err := removeACPointerIELines(dir, matches); err != nil {
+		t.Fatalf("removeACPointerIELines: %v", err)
+	}
+	got, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan.md: %v", err)
+	}
+	for _, gone := range []string{"IE60:", "IE61:"} {
+		if strings.Contains(string(got), gone) {
+			t.Errorf("plan.md still contains %s line after composite sweep:\n%s", gone, string(got))
+		}
+	}
+	if !strings.Contains(string(got), "IE99:") {
+		t.Errorf("plan.md must retain IE99 line:\n%s", string(got))
+	}
+}
+
+// Phase 7d: when no IE line matches the released AC, plan.md is left
+// untouched. Covers the common case (Director skipped the IE entirely
+// for a single-cycle AC, per AGENTS.md Project Rules).
+func TestSweepACPointerIE_NoMatchingIE(t *testing.T) {
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	original := "# Plan\n\nIE10: future work → docs/ac10-future.md\n"
+	mustWrite(t, planPath, original)
+
+	acNums := parseACRefs("AC60: prep")
+	matches, err := findACPointerIELines(dir, acNums)
+	if err != nil {
+		t.Fatalf("findACPointerIELines: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected no matches, got %v", matches)
+	}
+	if err := removeACPointerIELines(dir, matches); err != nil {
+		t.Fatalf("removeACPointerIELines: %v", err)
+	}
+	got, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan.md: %v", err)
+	}
+	if string(got) != original {
+		t.Errorf("plan.md must be byte-identical when no IE matches.\nwant:\n%s\ngot:\n%s", original, string(got))
+	}
+}
+
+// Phase 7d: an IE pointing at an AC that is NOT being deleted must remain
+// untouched. Guards against AC-number prefix collisions (e.g., AC1 vs AC10)
+// and accidental cross-AC deletion.
+func TestSweepACPointerIE_UnrelatedIEUntouched(t *testing.T) {
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	original := "# Plan\n\nIE1: short → docs/ac1-short.md\nIE10: longer → docs/ac10-longer.md\n"
+	mustWrite(t, planPath, original)
+
+	// Releasing AC1 must NOT match the AC10 IE line (prefix collision guard).
+	acNums := parseACRefs("AC1: short")
+	matches, err := findACPointerIELines(dir, acNums)
+	if err != nil {
+		t.Fatalf("findACPointerIELines: %v", err)
+	}
+	if len(matches) != 1 || !strings.Contains(matches[0], "IE1:") {
+		t.Fatalf("expected only IE1 match (no prefix-collision into IE10), got %v", matches)
+	}
+	if err := removeACPointerIELines(dir, matches); err != nil {
+		t.Fatalf("removeACPointerIELines: %v", err)
+	}
+	got, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan.md: %v", err)
+	}
+	if !strings.Contains(string(got), "IE10:") {
+		t.Errorf("plan.md must retain IE10 line (prefix-collision guard):\n%s", string(got))
+	}
+	if strings.Contains(string(got), "IE1:") {
+		t.Errorf("plan.md still contains IE1 line after sweep:\n%s", string(got))
+	}
+}
+
+// Phase 7d: end-to-end Run wiring — when invoked normally (not dry-run), prep
+// removes the AC-pointer IE line from plan.md and emits the canonical
+// "removed plan.md IE line:" log line. Guards against a future refactor that
+// drops the Phase 7d call site from Run; the helper-level tests would still
+// pass without this one.
+func TestPrepRunSweepsACPointerIE(t *testing.T) {
+	dir := t.TempDir()
+	gitInitFixture(t, dir)
+	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
+	mustWrite(t, filepath.Join(dir, "docs", "ac14-prep-ie-sweep.md"), "# AC14\n")
+	planPath := filepath.Join(dir, "plan.md")
+	mustWrite(t, planPath, "# Plan\n\nIE14: prep IE sweep → docs/ac14-prep-ie-sweep.md\nIE99: keeper → docs/ac99-keeper.md\n")
+
+	stubNoopBuild(t)
+
+	var buf bytes.Buffer
+	cfg := Config{Version: "v0.2.0", Message: "AC14: prep IE sweep", RepoRoot: dir, Out: &buf}
+	if err := Run(cfg); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got := string(mustRead(t, planPath))
+	if strings.Contains(got, "IE14:") {
+		t.Errorf("Run did not sweep IE14 from plan.md (Phase 7d not wired?):\n%s", got)
+	}
+	if !strings.Contains(got, "IE99:") {
+		t.Errorf("Run incorrectly removed unrelated IE99 line:\n%s", got)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "removed plan.md IE line:") {
+		t.Errorf("Run did not emit the canonical sweep log line. got:\n%s", out)
+	}
+}
+
+// Phase 7d (dry-run): the new "plan.md AC-pointer IE removals:" section is
+// printed when matching IEs exist, and dry-run leaves plan.md untouched.
+func TestPrepDryRunReportsIESweep(t *testing.T) {
+	dir := t.TempDir()
+	gitInitFixture(t, dir)
+	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
+	mustWrite(t, filepath.Join(dir, "docs", "ac14-prep-ie-sweep.md"), "# AC14\n")
+	planPath := filepath.Join(dir, "plan.md")
+	original := "# Plan\n\nIE14: prep IE sweep → docs/ac14-prep-ie-sweep.md\n"
+	mustWrite(t, planPath, original)
+
+	stubNoopBuild(t)
+
+	var buf bytes.Buffer
+	cfg := Config{Version: "v0.2.0", Message: "AC14: prep IE sweep", RepoRoot: dir, DryRun: true, Out: &buf}
+	if err := Run(cfg); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := string(mustRead(t, planPath)); got != original {
+		t.Errorf("DryRun must not modify plan.md.\nwant:\n%s\ngot:\n%s", original, got)
+	}
+	out := buf.String()
+	for _, want := range []string{"plan.md AC-pointer IE removals:", "remove: IE14:"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dry-run output missing %q. got:\n%s", want, out)
+		}
+	}
+}
+
+// Phase 7d (regex): tab/multi-space whitespace between → and docs/ still
+// matches; reverse prefix-collision (releasing AC10 must not match AC1)
+// holds; empty acNums short-circuits before any plan.md read.
+func TestSweepACPointerIE_RegexAndShortCircuit(t *testing.T) {
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	mustWrite(t, planPath, "# Plan\n\nIE1: lo → docs/ac1-lo.md\nIE10: hi →\tdocs/ac10-hi.md\nIE11: spaced →   docs/ac11-spaced.md\n")
+
+	// Reverse prefix-collision: releasing AC10 matches only IE10.
+	matches, err := findACPointerIELines(dir, parseACRefs("AC10: hi"))
+	if err != nil {
+		t.Fatalf("findACPointerIELines AC10: %v", err)
+	}
+	if len(matches) != 1 || !strings.Contains(matches[0], "IE10:") {
+		t.Fatalf("AC10 must match only IE10 (no collision into IE1), got %v", matches)
+	}
+
+	// Whitespace tolerance: AC11 release matches even with multi-space.
+	matches, err = findACPointerIELines(dir, parseACRefs("AC11: spaced"))
+	if err != nil {
+		t.Fatalf("findACPointerIELines AC11: %v", err)
+	}
+	if len(matches) != 1 || !strings.Contains(matches[0], "IE11:") {
+		t.Fatalf("AC11 multi-space must match, got %v", matches)
+	}
+
+	// Empty acNums: short-circuit returns (nil, nil) without reading plan.md.
+	// We can't easily prove no-read, but we can assert the contract.
+	matches, err = findACPointerIELines(dir, nil)
+	if err != nil {
+		t.Fatalf("findACPointerIELines empty acNums: %v", err)
+	}
+	if matches != nil {
+		t.Errorf("empty acNums must return nil matches, got %v", matches)
 	}
 }
 
