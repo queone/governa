@@ -39,14 +39,6 @@ const (
 	ExitUsage    = 2
 )
 
-// asymmetryNote is the one-line scan-asymmetry text. AC105 Part B requires
-// the same verbatim string in both the staged AC's `## Implementation Notes`
-// opening and the console report header. AC106 Part C updated the wording:
-// directory-sibling enumeration is dropped; files in target with no canon
-// counterpart surface via the `target-has-no-canon` classification (when in
-// the other flavor's canon) or via name-reference body scan.
-const asymmetryNote = "Scan walks canon→target only. Files in target with no canon counterpart surface under `### Files in target without canon` (when present in the other flavor's canon) or via name-reference body scan."
-
 // Classification labels per docs/drift-scan.md.
 type Classification string
 
@@ -277,11 +269,17 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	}
 	otherCanon, _ := otherFlavorCanonPaths(tfs, otherFlavor, repoName, cfg.Target)
 	for _, rel := range targetGovernanceFilesNotInCanon(cfg.Target, canon, otherCanon) {
-		report.Files = append(report.Files, FileResult{
+		fr := FileResult{
 			Relpath:        rel,
 			Classification: ClassTargetNoCanon,
 			CanonRef:       fmt.Sprintf("(no canon path for flavor %s)", flavor),
-		})
+		}
+		// AC120 Part B: emit unified diff against empty canon so the file
+		// surfaces in drift-report-<sha>-diffs.md with all target lines as `+`.
+		if targetBytes, rerr := os.ReadFile(filepath.Join(cfg.Target, rel)); rerr == nil {
+			fr.Diff = unifiedDiff("", string(targetBytes), rel, cfg.DiffLines)
+		}
+		report.Files = append(report.Files, fr)
 	}
 
 	// AC112 Class Z: name-reference body scan — the asymmetry note's second
@@ -302,11 +300,16 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		}
 	}
 	for _, rel := range nameReferencedTargetOnlyFiles(cfg.Target, divergentForScan, canon, otherCanon, alreadySurfaced) {
-		report.Files = append(report.Files, FileResult{
+		fr := FileResult{
 			Relpath:        rel,
 			Classification: ClassTargetNoCanon,
 			CanonRef:       fmt.Sprintf("(no canon path for flavor %s — name-referenced from a divergent target file)", flavor),
-		})
+		}
+		// AC120 Part B: emit unified diff against empty canon (all target lines as `+`).
+		if targetBytes, rerr := os.ReadFile(filepath.Join(cfg.Target, rel)); rerr == nil {
+			fr.Diff = unifiedDiff("", string(targetBytes), rel, cfg.DiffLines)
+		}
+		report.Files = append(report.Files, fr)
 	}
 
 	// AC119 retrench: emit report-pair files at consumer repo root, no AC
@@ -619,6 +622,9 @@ func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 	targetBytes, err := os.ReadFile(targetPath)
 	if err != nil {
 		fr.Classification = ClassMissingTarget
+		// AC120 Part B: emit unified diff against empty target so the file
+		// surfaces in drift-report-<sha>-diffs.md with all canon lines as `-`.
+		fr.Diff = unifiedDiff(canon, "", relpath, cfg.DiffLines)
 		return fr
 	}
 	target := string(targetBytes)
@@ -891,8 +897,6 @@ func writeReport(out io.Writer, r Report, asJSON bool) {
 	fmt.Fprintf(out, "- Flavor: %s\n", r.Header.Flavor)
 	fmt.Fprintf(out, "- Repo name: %s\n", r.Header.RepoName)
 	fmt.Fprintf(out, "- Counts: %s\n", tallyClassifications(r.Files))
-	// Asymmetry note: scan walks canon→target only.
-	fmt.Fprintf(out, "- %s\n", asymmetryNote)
 	fmt.Fprintln(out)
 
 	fmt.Fprintln(out, "## Files")
@@ -942,11 +946,11 @@ func writeDriftReportDiffs(target, sha string, r Report) error {
 	path := filepath.Join(target, "drift-report-"+sha+"-diffs.md")
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Drift-Scan Diffs (governa @ %s)\n\n", sha)
-	fmt.Fprintln(&b, "_Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON. `+` is \"target has this; canon does not\"; `-` is \"canon has this; target does not\"._")
+	fmt.Fprintln(&b, "Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON. `+` is \"target has this; canon does not\"; `-` is \"canon has this; target does not\".")
 	fmt.Fprintln(&b)
 	var divergent []FileResult
 	for _, f := range r.Files {
-		if isDivergentClass(f.Classification) && f.Diff != "" {
+		if f.Diff != "" {
 			divergent = append(divergent, f)
 		}
 	}

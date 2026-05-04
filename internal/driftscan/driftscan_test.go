@@ -521,7 +521,7 @@ func TestAC119_Report2Shape(t *testing.T) {
 	diffs := mustRead(t, filepath.Join(dir, "drift-report-abcdef0-diffs.md"))
 	for _, want := range []string{
 		"# Drift-Scan Diffs (governa @ abcdef0)",
-		"_Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON.",
+		"Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON.",
 	} {
 		if !strings.Contains(diffs, want) {
 			t.Errorf("AC119 AT3: diffs file missing %q. got:\n%s", want, diffs)
@@ -568,5 +568,81 @@ func TestAC119_IdempotentRescan(t *testing.T) {
 	report2 := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
 	if report1 != report2 {
 		t.Errorf("AC119 AT13: re-scan produced different report (overwrite must be idempotent)")
+	}
+}
+
+// =====================================================================
+// AC120 — Report cleanups: asymmetry note + symmetric diffs + stamp
+// =====================================================================
+
+// AC120 AT3 — A missing-in-target file appears in the diffs file with
+// a unified diff against empty target (canon lines as `-`).
+func TestAC120_MissingInTargetInDiffs(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-abcdef0-diffs.md"))
+
+	// docFixture's canon includes .gitignore (per AC119 fixtures). Target lacks it.
+	if !strings.Contains(diffs, "## `.gitignore`") {
+		t.Errorf("AC120 AT3: missing-in-target file (.gitignore) absent from diffs file:\n%s", diffs)
+	}
+	// Find the .gitignore section and verify it carries `-` lines (canon-only content).
+	idx := strings.Index(diffs, "## `.gitignore`")
+	if idx < 0 {
+		t.Fatal("section not found")
+	}
+	tail := diffs[idx:]
+	end := strings.Index(tail[len("## `.gitignore`"):], "\n## ")
+	var section string
+	if end < 0 {
+		section = tail
+	} else {
+		section = tail[:len("## `.gitignore`")+end]
+	}
+	if !strings.Contains(section, "\n-") {
+		t.Errorf("AC120 AT3: .gitignore section must carry `-` lines (canon-only). got:\n%s", section)
+	}
+}
+
+// AC120 AT4 — A target-has-no-canon file (name-reference branch) appears
+// in the diffs file with a unified diff against empty canon (target lines as `+`).
+func TestAC120_TargetHasNoCanonInDiffs(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n")
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	// Divergent rel.sh referencing target-only color.go (Class Z name-reference fixture).
+	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/foo/main.go ./cmd/foo/color.go \"$@\"\n")
+	mustWrite(t, filepath.Join(dir, "cmd/foo/main.go"), "package main\nfunc main() {}\n")
+	mustWrite(t, filepath.Join(dir, "cmd/foo/color.go"), "package main\n\nfunc col() string { return \"yellow\" }\n")
+	gitInit(t, dir)
+	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-abcdef0-diffs.md"))
+
+	if !strings.Contains(diffs, "## `cmd/foo/color.go`") {
+		t.Errorf("AC120 AT4: target-has-no-canon file (cmd/foo/color.go) absent from diffs file:\n%s", diffs)
+	}
+	idx := strings.Index(diffs, "## `cmd/foo/color.go`")
+	if idx < 0 {
+		t.Fatal("section not found")
+	}
+	tail := diffs[idx:]
+	end := strings.Index(tail[len("## `cmd/foo/color.go`"):], "\n## ")
+	var section string
+	if end < 0 {
+		section = tail
+	} else {
+		section = tail[:len("## `cmd/foo/color.go`")+end]
+	}
+	if !strings.Contains(section, "\n+") {
+		t.Errorf("AC120 AT4: cmd/foo/color.go section must carry `+` lines (target-only). got:\n%s", section)
 	}
 }
