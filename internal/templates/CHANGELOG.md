@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.112.1 | doc-coherence: align CHANGELOG separator descriptions with shipped artifact |
 | 0.112.0 | AC121: DOC overlay stdlib-only rel tool + adoption smoke test |
 | 0.111.1 | AC120: drift-scan report cleanups (asymmetry, symmetric diffs, stamp) |
 | 0.111.0 | AC117+AC118+AC119: drift-scan retrench to report-pair emission |
