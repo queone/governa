@@ -105,7 +105,9 @@ Procedure when sync ∧ preserve fires (the Operator MUST execute this on the pr
 
 ### 4. Summary
 
-One short paragraph. Frame all routing decisions as **Operator leans pending Director resolution**, not as decided routings — the Director Review section still has open Qs at handoff. Categorize counts by routing source separately:
+Tool pre-emits the canonical opener: `` Drift-scan of `<repo>` against governa @ <sha> (`<flavor>` overlay). `` Operator-fill replaces the `<!-- TBD by Operator -->` placeholder that follows with one short paragraph continuing from the opener. **Do not restate the opener with different vocabulary** (e.g., "Drift sync of …") — the pre-emit anchors vocabulary so the canon tool name (`drift-scan`) matches the filename (`ac<N>-drift-scan-from-<sha>.md`) and heading (`# AC<N> Drift-Scan from governa @ <sha>`) across all three sites.
+
+The continuation: one short paragraph framing all routing decisions as **Operator leans pending Director resolution**, not as decided routings — the Director Review section still has open Qs at handoff. Categorize counts by routing source separately:
 
 - hard-routed sync (format-defining registry)
 - leaned sync (Operator-leaned, ambiguity Q resolved as sync at staging)

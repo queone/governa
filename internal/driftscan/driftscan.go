@@ -1225,8 +1225,15 @@ func buildACStub(acN int, sha string, report *Report) string {
 	// Scope header note (class B: discipline against staleness).
 	directorReviewOpenQs := len(ambiguities) + len(noCanon)
 
-	// Summary placeholder
+	// Summary: tool pre-emits the canonical opener so Operator-fill only
+	// continues with the routing-bucket categorization. Anchors vocabulary
+	// (forbids drifting "drift-scan" → "drift sync" or other restatements)
+	// at the structural level — without this, the same vocabulary mismatch
+	// recurs on every staging because the Operator has free hand on the
+	// opener wording.
 	fmt.Fprintln(&b, "## Summary")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Drift-scan of `%s` against governa @ %s (`%s` overlay).\n", report.Header.RepoName, sha, report.Header.Flavor)
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "<!-- TBD by Operator -->")
 	if inScopeEmpty {

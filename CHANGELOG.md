@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.110.1 | drift-scan: pre-emit canonical Summary opener |
 | 0.110.0 | prep: sweep plan.md AC-pointer IEs; remove dead companion code |
 | 0.109.0 | AC116: drift-scan resolve subcommand for Director Q decisions |
 | 0.108.0 | AC113+AC114+AC115: drift-scan promotions + doc reconciliation |

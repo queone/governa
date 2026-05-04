@@ -130,7 +130,10 @@ func TestStagingHappy(t *testing.T) {
 	acContent := mustRead(t, matches[0])
 	for _, want := range []string{
 		"# AC1 Drift-Scan from governa @",
-		"## Summary\n\n<!-- TBD by Operator -->",
+		// Summary opener pre-emitted (vocabulary anchor); TBD placeholder
+		// follows on its own line for Operator-fill continuation.
+		"## Summary\n\nDrift-scan of `",
+		"` against governa @ abcdef0 (`doc` overlay).\n\n<!-- TBD by Operator -->",
 		// AC114 Part A: Objective Fit pre-fills with target's local form
 		// (canon-3-part fallback when target ac-template missing). For docFixture
 		// the local ac-template is empty, so fallback fires.
