@@ -12,7 +12,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.111.1"
+const programVersion = "0.112.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -31,8 +31,16 @@ func main() {
 		return
 	case "examples":
 		if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "-?") {
-			fmt.Fprint(os.Stderr, color.FormatUsage("governa examples", nil,
-				"Render both CODE and DOC overlays to /tmp/governa-examples/ for inspection or testing."))
+			fmt.Fprint(os.Stderr, color.FormatUsage("governa examples", []color.UsageLine{
+				{Flag: "--smoke-doc", Desc: "render DOC overlay only, no go.mod, to /tmp/governa-doc-smoke/ (build.sh adoption smoke test, AC121)"},
+			}, "Render both CODE and DOC overlays to /tmp/governa-examples/ for inspection or testing."))
+			return
+		}
+		if len(args) > 0 && args[0] == "--smoke-doc" {
+			if err := runDocSmoke(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 			return
 		}
 		if err := runExamples(); err != nil {
@@ -161,5 +169,33 @@ func runExamples() error {
 	}
 
 	fmt.Println(examplesOutputDir)
+	return nil
+}
+
+// docSmokeOutputDir is the AC121 smoke target: render DOC overlay to a fresh
+// dir WITHOUT seeding a go.mod so build.sh's smoke step can exercise the
+// no-go.mod adoption scenario that masked the AC121 bug.
+const docSmokeOutputDir = "/tmp/governa-doc-smoke"
+
+// runDocSmoke renders only the DOC overlay to docSmokeOutputDir, with no
+// go.mod seed. AC121 Part C: validates that DOC overlay's rel.sh works in a
+// fresh content-repo adoption scenario (no module-mode prerequisites).
+func runDocSmoke() error {
+	if err := os.RemoveAll(docSmokeOutputDir); err != nil {
+		return fmt.Errorf("clean smoke output dir: %w", err)
+	}
+	if err := os.MkdirAll(docSmokeOutputDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", docSmokeOutputDir, err)
+	}
+	cfg := governance.Config{
+		Mode:     governance.ModeApply,
+		RepoName: "smoke-doc",
+		Type:     governance.RepoTypeDoc,
+		Target:   docSmokeOutputDir,
+	}
+	if err := governance.RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		return fmt.Errorf("render DOC overlay (smoke): %w", err)
+	}
+	fmt.Println(docSmokeOutputDir)
 	return nil
 }
