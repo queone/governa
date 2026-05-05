@@ -107,12 +107,12 @@ func TestRefuseGovernaSelf(t *testing.T) {
 // Repo name override propagates into the report file 1 header.
 func TestRepoNameResolution(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0", RepoName: "my-override"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test", RepoName: "my-override"}
 
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 	if !strings.Contains(report, "Repo name: my-override") {
 		t.Errorf("expected override in report file, got:\n%s", report)
 	}
@@ -136,7 +136,7 @@ func TestPreserveMarker(t *testing.T) {
 // Pure-function test for IE insertion (existing IEs).
 func TestJSONOutput(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, JSON: true, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, JSON: true, OverrideCanonID: "v0.0.0-test"}
 	out := captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
@@ -199,7 +199,7 @@ func TestNoGitWorktree(t *testing.T) {
 	}
 	// No gitInit — target has no .git/.
 
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	exit, err := Run(cfg, EmbeddedFS, devNull(t))
 	if exit != ExitEnvError {
 		t.Errorf("expected ExitEnvError, got %d", exit)
@@ -243,7 +243,7 @@ func TestPreserveMarkerNotInProse(t *testing.T) {
 // T7 — H1 regression: non-existent target must error, not produce a
 // successful-looking report with all-missing classifications.
 func TestNonexistentTarget(t *testing.T) {
-	cfg := Config{Target: "/no/such/dir", Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: "/no/such/dir", Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	exit, err := Run(cfg, EmbeddedFS, devNull(t))
 	if exit != ExitEnvError {
 		t.Errorf("expected ExitEnvError, got %d", exit)
@@ -258,11 +258,11 @@ func TestNonexistentTarget(t *testing.T) {
 // `match` label used pre-AC4-fixes).
 func TestPlanMdExpectedDivergence(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 	if !strings.Contains(report, "### `plan.md` — expected-divergence") {
 		t.Errorf("expected plan.md classified as expected-divergence, got:\n%s", report)
 	}
@@ -271,7 +271,7 @@ func TestPlanMdExpectedDivergence(t *testing.T) {
 // Sanity check that the report is valid markdown headed by the right title.
 func TestReportShape(t *testing.T) {
 	r := Report{
-		Header: ReportHeader{Invocation: "test", CanonSHA: "abcdef0", Target: "/tmp/x", Flavor: "doc", RepoName: "x"},
+		Header: ReportHeader{Invocation: "test", CanonSHA: "v0.0.0-test", Target: "/tmp/x", Flavor: "doc", RepoName: "x"},
 	}
 	var buf bytes.Buffer
 	writeReport(&buf, r, false)
@@ -283,7 +283,7 @@ func TestReportShape(t *testing.T) {
 // Counts tally line appears in the report file 1 header and the stdout summary.
 func TestCountsTallyLine(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 
 	out := captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
@@ -291,7 +291,7 @@ func TestCountsTallyLine(t *testing.T) {
 	if !strings.Contains(out, "missing-in-target") {
 		t.Errorf("stdout summary missing counts (expected missing-in-target), got:\n%s", out)
 	}
-	report := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 	if !strings.Contains(report, "- Counts: ") {
 		t.Errorf("report file missing Counts line, got:\n%s", report)
 	}
@@ -351,19 +351,6 @@ func TestAnnotateCommit(t *testing.T) {
 	}
 }
 
-// Missing-in-target with non-empty canon must route into ## In Scope as
-// `create from canon`, AND get a detail subsection with content preview.
-
-func TestCanonSHAFromSourceCheckout(t *testing.T) {
-	sha, err := canonSHAFromSourceCheckout()
-	if err != nil {
-		t.Fatalf("canonSHAFromSourceCheckout failed in source tree: %v", err)
-	}
-	if len(sha) != 7 {
-		t.Errorf("expected 7-char SHA, got %q", sha)
-	}
-}
-
 // AC106 Class C: format-defining files in the registry are auto-routed
 // to ## In Scope as sync (regardless of raw classification), suppressed
 // from Director Review, and named under ### Format-defining file routing
@@ -383,7 +370,7 @@ func TestClassE_CanonCoherenceHardFail(t *testing.T) {
 	}
 
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	out := captureOut(t, func(f *os.File) {
 		exit, _ := Run(cfg, EmbeddedFS, f)
 		if exit == ExitOK {
@@ -431,11 +418,11 @@ func TestClassZ_NameReferenceBodyScan(t *testing.T) {
 	gitInit(t, dir)
 	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
 
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 
 	// cmd/foo/color.go should appear under target-has-no-canon (via name-reference).
 	if !strings.Contains(report, "`cmd/foo/color.go`") {
@@ -455,11 +442,11 @@ func TestClassZ_NoFalsePositiveOnCanonResidentRef(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "cmd/rel/main.go"), "package main\nfunc main() {}\n")
 	gitAddCommit(t, dir, "rel.sh refs canon-resident main.go")
 
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 
 	// main.go is in canon — must not appear under target-has-no-canon classification.
 	if strings.Contains(report, "### `cmd/rel/main.go` — target-has-no-canon") {
@@ -474,13 +461,13 @@ func TestClassZ_NoFalsePositiveOnCanonResidentRef(t *testing.T) {
 // AC119 AT1 — Two report files emitted at consumer root.
 func TestAC119_ReportPairEmitted(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
 		if exit, _ := Run(cfg, EmbeddedFS, f); exit != ExitOK {
 			t.Errorf("expected ExitOK, got %d", exit)
 		}
 	})
-	for _, name := range []string{"drift-report-abcdef0.md", "drift-report-abcdef0-diffs.md"} {
+	for _, name := range []string{"drift-report-v0.0.0-test.md", "drift-report-v0.0.0-test-diffs.md"} {
 		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		if err != nil {
@@ -495,12 +482,12 @@ func TestAC119_ReportPairEmitted(t *testing.T) {
 // AC119 AT2 — Report file 1 carries header + per-file blocks + format-defining flag.
 func TestAC119_Report1Shape(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	report := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 	for _, want := range []string{
 		"# Drift-Scan Report",
-		"- Canon: governa @ abcdef0",
+		"- Canon: governa @ v0.0.0-test",
 		"- Flavor: doc",
 		"- Counts: ",
 		"## Files",
@@ -516,11 +503,11 @@ func TestAC119_Report1Shape(t *testing.T) {
 // AC119 AT3 — Report file 2 carries the convention stamp + per-file H2 sections.
 func TestAC119_Report2Shape(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-abcdef0-diffs.md"))
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
 	for _, want := range []string{
-		"# Drift-Scan Diffs (governa @ abcdef0)",
+		"# Drift-Scan Diffs (governa @ v0.0.0-test)",
 		"Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON.",
 	} {
 		if !strings.Contains(diffs, want) {
@@ -534,7 +521,7 @@ func TestAC119_Report2Shape(t *testing.T) {
 func TestAC119_NoStaging(t *testing.T) {
 	dir := docFixture(t)
 	planBefore := mustRead(t, filepath.Join(dir, "plan.md"))
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
 
 	// No new AC files under docs/.
@@ -553,19 +540,19 @@ func TestAC119_NoStaging(t *testing.T) {
 // canon SHA produces identical files (overwrite, no append, no error).
 func TestAC119_IdempotentRescan(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
 		if exit, _ := Run(cfg, EmbeddedFS, f); exit != ExitOK {
 			t.Fatalf("first run: expected ExitOK, got %d", exit)
 		}
 	})
-	report1 := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report1 := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 	captureOut(t, func(f *os.File) {
 		if exit, _ := Run(cfg, EmbeddedFS, f); exit != ExitOK {
 			t.Fatalf("second run: expected ExitOK, got %d", exit)
 		}
 	})
-	report2 := mustRead(t, filepath.Join(dir, "drift-report-abcdef0.md"))
+	report2 := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 	if report1 != report2 {
 		t.Errorf("AC119 AT13: re-scan produced different report (overwrite must be idempotent)")
 	}
@@ -579,9 +566,9 @@ func TestAC119_IdempotentRescan(t *testing.T) {
 // a unified diff against empty target (canon lines as `-`).
 func TestAC120_MissingInTargetInDiffs(t *testing.T) {
 	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-abcdef0-diffs.md"))
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
 
 	// docFixture's canon includes .gitignore (per AC119 fixtures). Target lacks it.
 	if !strings.Contains(diffs, "## `.gitignore`") {
@@ -623,9 +610,9 @@ func TestAC120_TargetHasNoCanonInDiffs(t *testing.T) {
 	gitInit(t, dir)
 	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
 
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideSHA: "abcdef0"}
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-abcdef0-diffs.md"))
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
 
 	if !strings.Contains(diffs, "## `cmd/foo/color.go`") {
 		t.Errorf("AC120 AT4: target-has-no-canon file (cmd/foo/color.go) absent from diffs file:\n%s", diffs)

@@ -4,9 +4,9 @@
 
 ## Protocol
 
-- The tool walks canon, byte-compares each governed file against the target, classifies divergences, collects evidence (preserve markers, recent commits, diffs), and emits two report files at the consumer repo root: `drift-report-<short-sha>.md` and `drift-report-<short-sha>-diffs.md`.
+- The tool walks canon, byte-compares each governed file against the target, classifies divergences, collects evidence (preserve markers, recent commits, diffs), and emits two report files at the consumer repo root: `drift-report-v<version>.md` and `drift-report-v<version>-diffs.md`.
 - Before any canon→target walk, the tool runs the `## Canon-coherence precondition` check. If canon is internally incoherent on a registered cross-file rule, the tool refuses to emit and reports the incoherence on stdout. No target writes occur.
-- Idempotent: re-scanning against the same canon SHA overwrites the existing report files at the same path. No append, no error, no suffix.
+- Idempotent: re-scanning against the same canon version overwrites the existing report files at the same path. No append, no error, no suffix.
 - One repo per invocation. The tool makes no commits in the target. It does NOT stage an AC, modify `plan.md`, or write under `<target>/docs/`.
 - Assume the user has asserted the path is an adopted-governa repo. The tool refuses to run against the governa source itself.
 
@@ -14,7 +14,7 @@
 
 Two files at the consumer repo root, plus a single-line stdout summary.
 
-**`<target>/drift-report-<sha>.md`** — the file-level drift report. Header carries `Invocation`, `Canon: governa @ <sha>`, `Target`, `Flavor`, `Repo name`, `Counts: ...` (per-classification tally), and the scan-asymmetry note. Then a `## Files` section with one `### \`<relpath>\` — <classification>` block per file, each carrying:
+**`<target>/drift-report-v<version>.md`** — the file-level drift report. Header carries `Invocation`, `Canon: governa @ v<version>`, `Target`, `Flavor`, `Repo name`, `Counts: ...` (per-classification tally), and the scan-asymmetry note. Then a `## Files` section with one `### \`<relpath>\` — <classification>` block per file, each carrying:
 
 - `Canon ref: \`<canon-path>\`` — the path under canon that produced the comparison (or a "no canon path for flavor" annotation for `target-has-no-canon` files).
 - `Format-defining: yes` — when the file is in `formatDefiningCanonPaths` (consumer Operator decides routing; the tool only flags).
@@ -23,9 +23,9 @@ Two files at the consumer repo root, plus a single-line stdout summary.
 
 Diff hunks live in the sister file, not file 1.
 
-**`<target>/drift-report-<sha>-diffs.md`** — the per-file diffs. Title `# Drift-Scan Diffs (governa @ <sha>)`. Convention stamp on line 2: `_Diff convention: \`+\` lines exist in TARGET; \`-\` lines exist in CANON. \`+\` is "target has this; canon does not"; \`-\` is "canon has this; target does not"._`. One `## \`<relpath>\`` H2 section per divergent file, each with the verbatim `diff -u` hunk in a fenced code block. Empty body when no divergent files.
+**`<target>/drift-report-v<version>-diffs.md`** — the per-file diffs. Title `# Drift-Scan Diffs (governa @ v<version>)`. Convention stamp on line 2: `_Diff convention: \`+\` lines exist in TARGET; \`-\` lines exist in CANON. \`+\` is "target has this; canon does not"; \`-\` is "canon has this; target does not"._`. One `## \`<relpath>\`` H2 section per divergent file, each with the verbatim `diff -u` hunk in a fenced code block. Empty body when no divergent files.
 
-**Stdout summary** — single line: `wrote drift-report-<sha>.md and drift-report-<sha>-diffs.md (<counts>)`. Suppressed when `--json` is set; in JSON mode the full Report struct goes to stdout instead.
+**Stdout summary** — single line: `wrote drift-report-v<version>.md and drift-report-v<version>-diffs.md (<counts>)`. Suppressed when `--json` is set; in JSON mode the full Report struct goes to stdout instead.
 
 ## Divergence classification
 
@@ -43,7 +43,7 @@ The tool emits one of the classifications below for every file. The Operator can
 
   Both branches list the file under `### Files in target without canon` and emit a Director Review Q with options `keep / delete` (see `## Decision-surface coverage`). Migrating a file into canon is a separate governa-side workflow, not a drift-scan resolution; the consumer agent surfaces the file via `keep` and Director coordinates with governa maintainer if upstream migration is desired.
 
-For every divergent file, the report file 1 carries the verbatim preserve-marker citations (if any) and every commit returned by `git log -n 5 --follow -- <file>` (verbatim, not abridged). The full `diff -u` hunk lives in the sister file (`drift-report-<sha>-diffs.md`).
+For every divergent file, the report file 1 carries the verbatim preserve-marker citations (if any) and every commit returned by `git log -n 5 --follow -- <file>` (verbatim, not abridged). The full `diff -u` hunk lives in the sister file (`drift-report-v<version>-diffs.md`).
 
 ## Format-defining files
 
@@ -99,5 +99,5 @@ When shipping an AC that locks a local form against canon, include one of these 
 
 ## Match evidence
 
-For every `match`-classified file, the staged AC's `### Match evidence` sub-subsection names the comparison method — `byte-equal (canon @ <sha> vs <relpath>)`. Files whose canon is a per-repo stub appear under `### Expected per-repo divergence` instead, with a note explaining the divergence is by design.
+For every `match`-classified file, the staged AC's `### Match evidence` sub-subsection names the comparison method — `byte-equal (canon @ v<version> vs <relpath>)`. Files whose canon is a per-repo stub appear under `### Expected per-repo divergence` instead, with a note explaining the divergence is by design.
 

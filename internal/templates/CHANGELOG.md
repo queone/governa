@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.113.0 | AC122: drift-scan canon-id from version + post-commit re-install |
 | 0.112.1 | doc-coherence: align CHANGELOG separator descriptions with shipped artifact |
 | 0.112.0 | AC121: DOC overlay stdlib-only rel tool + adoption smoke test |
 | 0.111.1 | AC120: drift-scan report cleanups (asymmetry, symmetric diffs, stamp) |

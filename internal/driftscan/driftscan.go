@@ -23,8 +23,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
-	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -61,10 +59,11 @@ type Config struct {
 	RepoName   string // overrides basename of Target
 	Invocation string // exact CLI invocation string for the report header
 
-	// OverrideSHA bypasses canonSHA() lookup. Used in tests where
-	// runtime/debug.ReadBuildInfo()'s vcs.revision is unavailable.
-	// Production callers leave this empty.
-	OverrideSHA string
+	// OverrideCanonID bypasses the canon-id derivation (which reads
+	// templates.TemplateVersion at runtime). Used in tests to pin a stable,
+	// synthetic canon identifier (e.g., "v0.0.0-test"). Production callers
+	// leave this empty.
+	OverrideCanonID string
 }
 
 // ParseArgs parses CLI arguments. Returns config, help bool, error.
@@ -179,14 +178,15 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		return ExitEnvError, fmt.Errorf("drift-scan: git binary not found on PATH; install git before running drift-scan")
 	}
 
-	// Canon SHA via build-time vcs.revision (or test override).
-	sha := cfg.OverrideSHA
+	// Canon identifier from embedded templates.TemplateVersion (or test
+	// override). v-prefix matches the semver tag form. AC122 Part A: replaced
+	// runtime vcs.revision lookup with this version-based identifier so the
+	// canon-id is invariant across install timing — vcs.revision was prone
+	// to drift when binaries got installed during release prep before the
+	// release commit was made.
+	sha := cfg.OverrideCanonID
 	if sha == "" {
-		var err error
-		sha, err = canonSHA()
-		if err != nil {
-			return ExitEnvError, fmt.Errorf("drift-scan: %w", err)
-		}
+		sha = "v" + templates.TemplateVersion
 	}
 
 	// Flavor.
@@ -331,52 +331,6 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 			sha, sha, tallyClassifications(report.Files))
 	}
 	return ExitOK, nil
-}
-
-// canonSHA returns the 7-char canon SHA. Tries (in order) the build-time
-// vcs.revision setting (works for `go build` / `go install`), then a
-// runtime.Caller-based git rev-parse fallback (works for `go run` from a
-// source checkout). The fallback exists because `go run` defaults to
-// -buildvcs=auto which silently omits VCS info — without the fallback,
-// `go run ./cmd/governa drift-scan ...` would always fail.
-func canonSHA() (string, error) {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, s := range info.Settings {
-			if s.Key == "vcs.revision" && s.Value != "" {
-				if len(s.Value) >= 7 {
-					return s.Value[:7], nil
-				}
-				return s.Value, nil
-			}
-		}
-	}
-	if sha, err := canonSHAFromSourceCheckout(); err == nil {
-		return sha, nil
-	}
-	return "", fmt.Errorf("vcs.revision unavailable: BuildInfo lacks vcs.revision and source-checkout fallback failed — `go build` / `go install` from a git checkout, or pass `-buildvcs=true` to `go run`")
-}
-
-// canonSHAFromSourceCheckout uses runtime.Caller to locate this source file
-// on disk and runs `git rev-parse HEAD` from its directory. Works when the
-// binary is invoked from a source checkout (`go run` or any source-tree
-// build); fails when the source is in a Go module cache or the source dir
-// is not a git worktree.
-func canonSHAFromSourceCheckout() (string, error) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok || file == "" {
-		return "", fmt.Errorf("runtime.Caller unavailable")
-	}
-	dir := filepath.Dir(file)
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	sha := strings.TrimSpace(string(out))
-	if len(sha) >= 7 {
-		return sha[:7], nil
-	}
-	return sha, nil
 }
 
 func detectFlavor(target string) (string, error) {
