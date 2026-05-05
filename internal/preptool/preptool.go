@@ -2,7 +2,7 @@
 // CHANGELOG row, deletes completed AC files, sweeps matching AC-pointer IE
 // lines from plan.md, runs validation builds around the write phases, and
 // prints the canonical release command. It does not run the release itself;
-// that remains the director's explicit approval via cmd/rel. (AC60)
+// that remains the director's explicit approval via cmd/rel.
 package preptool
 
 import (
@@ -127,7 +127,7 @@ itself — present the printed command for the director to run.
 `
 }
 
-// Run stages the release per the phases documented in AC60.
+// Run stages the release per the documented phases.
 func Run(cfg Config) error {
 	if cfg.Out == nil {
 		cfg.Out = os.Stdout
@@ -340,7 +340,7 @@ type versionTarget struct {
 // parseModuleBasename returns the basename of the module path declared in
 // repoRoot/go.mod (e.g., "governa" for `module github.com/queone/governa`).
 // Returns "" when go.mod is missing, unreadable, or has no `module` line.
-// Used by detectVersionTargets to apply the primary-cmd convention (AC110):
+// Used by detectVersionTargets to apply the primary-cmd convention:
 // cmd/<basename>/main.go is the primary binary and bumps with the repo;
 // other cmd/*/main.go are secondaries with independent versioning.
 func parseModuleBasename(repoRoot string) string {
@@ -364,7 +364,7 @@ func parseModuleBasename(repoRoot string) string {
 
 // detectVersionTargets scans the repo for programVersion declarations and
 // template-version targets. The programVersion scan applies a primary-cmd
-// convention (AC110): if cmd/<module-basename>/main.go declares programVersion,
+// convention: if cmd/<module-basename>/main.go declares programVersion,
 // that file is the primary and is bumped; other cmd/*/main.go are secondaries
 // (independent versioning, never bumped by prep). When no primary exists, fall
 // back to the historical auto-detect: 1 target → bump (single-utility repo);
@@ -398,7 +398,7 @@ func detectVersionTargets(repoRoot string) ([]versionTarget, string, error) {
 		}
 	}
 
-	// AC110 primary-cmd convention: cmd/<module-basename>/main.go is the
+	// cmd/<module-basename>/main.go is the
 	// primary binary and bumps with the repo. Other cmd/*/main.go are
 	// secondaries — independent versioning, like utils-style multi-utility
 	// repos. Only kicks in when go.mod is parseable AND the primary cmd

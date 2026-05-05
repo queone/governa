@@ -6,7 +6,7 @@
 // (renderAndValidateExamples below); the consumer-facing overlay does NOT
 // register a hook. Kept in-tree (not extracted to the library's cmd/) for the
 // same reason as cmd/rel: extraction would move version pinning into build.sh
-// files. See AC102 reasoning.
+// files.
 package main
 
 import (
@@ -91,9 +91,9 @@ func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer)
 		os.RemoveAll(exDir)
 		fmt.Fprintln(out, "    example validation passed; cleaned up "+exDir)
 
-		// AC121 Part C: smoke test DOC overlay's no-go.mod adoption path.
+		// smoke test DOC overlay's no-go.mod adoption path.
 		// `governa examples` always seeds a go.mod into the rendered dirs,
-		// which masks the AC121 bug (DOC overlay's rel.sh fails in fresh
+		// which masks the no-go.mod-adoption bug (DOC overlay's rel.sh fails in fresh
 		// content repos with no go.mod). The smoke step renders DOC overlay
 		// to a separate dir without seeding go.mod, then exercises rel.sh
 		// (no args = print usage, exit 0). A future regression that re-
@@ -108,7 +108,7 @@ func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer)
 			return fmt.Errorf("DOC smoke: go.mod was seeded into %s — adoption-time bug check is masked", smokeDir)
 		}
 		if err := runStreamingInDir(smokeDir, out, errOut, "./rel.sh"); err != nil {
-			return fmt.Errorf("DOC smoke: rel.sh failed in no-go.mod dir (this is the AC121 bug — DOC overlay's rel surface requires module mode): %w", err)
+			return fmt.Errorf("DOC smoke: rel.sh failed in no-go.mod dir (this is the no-go.mod-adoption bug — DOC overlay's rel surface requires module mode): %w", err)
 		}
 		os.RemoveAll(smokeDir)
 		fmt.Fprintln(out, "    DOC smoke passed; cleaned up "+smokeDir)

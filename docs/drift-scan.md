@@ -39,7 +39,7 @@ The tool emits one of the classifications below for every file. The Operator can
 - **`missing-in-target`** — canon ships the file; target does not. If canon is non-empty, routed to `## In Scope` as `create from canon` and detailed under `### Missing in target (create candidates)` with a content preview. The auto-emitted AT is a byte-equality check against canon content. If canon is empty, listed under `### Warnings` only.
 - **`target-has-no-canon`** — file exists in target, NOT in canon for this flavor. Two branches surface a file under this classification (per the asymmetry note's promise):
   - **Cross-flavor branch:** the file exists in the OTHER flavor's canon. Possible flavor mismatch.
-  - **Name-reference branch (AC112 Class Z):** the file exists in target only (no canon counterpart in either flavor) but is name-referenced from a divergent target file (e.g., `rel.sh` references `./cmd/rel/color.go` and color.go has no canon presence).
+  - **Name-reference branch:** the file exists in target only (no canon counterpart in either flavor) but is name-referenced from a divergent target file (e.g., `rel.sh` references `./cmd/rel/color.go` and color.go has no canon presence).
 
   Both branches list the file under `### Files in target without canon` and emit a Director Review Q with options `keep / delete` (see `## Decision-surface coverage`). Migrating a file into canon is a separate governa-side workflow, not a drift-scan resolution; the consumer agent surfaces the file via `keep` and Director coordinates with governa maintainer if upstream migration is desired.
 

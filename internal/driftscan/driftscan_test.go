@@ -72,7 +72,7 @@ func mustWrite(t *testing.T, path, content string) {
 
 // findStagedACs returns the AC file paths under dir/docs/ matching the
 // drift-scan staging pattern, excluding the `-diffs.md` sister files
-// introduced in AC105 Part B.
+// introduced for the sister diffs file.
 func findStagedACs(t *testing.T, dir string) []string {
 	t.Helper()
 	all, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
@@ -255,7 +255,7 @@ func TestNonexistentTarget(t *testing.T) {
 
 // H2 regression: plan.md content divergence is expected and must classify
 // as expected-divergence (not ambiguity / clear-sync, and not the misleading
-// `match` label used pre-AC4-fixes).
+// `match` label used pre-fix).
 func TestPlanMdExpectedDivergence(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
@@ -351,12 +351,12 @@ func TestAnnotateCommit(t *testing.T) {
 	}
 }
 
-// AC106 Class C: format-defining files in the registry are auto-routed
+// format-defining files in the registry are auto-routed
 // to ## In Scope as sync (regardless of raw classification), suppressed
 // from Director Review, and named under ### Format-defining file routing
 // with rationale.
-func TestClassE_CanonCoherenceHardFail(t *testing.T) {
-	// Use the live canon — it's coherent post-AC106 reconciliation.
+func TestCanonCoherenceHardFailEmitsReport(t *testing.T) {
+	// Use the live canon — it's coherent after reconciliation.
 	// To exercise the hard-fail path, install a coherence rule with a
 	// pattern guaranteed not to match.
 	saved := coherenceRules
@@ -374,34 +374,34 @@ func TestClassE_CanonCoherenceHardFail(t *testing.T) {
 	out := captureOut(t, func(f *os.File) {
 		exit, _ := Run(cfg, EmbeddedFS, f)
 		if exit == ExitOK {
-			t.Errorf("class E: expected non-zero exit on canon-coherence failure, got ExitOK")
+			t.Errorf("expected non-zero exit on canon-coherence failure, got ExitOK")
 		}
 	})
 	if !strings.Contains(out, "# Canon-Coherence Precondition Failed") {
-		t.Errorf("class E: expected `# Canon-Coherence Precondition Failed` H1 on stdout, got:\n%s", out)
+		t.Errorf("expected `# Canon-Coherence Precondition Failed` H1 on stdout, got:\n%s", out)
 	}
 	if !strings.Contains(out, "**governa-side**") {
-		t.Errorf("class E: expected governa-side framing in report, got:\n%s", out)
+		t.Errorf("expected governa-side framing in report, got:\n%s", out)
 	}
 	// No target writes.
 	staged := findStagedACs(t, dir)
 	if len(staged) > 0 {
-		t.Errorf("class E: expected no staged ACs after hard-fail, got %v", staged)
+		t.Errorf("expected no staged ACs after hard-fail, got %v", staged)
 	}
 }
 
-// AC106 Class I: `target-has-no-canon` files emit a Director Review Q
+// `target-has-no-canon` files emit a Director Review Q
 // with keep/delete/migrate-to-canon options. Closes the decision-surface
 // coverage gap — every non-terminal classification must pair with a Q.
-func TestClassP_AGENTSMdInRegistry(t *testing.T) {
+func TestAGENTSMdRegisteredAsFormatDefining(t *testing.T) {
 	if !formatDefiningCanonPaths["AGENTS.md"] {
-		t.Error("AC108 AT4: formatDefiningCanonPaths must contain AGENTS.md after Class P registry broadening")
+		t.Error("formatDefiningCanonPaths must contain AGENTS.md")
 	}
 }
 
-// AC108 AT5 — When AGENTS.md is divergent, `### Format-defining file routing`
+// When AGENTS.md is divergent, `### Format-defining file routing`
 // block lists it.
-func TestClassZ_NameReferenceBodyScan(t *testing.T) {
+func TestNameReferenceSurfacesTargetOnlyFile(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
@@ -416,7 +416,7 @@ func TestClassZ_NameReferenceBodyScan(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "cmd/foo/main.go"), "package main\nfunc main() {}\n")
 	mustWrite(t, filepath.Join(dir, "cmd/foo/color.go"), "package main\nfunc col() {}\n")
 	gitInit(t, dir)
-	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
+	gitAddCommit(t, dir, "rel.sh + color.go")
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
@@ -426,15 +426,15 @@ func TestClassZ_NameReferenceBodyScan(t *testing.T) {
 
 	// cmd/foo/color.go should appear under target-has-no-canon (via name-reference).
 	if !strings.Contains(report, "`cmd/foo/color.go`") {
-		t.Errorf("AC112 Class Z: name-referenced target-only `cmd/foo/color.go` must surface in drift report, got:\n%s", report)
+		t.Errorf("name-referenced target-only `cmd/foo/color.go` must surface in drift report, got:\n%s", report)
 	}
 	if !strings.Contains(report, "target-has-no-canon") {
-		t.Errorf("AC112 Class Z: report must classify color.go as target-has-no-canon, got:\n%s", report)
+		t.Errorf("report must classify color.go as target-has-no-canon, got:\n%s", report)
 	}
 }
 
-// AC112 AT6 — name-reference scan does not false-positive on canon-resident refs.
-func TestClassZ_NoFalsePositiveOnCanonResidentRef(t *testing.T) {
+// name-reference scan does not false-positive on canon-resident refs.
+func TestNameReferenceNoFalsePositiveOnCanonResidentRef(t *testing.T) {
 	// rel.sh references ./cmd/rel/main.go which IS in canon (DOC overlay).
 	// Should NOT trigger target-has-no-canon for main.go.
 	dir := docFixture(t)
@@ -450,16 +450,16 @@ func TestClassZ_NoFalsePositiveOnCanonResidentRef(t *testing.T) {
 
 	// main.go is in canon — must not appear under target-has-no-canon classification.
 	if strings.Contains(report, "### `cmd/rel/main.go` — target-has-no-canon") {
-		t.Errorf("AC112 Class Z: canon-resident main.go must NOT classify as target-has-no-canon, got:\n%s", report)
+		t.Errorf("canon-resident main.go must NOT classify as target-has-no-canon, got:\n%s", report)
 	}
 }
 
 // =====================================================================
-// AC119 — Drift-scan retrench: report-pair emission
+// Historical: Drift-scan retrench: report-pair emission
 // =====================================================================
 
-// AC119 AT1 — Two report files emitted at consumer root.
-func TestAC119_ReportPairEmitted(t *testing.T) {
+// Two report files emitted at consumer root.
+func TestReportPairEmittedAtConsumerRoot(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
@@ -471,16 +471,16 @@ func TestAC119_ReportPairEmitted(t *testing.T) {
 		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		if err != nil {
-			t.Fatalf("AC119 AT1: expected %s at consumer root, got: %v", name, err)
+			t.Fatalf("expected %s at consumer root, got: %v", name, err)
 		}
 		if info.Size() == 0 {
-			t.Errorf("AC119 AT1: %s is empty", name)
+			t.Errorf("%s is empty", name)
 		}
 	}
 }
 
-// AC119 AT2 — Report file 1 carries header + per-file blocks + format-defining flag.
-func TestAC119_Report1Shape(t *testing.T) {
+// Report file 1 carries header + per-file blocks + format-defining flag.
+func TestReport1HeaderAndPerFileBlocks(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
@@ -495,13 +495,13 @@ func TestAC119_Report1Shape(t *testing.T) {
 		"Format-defining: yes", // AGENTS.md is in formatDefiningCanonPaths
 	} {
 		if !strings.Contains(report, want) {
-			t.Errorf("AC119 AT2: report file 1 missing %q. got:\n%s", want, report)
+			t.Errorf("report file 1 missing %q. got:\n%s", want, report)
 		}
 	}
 }
 
-// AC119 AT3 — Report file 2 carries the convention stamp + per-file H2 sections.
-func TestAC119_Report2Shape(t *testing.T) {
+// Report file 2 carries the convention stamp + per-file H2 sections.
+func TestReport2DiffsHeaderAndConvention(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
@@ -511,14 +511,14 @@ func TestAC119_Report2Shape(t *testing.T) {
 		"Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON.",
 	} {
 		if !strings.Contains(diffs, want) {
-			t.Errorf("AC119 AT3: diffs file missing %q. got:\n%s", want, diffs)
+			t.Errorf("diffs file missing %q. got:\n%s", want, diffs)
 		}
 	}
 }
 
-// AC119 AT4 — Run() does NOT stage an AC under <target>/docs/ and does NOT
+// Run() does NOT stage an AC under <target>/docs/ and does NOT
 // modify plan.md.
-func TestAC119_NoStaging(t *testing.T) {
+func TestRunDoesNotStageACOrModifyPlan(t *testing.T) {
 	dir := docFixture(t)
 	planBefore := mustRead(t, filepath.Join(dir, "plan.md"))
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
@@ -527,18 +527,18 @@ func TestAC119_NoStaging(t *testing.T) {
 	// No new AC files under docs/.
 	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
 	if len(matches) != 0 {
-		t.Errorf("AC119 AT4: expected no staged AC under docs/, got %v", matches)
+		t.Errorf("expected no staged AC under docs/, got %v", matches)
 	}
 	// plan.md unchanged.
 	planAfter := mustRead(t, filepath.Join(dir, "plan.md"))
 	if planBefore != planAfter {
-		t.Errorf("AC119 AT4: plan.md must not be modified.\nbefore:\n%s\nafter:\n%s", planBefore, planAfter)
+		t.Errorf("plan.md must not be modified.\nbefore:\n%s\nafter:\n%s", planBefore, planAfter)
 	}
 }
 
-// AC119 AT13 — Idempotent re-scan: invoking Run() twice against the same
+// Idempotent re-scan: invoking Run() twice against the same
 // canon SHA produces identical files (overwrite, no append, no error).
-func TestAC119_IdempotentRescan(t *testing.T) {
+func TestRescanOverwritesIdempotently(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
@@ -554,25 +554,25 @@ func TestAC119_IdempotentRescan(t *testing.T) {
 	})
 	report2 := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
 	if report1 != report2 {
-		t.Errorf("AC119 AT13: re-scan produced different report (overwrite must be idempotent)")
+		t.Errorf("re-scan produced different report (overwrite must be idempotent)")
 	}
 }
 
 // =====================================================================
-// AC120 — Report cleanups: asymmetry note + symmetric diffs + stamp
+// Historical: Report cleanups: asymmetry note + symmetric diffs + stamp
 // =====================================================================
 
-// AC120 AT3 — A missing-in-target file appears in the diffs file with
+// A missing-in-target file appears in the diffs file with
 // a unified diff against empty target (canon lines as `-`).
-func TestAC120_MissingInTargetInDiffs(t *testing.T) {
+func TestMissingInTargetSurfacesInDiffsFile(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
 	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
 
-	// docFixture's canon includes .gitignore (per AC119 fixtures). Target lacks it.
+	// docFixture's canon includes .gitignore. Target lacks it.
 	if !strings.Contains(diffs, "## `.gitignore`") {
-		t.Errorf("AC120 AT3: missing-in-target file (.gitignore) absent from diffs file:\n%s", diffs)
+		t.Errorf("missing-in-target file (.gitignore) absent from diffs file:\n%s", diffs)
 	}
 	// Find the .gitignore section and verify it carries `-` lines (canon-only content).
 	idx := strings.Index(diffs, "## `.gitignore`")
@@ -588,13 +588,13 @@ func TestAC120_MissingInTargetInDiffs(t *testing.T) {
 		section = tail[:len("## `.gitignore`")+end]
 	}
 	if !strings.Contains(section, "\n-") {
-		t.Errorf("AC120 AT3: .gitignore section must carry `-` lines (canon-only). got:\n%s", section)
+		t.Errorf(".gitignore section must carry `-` lines (canon-only). got:\n%s", section)
 	}
 }
 
-// AC120 AT4 — A target-has-no-canon file (name-reference branch) appears
+// A target-has-no-canon file (name-reference branch) appears
 // in the diffs file with a unified diff against empty canon (target lines as `+`).
-func TestAC120_TargetHasNoCanonInDiffs(t *testing.T) {
+func TestTargetHasNoCanonSurfacesInDiffsFile(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
@@ -603,19 +603,19 @@ func TestAC120_TargetHasNoCanonInDiffs(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
-	// Divergent rel.sh referencing target-only color.go (Class Z name-reference fixture).
+	// Divergent rel.sh referencing target-only color.go (name-reference fixture).
 	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/foo/main.go ./cmd/foo/color.go \"$@\"\n")
 	mustWrite(t, filepath.Join(dir, "cmd/foo/main.go"), "package main\nfunc main() {}\n")
 	mustWrite(t, filepath.Join(dir, "cmd/foo/color.go"), "package main\n\nfunc col() string { return \"yellow\" }\n")
 	gitInit(t, dir)
-	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
+	gitAddCommit(t, dir, "rel.sh + color.go")
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
 	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
 
 	if !strings.Contains(diffs, "## `cmd/foo/color.go`") {
-		t.Errorf("AC120 AT4: target-has-no-canon file (cmd/foo/color.go) absent from diffs file:\n%s", diffs)
+		t.Errorf("target-has-no-canon file (cmd/foo/color.go) absent from diffs file:\n%s", diffs)
 	}
 	idx := strings.Index(diffs, "## `cmd/foo/color.go`")
 	if idx < 0 {
@@ -630,19 +630,19 @@ func TestAC120_TargetHasNoCanonInDiffs(t *testing.T) {
 		section = tail[:len("## `cmd/foo/color.go`")+end]
 	}
 	if !strings.Contains(section, "\n+") {
-		t.Errorf("AC120 AT4: cmd/foo/color.go section must carry `+` lines (target-only). got:\n%s", section)
+		t.Errorf("cmd/foo/color.go section must carry `+` lines (target-only). got:\n%s", section)
 	}
 }
 
 // =====================================================================
-// AC123 — Per-file Direction line in diffs file (Class N mitigation)
+// Historical: Per-file Direction line in diffs file (diff-direction integrity mitigation)
 // =====================================================================
 
-// AC123 AT8/9/10 — Direction line emitted per-file in the diffs file.
+// // Direction line emitted per-file in the diffs file.
 // docFixture has missing-in-target (.gitignore: canon-only → canon leads).
-// Add a target-has-no-canon file via the Class Z fixture pattern (target
+// Add a target-has-no-canon file via the name-reference fixture pattern (target
 // content via name-reference from divergent rel.sh → target leads).
-func TestAC123_DirectionLineEmitted(t *testing.T) {
+func TestDirectionLineEmittedPerFile(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
@@ -655,7 +655,7 @@ func TestAC123_DirectionLineEmitted(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "cmd/foo/main.go"), "package main\nfunc main() {}\n")
 	mustWrite(t, filepath.Join(dir, "cmd/foo/color.go"), "package main\n\nfunc col() string { return \"yellow\" }\n")
 	gitInit(t, dir)
-	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
+	gitAddCommit(t, dir, "rel.sh + color.go")
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
@@ -663,25 +663,25 @@ func TestAC123_DirectionLineEmitted(t *testing.T) {
 
 	// Each per-file H2 section should carry a Direction line.
 	if !strings.Contains(diffs, "Direction: ") {
-		t.Errorf("AC123 AT8: diffs file missing Direction lines:\n%s", diffs)
+		t.Errorf("diffs file missing Direction lines:\n%s", diffs)
 	}
 	// rel.sh diverges (target +1 / canon -1) → mutual form (target carries N lines absent in canon; canon carries M lines absent in target).
 	// .gitignore is missing-in-target (canon has content; target empty) → canon leads.
 	gitignoreIdx := strings.Index(diffs, "## `.gitignore`")
 	if gitignoreIdx < 0 {
-		t.Fatal("AC123: .gitignore section not found in diffs file")
+		t.Fatal(".gitignore section not found in diffs file")
 	}
 	gitignoreSection := diffs[gitignoreIdx:]
 	if !strings.Contains(gitignoreSection[:200], "Direction: canon leads") {
-		t.Errorf("AC123 AT9: .gitignore section must carry `Direction: canon leads` near the heading. got:\n%s", gitignoreSection[:min(len(gitignoreSection), 400)])
+		t.Errorf(".gitignore section must carry `Direction: canon leads` near the heading. got:\n%s", gitignoreSection[:min(len(gitignoreSection), 400)])
 	}
 	// cmd/foo/color.go is target-has-no-canon (target has content; canon empty) → target leads.
 	colorIdx := strings.Index(diffs, "## `cmd/foo/color.go`")
 	if colorIdx < 0 {
-		t.Fatal("AC123: cmd/foo/color.go section not found in diffs file")
+		t.Fatal("cmd/foo/color.go section not found in diffs file")
 	}
 	colorSection := diffs[colorIdx:]
 	if !strings.Contains(colorSection[:200], "Direction: target leads") {
-		t.Errorf("AC123 AT10: cmd/foo/color.go section must carry `Direction: target leads` near the heading. got:\n%s", colorSection[:min(len(colorSection), 400)])
+		t.Errorf("cmd/foo/color.go section must carry `Direction: target leads` near the heading. got:\n%s", colorSection[:min(len(colorSection), 400)])
 	}
 }

@@ -82,6 +82,7 @@ Rules:
 - Follow semver. PATCH: invisible to users (fixes, refactors, formatting). MINOR: user-visible (structure, navigation, schema). Batch PATCH-level changes.
 - Every AC labels each acceptance test with source axis (`[Automated]` / `[Manual]`) and timing axis (`[Pre-release gate]` default; `[Post-release verification]` explicit). See `docs/ac-template.md`.
 - Follow existing repo patterns unless an approved improvement says otherwise.
+- Test names describe behavior, not AC numbering. AC files get deleted at release prep; test names outlive the file and become decode-bait. `TestDirectionLineEmittedInDiffs`, not `TestAC123_DirectionLineEmitted`. Same rule applies to per-AC sub-categorization labels like `Class N` / `Class Z` / etc. — once their AC files are gone, the labels are equally undecodable, so neither test names (`TestClassZ_*`) nor source/test comments/error messages should carry them. Same for source comments — describe intent or constraint, not AC or Class labels. AC traceability lives in CHANGELOG rows + commit messages. When an AC or Class reference is purely historical context with no actionable intent (e.g., a retired convention), prefix the comment with `Historical:` or delete entirely if surrounding code is self-explanatory.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace). Batch independent shell calls. Do not re-read files already in context.
 
 ## Project Rules

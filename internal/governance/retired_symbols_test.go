@@ -10,19 +10,19 @@ import (
 )
 
 // TestRetiredSymbolsNotPresent is a repo-wide regression guard locking down
-// AC78/AC79/AC80 retired-symbol cleanup. Walks the repo tree, greps for any
+// Historical: retired-symbol cleanup. Walks the repo tree, greps for any
 // symbol that should have been removed, fails on hits. Excludes history paths
 // (historical AC files, CHANGELOGs, .git) so AC-document prose referencing
 // retired conventions as historical record stays allowed.
 //
-// AC80 AT13. When a future AC retires more symbols, extend the retiredSymbols
-// slice here; consumers syncing get the benefit automatically via the overlay
+// When a future AC retires more symbols, extend the retiredSymbols slice
+// here; consumers syncing get the benefit automatically via the overlay
 // regression guard.
 func TestRetiredSymbolsNotPresent(t *testing.T) {
 	t.Parallel()
 
 	retiredSymbols := []string{
-		// AC78 — feedback/ack machinery retired
+		// Historical: feedback/ack machinery retired
 		"moveFeedbackCompanion",
 		"validateFeedbackCredits",
 		"feedbackCredit",
@@ -34,15 +34,15 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		"EnhancementReport",
 		"SelfReviewDelta",
 		"ConfigCritiqueMode",
-		// AC79 — collision-prompt machinery retired
+		// Historical: collision-prompt machinery retired
 		"resolveCollision",
 		"parseCollisionReply",
 		"collisionChoice",
-		// AC80 — checkDrift + friends retired
+		// Historical: checkDrift + friends retired
 		"checkDrift",
 		"relayDriftSummary",
 		"resolveGoverna",
-		// AC88 — collision/review/sync machinery retired
+		// Historical: collision/review/sync machinery retired
 		"ModeSync",
 		"collisionRecord",
 		"renderSyncReview",
@@ -54,10 +54,10 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		"ErrConflictsPresent",
 		"syncReviewFile",
 		"detectSyncMode",
-		// AC91 — collision/recommendation struct fields retired
+		// Historical: collision/recommendation struct fields retired
 		"CollidingArtifacts",
 		"CollisionRisk",
-		// AC89 — manifest/version-check/ownership machinery retired
+		// Historical: manifest/version-check/ownership machinery retired
 		"migrateGovernaLegacyPaths",
 		"readManifest",
 		"buildManifest",
@@ -177,7 +177,7 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 }
 
 // TestRetiredProseNotPresent is the prose-drift companion to
-// TestRetiredSymbolsNotPresent (AC81 Part E). Walks the same scope and skip
+// TestRetiredSymbolsNotPresent. Walks the same scope and skip
 // set, but matches retired-convention phrases in docs, comments, and help
 // text — drift the Go-symbol guard cannot catch because the offending text
 // is prose, not an identifier.
@@ -192,23 +192,23 @@ func TestRetiredProseNotPresent(t *testing.T) {
 	// distinctive enough that false positives are unlikely; if one surfaces,
 	// add a targeted file exemption below rather than weakening the phrase.
 	retiredPhrases := []string{
-		// AC79 — interactive collision prompt + --no flag retired.
+		// Historical: interactive collision prompt + --no flag retired.
 		"[k]eep / [o]verwrite / [s]kip",
 		"--yes and --no",
-		// AC78 — enhance/ack subcommands + RunEnhance entry point retired.
+		// Historical: enhance/ack subcommands + RunEnhance entry point retired.
 		"governa enhance",
 		"governa ack",
 		"enhance mode",
 		"enhance references",
 		"enhance semantics",
-		// AC78 — preptool feedback-companion move retired.
+		// Historical: preptool feedback-companion move retired.
 		"moves -feedback.md companions",
 		"moving -feedback.md companions",
-		// AC88 — sync subcommand + collision/review prose retired.
+		// Historical: sync subcommand + collision/review prose retired.
 		"governa sync",
 		"sync-review.md",
 		".governa/sync-review",
-		// AC89 — manifest/bookkeeping prose retired.
+		// Historical: manifest/bookkeeping prose retired.
 		".governa/manifest",
 	}
 

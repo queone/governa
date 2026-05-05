@@ -251,7 +251,7 @@ func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
 		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
-	// AC62: template-version detection is gated on internal/templates/base/ presence.
+	// template-version detection is gated on internal/templates/base/ presence.
 	// This fixture represents the governa-the-template-repo path.
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 
@@ -271,7 +271,7 @@ func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 	}
 }
 
-// AC62 AT1: consumer repo (no internal/templates/base/) — TEMPLATE_VERSION
+// consumer repo (no internal/templates/base/) — TEMPLATE_VERSION
 // and internal/templates/version.go must NOT be picked up as bump targets.
 // Simulates skout's v0.44.1 release-prep scenario.
 func TestPrepSkipsTemplateVersionOnConsumerRepo(t *testing.T) {
@@ -295,7 +295,7 @@ func TestPrepSkipsTemplateVersionOnConsumerRepo(t *testing.T) {
 	}
 }
 
-// AC62 AT2: template repo (internal/templates/base/ present) — both
+// template repo (internal/templates/base/ present) — both
 // TEMPLATE_VERSION and TemplateVersion are detected. Governa-case regression guard.
 func TestPrepDetectsTemplateVersionOnTemplateRepo(t *testing.T) {
 	dir := t.TempDir()
@@ -320,7 +320,7 @@ func TestPrepDetectsTemplateVersionOnTemplateRepo(t *testing.T) {
 	}
 }
 
-// AC62 AT3: cmd/*/main.go programVersion detection is orthogonal to the
+// cmd/*/main.go programVersion detection is orthogonal to the
 // template-marker gate — detected in both consumer and template repos.
 func TestPrepDetectsProgramVersionBothRepoKinds(t *testing.T) {
 	t.Run("consumer (no base/)", func(t *testing.T) {
@@ -366,7 +366,7 @@ func TestPrepBumpsVersionConstants(t *testing.T) {
 		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
 	tvGo := filepath.Join(dir, "internal", "templates", "version.go")
 	mustWrite(t, tvGo, "package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
-	// AC62: template-version detection gated on internal/templates/base/ presence.
+	// template-version detection gated on internal/templates/base/ presence.
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 
 	targets, _, _ := detectVersionTargets(dir)
@@ -461,7 +461,7 @@ func TestPrepDryRunWritesNothing(t *testing.T) {
 	gitInitFixture(t, dir)
 	tvPath := filepath.Join(dir, "TEMPLATE_VERSION")
 	mustWrite(t, tvPath, "0.1.0\n")
-	// AC62: TEMPLATE_VERSION detection gated on internal/templates/base/ presence.
+	// TEMPLATE_VERSION detection gated on internal/templates/base/ presence.
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 	chPath := filepath.Join(dir, "CHANGELOG.md")
 	mustWrite(t, chPath, "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
@@ -504,7 +504,7 @@ func TestPrepPrintsReleaseCommand(t *testing.T) {
 	}
 }
 
-// AC95 AT2: exact labeled-block shape emitted by emitReleaseCommand.
+// exact labeled-block shape emitted by emitReleaseCommand.
 func TestEmitReleaseCommandExactShape(t *testing.T) {
 	var buf bytes.Buffer
 	emitReleaseCommand(&buf, "v1.2.3", "AC95: template integrity")
@@ -664,15 +664,15 @@ func TestChangelogHasRow(t *testing.T) {
 func TestParseACRefs(t *testing.T) {
 	got := parseACRefs("AC60+AC61: bundle")
 	if len(got) != 2 || got[0] != 60 || got[1] != 61 {
-		t.Errorf("AC60+AC61: got %v", got)
+		t.Errorf("composite AC ref test: got %v", got)
 	}
 	got = parseACRefs("AC60: simple")
 	if len(got) != 1 || got[0] != 60 {
-		t.Errorf("AC60: got %v", got)
+		t.Errorf("simple AC ref test: got %v", got)
 	}
 	got = parseACRefs("AC60, AC60 duplicate")
 	if len(got) != 1 || got[0] != 60 {
-		t.Errorf("duplicate AC60: got %v", got)
+		t.Errorf("duplicate AC ref test: got %v", got)
 	}
 	if got := parseACRefs("no refs here"); got != nil {
 		t.Errorf("no refs: got %v", got)
@@ -785,7 +785,7 @@ func TestSweepACPointerIE_NoMatchingIE(t *testing.T) {
 }
 
 // Phase 7d: an IE pointing at an AC that is NOT being deleted must remain
-// untouched. Guards against AC-number prefix collisions (e.g., AC1 vs AC10)
+// untouched. Guards against AC-number prefix collisions
 // and accidental cross-AC deletion.
 func TestSweepACPointerIE_UnrelatedIEUntouched(t *testing.T) {
 	dir := t.TempDir()
@@ -793,7 +793,7 @@ func TestSweepACPointerIE_UnrelatedIEUntouched(t *testing.T) {
 	original := "# Plan\n\nIE1: short → docs/ac1-short.md\nIE10: longer → docs/ac10-longer.md\n"
 	mustWrite(t, planPath, original)
 
-	// Releasing AC1 must NOT match the AC10 IE line (prefix collision guard).
+	// Prefix-collision guard: a short AC ID must NOT match a longer AC ID's IE line.
 	acNums := parseACRefs("AC1: short")
 	matches, err := findACPointerIELines(dir, acNums)
 	if err != nil {
@@ -884,29 +884,29 @@ func TestPrepDryRunReportsIESweep(t *testing.T) {
 }
 
 // Phase 7d (regex): tab/multi-space whitespace between → and docs/ still
-// matches; reverse prefix-collision (releasing AC10 must not match AC1)
+// matches; reverse prefix-collision (longer ID must not match shorter ID)
 // holds; empty acNums short-circuits before any plan.md read.
 func TestSweepACPointerIE_RegexAndShortCircuit(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
 	mustWrite(t, planPath, "# Plan\n\nIE1: lo → docs/ac1-lo.md\nIE10: hi →\tdocs/ac10-hi.md\nIE11: spaced →   docs/ac11-spaced.md\n")
 
-	// Reverse prefix-collision: releasing AC10 matches only IE10.
+	// Reverse prefix-collision: a longer AC ID matches only its own IE entry.
 	matches, err := findACPointerIELines(dir, parseACRefs("AC10: hi"))
 	if err != nil {
-		t.Fatalf("findACPointerIELines AC10: %v", err)
+		t.Fatalf("findACPointerIELines (longer-ID branch): %v", err)
 	}
 	if len(matches) != 1 || !strings.Contains(matches[0], "IE10:") {
-		t.Fatalf("AC10 must match only IE10 (no collision into IE1), got %v", matches)
+		t.Fatalf("longer AC ID must match only its own IE (no collision into shorter ID), got %v", matches)
 	}
 
-	// Whitespace tolerance: AC11 release matches even with multi-space.
+	// Whitespace tolerance: an AC release matches even with multi-space.
 	matches, err = findACPointerIELines(dir, parseACRefs("AC11: spaced"))
 	if err != nil {
-		t.Fatalf("findACPointerIELines AC11: %v", err)
+		t.Fatalf("findACPointerIELines (whitespace branch): %v", err)
 	}
 	if len(matches) != 1 || !strings.Contains(matches[0], "IE11:") {
-		t.Fatalf("AC11 multi-space must match, got %v", matches)
+		t.Fatalf("whitespace tolerance: AC ref with multi-space must match, got %v", matches)
 	}
 
 	// Empty acNums: short-circuit returns (nil, nil) without reading plan.md.
@@ -920,7 +920,7 @@ func TestSweepACPointerIE_RegexAndShortCircuit(t *testing.T) {
 	}
 }
 
-// AC110 AT1 — parseModuleBasename returns the module path basename or "" when
+// parseModuleBasename returns the module path basename or "" when
 // go.mod is missing/malformed.
 func TestParseModuleBasename(t *testing.T) {
 	t.Run("returns basename for valid go.mod", func(t *testing.T) {
@@ -952,7 +952,7 @@ func TestParseModuleBasename(t *testing.T) {
 	})
 }
 
-// AC110 AT2 — When cmd/<basename>/main.go and another cmd/*/main.go both
+// When cmd/<basename>/main.go and another cmd/*/main.go both
 // declare programVersion, only the primary is in the returned targets.
 func TestDetectVersionTargets_PrimaryBumpedSecondariesSkipped(t *testing.T) {
 	dir := t.TempDir()
@@ -974,17 +974,17 @@ func TestDetectVersionTargets_PrimaryBumpedSecondariesSkipped(t *testing.T) {
 	}
 	wantPath := filepath.Join(dir, "cmd", "governa", "main.go")
 	if len(pvPaths) != 1 || pvPaths[0] != wantPath {
-		t.Errorf("AC110 AT2: expected only primary %q in targets, got %v", wantPath, pvPaths)
+		t.Errorf("expected only primary %q in targets, got %v", wantPath, pvPaths)
 	}
 	if !strings.Contains(warning, "primary cmd/governa/main.go bumped") {
-		t.Errorf("AC110 AT2: warning must announce primary bump + secondary skip, got %q", warning)
+		t.Errorf("warning must announce primary bump + secondary skip, got %q", warning)
 	}
 	if !strings.Contains(warning, "cmd/driftscan/main.go") {
-		t.Errorf("AC110 AT2: warning must list skipped secondary, got %q", warning)
+		t.Errorf("warning must list skipped secondary, got %q", warning)
 	}
 }
 
-// AC110 AT2 (primary-only variant) — When only cmd/<basename>/main.go has
+// Primary-only variant — When only cmd/<basename>/main.go has
 // programVersion, it bumps with no warning.
 func TestDetectVersionTargets_PrimaryOnlyNoSecondaries(t *testing.T) {
 	dir := t.TempDir()
@@ -997,14 +997,14 @@ func TestDetectVersionTargets_PrimaryOnlyNoSecondaries(t *testing.T) {
 		t.Fatalf("detectVersionTargets: %v", err)
 	}
 	if len(targets) != 1 || targets[0].kind != "programVersion" {
-		t.Errorf("AC110 AT2 (primary-only): expected single primary target, got %v", targets)
+		t.Errorf("primary-only: expected single primary target, got %v", targets)
 	}
 	if warning != "" {
-		t.Errorf("AC110 AT2 (primary-only): no warning expected, got %q", warning)
+		t.Errorf("primary-only: no warning expected, got %q", warning)
 	}
 }
 
-// AC110 AT3 — When no cmd/<basename>/main.go exists and exactly one
+// When no cmd/<basename>/main.go exists and exactly one
 // cmd/*/main.go declares programVersion, it is bumped (fallback behavior
 // preserved for repos where the sole utility is named differently from
 // the module).
@@ -1019,14 +1019,14 @@ func TestDetectVersionTargets_NoPrimaryFallsBackToSingleUtility(t *testing.T) {
 		t.Fatalf("detectVersionTargets: %v", err)
 	}
 	if len(targets) != 1 || filepath.Base(filepath.Dir(targets[0].path)) != "foo" {
-		t.Errorf("AC110 AT3: expected fallback bump of cmd/foo, got %v", targets)
+		t.Errorf("expected fallback bump of cmd/foo, got %v", targets)
 	}
 	if warning != "" {
-		t.Errorf("AC110 AT3: no warning expected for single-utility fallback, got %q", warning)
+		t.Errorf("no warning expected for single-utility fallback, got %q", warning)
 	}
 }
 
-// AC110 AT4 — Utils-style repo: no cmd/<basename>/, multiple cmd/*/main.go
+// Utils-style repo: no cmd/<basename>/, multiple cmd/*/main.go
 // with programVersion → all skipped + multi-utility warning preserved.
 func TestDetectVersionTargets_NoPrimaryMultiUtility(t *testing.T) {
 	dir := t.TempDir()
@@ -1042,17 +1042,17 @@ func TestDetectVersionTargets_NoPrimaryMultiUtility(t *testing.T) {
 	}
 	for _, t2 := range targets {
 		if t2.kind == "programVersion" {
-			t.Errorf("AC110 AT4: utils-style multi-utility must skip all programVersion targets, %s leaked", t2.path)
+			t.Errorf("utils-style multi-utility must skip all programVersion targets, %s leaked", t2.path)
 		}
 	}
 	if !strings.Contains(warning, "multi-utility") || !strings.Contains(warning, "no primary cmd/utils/main.go") {
-		t.Errorf("AC110 AT4: expected multi-utility warning naming missing primary, got %q", warning)
+		t.Errorf("expected multi-utility warning naming missing primary, got %q", warning)
 	}
 }
 
-// AC110 AT5 — internal/templates/overlays/.../preptool.go.tmpl is byte-identical
+// internal/templates/overlays/.../preptool.go.tmpl is byte-identical
 // to internal/preptool/preptool.go (two-site propagation per AGENTS.md project
-// rule). Validates AC110 didn't drift the overlay.
+// rule). Two-site propagation guard.
 func TestPreptoolOverlayByteIdenticalToSource(t *testing.T) {
 	src, err := os.ReadFile("../../internal/preptool/preptool.go")
 	if err != nil {
@@ -1063,6 +1063,6 @@ func TestPreptoolOverlayByteIdenticalToSource(t *testing.T) {
 		t.Fatalf("read overlay tmpl: %v", err)
 	}
 	if !bytes.Equal(src, tmpl) {
-		t.Errorf("AC110 AT5: preptool.go and preptool.go.tmpl must be byte-identical (two-site propagation)")
+		t.Errorf("preptool.go and preptool.go.tmpl must be byte-identical (two-site propagation)")
 	}
 }

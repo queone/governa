@@ -43,7 +43,7 @@ func TestParseFlagsApplyDefaults(t *testing.T) {
 	}
 }
 
-// AC79 Part B AT8: `--no` flag is no longer recognized.
+// AT8: `--no` flag is no longer recognized.
 func TestParseFlagsRejectsNo(t *testing.T) {
 	t.Parallel()
 	_, _, err := parseFlags(ModeApply, []string{"--no", "--target", "/tmp/x"})
@@ -52,7 +52,7 @@ func TestParseFlagsRejectsNo(t *testing.T) {
 	}
 }
 
-// AC79 Part B AT9: `--dry-run` flag is no longer recognized.
+// AT9: `--dry-run` flag is no longer recognized.
 func TestParseFlagsRejectsDryRun(t *testing.T) {
 	t.Parallel()
 	_, _, err := parseFlags(ModeApply, []string{"--dry-run", "--target", "/tmp/x"})
@@ -65,7 +65,7 @@ func TestParseFlagsRejectsDryRun(t *testing.T) {
 	}
 }
 
-// AC88: --yes flag is removed (no collision negotiation).
+// --yes flag is removed (no collision negotiation).
 func TestParseFlagsRejectsYes(t *testing.T) {
 	t.Parallel()
 	_, _, err := parseFlags(ModeApply, []string{"--yes", "--target", "/tmp/x"})
@@ -78,7 +78,7 @@ func TestParseFlagsRejectsYes(t *testing.T) {
 	}
 }
 
-// AC88: help text describes consumer ownership, not collision/review.
+// help text describes consumer ownership, not collision/review.
 func TestModeHelpApplyDescribesConsumerOwnership(t *testing.T) {
 	t.Parallel()
 	help := ModeHelp(ModeApply)
@@ -90,7 +90,7 @@ func TestModeHelpApplyDescribesConsumerOwnership(t *testing.T) {
 	}
 }
 
-// AC88: --yes must NOT appear in help (removed).
+// --yes must NOT appear in help (removed).
 func TestModeHelpApplyOmitsYesFlag(t *testing.T) {
 	t.Parallel()
 	help := ModeHelp(ModeApply)
@@ -102,7 +102,7 @@ func TestModeHelpApplyOmitsYesFlag(t *testing.T) {
 	}
 }
 
-// AC79 F-new-2: --dry-run must NOT appear as a flag-list row (it was retired).
+// Historical: --dry-run must NOT appear as a flag-list row (it was retired).
 func TestModeHelpApplyOmitsDryRun(t *testing.T) {
 	t.Parallel()
 	help := ModeHelp(ModeApply)
@@ -147,7 +147,7 @@ func TestDetectApplyModeNewRepo(t *testing.T) {
 	}
 }
 
-// AC89: detectApplyMode returns "existing" when AGENTS.md is present.
+// detectApplyMode returns "existing" when AGENTS.md is present.
 func TestDetectApplyModeExisting(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
@@ -158,16 +158,16 @@ func TestDetectApplyModeExisting(t *testing.T) {
 	}
 }
 
-// AC79 Part B AT10: removed-symbol trip-wire. Absence is asserted at
-// compile time — if the deleted surfaces come back, other tests stop
-// compiling. AC80 AT13's `TestRetiredSymbolsNotPresent` is the active
+// Removed-symbol trip-wire. Absence is asserted at compile time — if the
+// deleted surfaces come back, other tests stop compiling.
+// `TestRetiredSymbolsNotPresent` (in retired_symbols_test.go) is the active
 // regression guard; this test is retained as a named anchor for the
-// AC79 retirement set.
-func TestAC79RemovedSymbols(t *testing.T) {
+// retired-symbols set.
+func TestRetiredSymbolsAbsent(t *testing.T) {
 	t.Parallel()
 }
 
-// AC89: apply no longer writes TEMPLATE_VERSION or .governa/ to consumer repos.
+// apply no longer writes TEMPLATE_VERSION or .governa/ to consumer repos.
 func TestRunApplyStateless(t *testing.T) {
 	dir := t.TempDir()
 
@@ -190,7 +190,7 @@ func TestRunApplyStateless(t *testing.T) {
 	}
 }
 
-// AC88: apply produces docs/ac1-governa-apply.md adoption record.
+// apply produces docs/ac1-governa-apply.md adoption record.
 func TestRunApplyProducesAdoptionAC(t *testing.T) {
 	dir := t.TempDir()
 
@@ -216,13 +216,13 @@ func TestRunApplyProducesAdoptionAC(t *testing.T) {
 	mustContain(t, text, "## In Scope")
 	mustContain(t, text, "## Status")
 	mustContain(t, text, "consumer-owned")
-	// AC103 Part A AT2: nested files appear as repo-relative slash paths
+	// AT2: nested files appear as repo-relative slash paths
 	// in the In Scope list, not as bare basenames.
 	mustContain(t, text, "- `docs/development-cycle.md`")
 }
 
-// AC88: renderApplyAC lists files from operations and marks consumer ownership.
-// AC103 Part A: list entries use repo-relative slash paths, not basenames.
+// renderApplyAC lists files from operations and marks consumer ownership.
+// list entries use repo-relative slash paths, not basenames.
 func TestRenderApplyACShape(t *testing.T) {
 	t.Parallel()
 	const targetAbs = "/tmp/t"
@@ -239,7 +239,7 @@ func TestRenderApplyACShape(t *testing.T) {
 	mustContain(t, out, "CLAUDE.md")
 	mustContain(t, out, "consumer-owned")
 	mustContain(t, out, "## Acceptance Tests")
-	// AC103 Part A AT1: nested files render as repo-relative slash paths,
+	// AT1: nested files render as repo-relative slash paths,
 	// never as basename-only.
 	mustContain(t, out, "- `docs/roles.md`")
 	for line := range strings.SplitSeq(out, "\n") {

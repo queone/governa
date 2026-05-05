@@ -12,7 +12,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.114.0"
+const programVersion = "0.115.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -32,7 +32,7 @@ func main() {
 	case "examples":
 		if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "-?") {
 			fmt.Fprint(os.Stderr, color.FormatUsage("governa examples", []color.UsageLine{
-				{Flag: "--smoke-doc", Desc: "render DOC overlay only, no go.mod, to /tmp/governa-doc-smoke/ (build.sh adoption smoke test, AC121)"},
+				{Flag: "--smoke-doc", Desc: "render DOC overlay only, no go.mod, to /tmp/governa-doc-smoke/ (build.sh adoption smoke test)"},
 			}, "Render both CODE and DOC overlays to /tmp/governa-examples/ for inspection or testing."))
 			return
 		}
@@ -172,14 +172,14 @@ func runExamples() error {
 	return nil
 }
 
-// docSmokeOutputDir is the AC121 smoke target: render DOC overlay to a fresh
+// docSmokeOutputDir is the smoke target: render DOC overlay to a fresh
 // dir WITHOUT seeding a go.mod so build.sh's smoke step can exercise the
-// no-go.mod adoption scenario that masked the AC121 bug.
+// no-go.mod adoption scenario that masked the no-go.mod-adoption bug.
 const docSmokeOutputDir = "/tmp/governa-doc-smoke"
 
 // runDocSmoke renders only the DOC overlay to docSmokeOutputDir, with no
-// go.mod seed. AC121 Part C: validates that DOC overlay's rel.sh works in a
-// fresh content-repo adoption scenario (no module-mode prerequisites).
+// go.mod seed. Validates that DOC overlay's rel.sh works in a fresh
+// content-repo adoption scenario (no module-mode prerequisites).
 func runDocSmoke() error {
 	if err := os.RemoveAll(docSmokeOutputDir); err != nil {
 		return fmt.Errorf("clean smoke output dir: %w", err)

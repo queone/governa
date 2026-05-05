@@ -90,6 +90,7 @@ Rules:
 - New CLI flags pair a one-letter short form (standard, leads help output) with a long-form alias. Migrate existing flags when their code is next touched.
 - Follow existing repo patterns unless an approved improvement says otherwise.
 - Comment public functions.
+- Test names describe behavior, not AC numbering. AC files get deleted at release prep; test names outlive the file and become decode-bait. `TestDirectionLineEmittedInDiffs`, not `TestAC123_DirectionLineEmitted`. Same rule applies to per-AC sub-categorization labels like `Class N` / `Class Z` / etc. — once their AC files are gone, the labels are equally undecodable, so neither test names (`TestClassZ_*`) nor source/test comments/error messages should carry them. Same for source comments — describe intent or constraint, not AC or Class labels. AC traceability lives in CHANGELOG rows + commit messages. When an AC or Class reference is purely historical context with no actionable intent (e.g., a retired convention), prefix the comment with `Historical:` or delete entirely if surrounding code is self-explanatory.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace), `sqlite-utils` (SQLite), `ast-grep` (structural). Batch independent shell calls. Do not re-read files already in context.
 
 ## Project Rules

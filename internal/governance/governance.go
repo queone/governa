@@ -558,7 +558,7 @@ func stackSuggestsGo(stack string) bool {
 // stackIgnoreBlock returns the stack-specific .gitignore block to append
 // after the cross-language base, or ("", false) when the stack is unknown
 // or the block isn't available. Called by planCanonical when rendering
-// .gitignore.tmpl. (AC51 Fix 2)
+// .gitignore.tmpl.
 func stackIgnoreBlock(tfs fs.FS, stack string) (string, bool) {
 	var file string
 	switch {
@@ -642,7 +642,7 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 		}
 		// Stack-aware .gitignore: append stack-specific additions for known
 		// stacks so Go repos (and future stacks) get language-appropriate
-		// ignore patterns without requiring a Standing Divergence. (AC51 Fix 2)
+		// ignore patterns without requiring a Standing Divergence.
 		if targetRel == ".gitignore" {
 			if block, ok := stackIgnoreBlock(tfs, cfg.Stack); ok {
 				content = content + "\n" + block

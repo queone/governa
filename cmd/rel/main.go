@@ -2,7 +2,7 @@
 // library import (`github.com/queone/governa-reltool`) has zero friction here.
 // DOC overlay uses an inline stdlib-only form because content repos shouldn't
 // be required to be Go modules. See `docs/build-release.md` for the divergence
-// rationale (AC121).
+// rationale.
 package main
 
 import (

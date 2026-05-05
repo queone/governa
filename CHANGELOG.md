@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.115.0 | AC124: behavior-named tests + strip AC/Class numbering + canonize convention |
 | 0.114.0 | AC123: DOC release-doc improvements + per-file Direction line in diffs |
 | 0.113.1 | build.sh: fix awk pattern for vcs.revision extraction (AC122 Part B) |
 | 0.113.0 | AC122: drift-scan canon-id from version + post-commit re-install |

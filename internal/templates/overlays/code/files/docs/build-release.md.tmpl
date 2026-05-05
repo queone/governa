@@ -8,7 +8,7 @@ This repo has a single canonical build/test workflow: `./build.sh`.
 
 `./build.sh` is a thin Bash dispatcher. The real implementation lives in `go run ./cmd/build` (build/test) and `go run ./cmd/rel` (release). Both `cmd/build` and `cmd/rel` are `go run` entrypoints — they are intentionally not installed as binaries.
 
-**Flavor-divergent rel tool.** CODE overlay's `cmd/rel/main.go` is a thin wrapper around the `github.com/queone/governa-reltool` library — CODE consumers are Go projects with `go.mod`, so the library import has zero friction. DOC overlay ships a stdlib-only inline implementation instead, because content repos shouldn't be required to be Go modules just to run a release script. Drift-scan flags the divergent files; the divergence is intentional and load-bearing per AC121.
+**Flavor-divergent rel tool.** CODE overlay's `cmd/rel/main.go` is a thin wrapper around the `github.com/queone/governa-reltool` library — CODE consumers are Go projects with `go.mod`, so the library import has zero friction. DOC overlay ships a stdlib-only inline implementation instead, because content repos shouldn't be required to be Go modules just to run a release script. Drift-scan flags the divergent files; the divergence is intentional and load-bearing.
 
 The build pipeline runs these steps in order, fail-hard on each:
 

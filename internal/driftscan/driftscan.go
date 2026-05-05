@@ -179,9 +179,8 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	}
 
 	// Canon identifier from embedded templates.TemplateVersion (or test
-	// override). v-prefix matches the semver tag form. AC122 Part A: replaced
-	// runtime vcs.revision lookup with this version-based identifier so the
-	// canon-id is invariant across install timing — vcs.revision was prone
+	// override). v-prefix matches the semver tag form. The version-based
+	// identifier is invariant across install timing — vcs.revision was prone
 	// to drift when binaries got installed during release prep before the
 	// release commit was made.
 	sha := cfg.OverrideCanonID
@@ -274,7 +273,7 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 			Classification: ClassTargetNoCanon,
 			CanonRef:       fmt.Sprintf("(no canon path for flavor %s)", flavor),
 		}
-		// AC120 Part B: emit unified diff against empty canon so the file
+		// emit unified diff against empty canon so the file
 		// surfaces in drift-report-<sha>-diffs.md with all target lines as `+`.
 		if targetBytes, rerr := os.ReadFile(filepath.Join(cfg.Target, rel)); rerr == nil {
 			fr.Diff = unifiedDiff("", string(targetBytes), rel, cfg.DiffLines)
@@ -282,7 +281,7 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		report.Files = append(report.Files, fr)
 	}
 
-	// AC112 Class Z: name-reference body scan — the asymmetry note's second
+	// name-reference body scan — the asymmetry note's second
 	// branch. Surface target-only files referenced from divergent target
 	// files (e.g., rel.sh references ./cmd/rel/color.go which is target-only).
 	// Same `target-has-no-canon` classification as the cross-flavor case;
@@ -305,14 +304,14 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 			Classification: ClassTargetNoCanon,
 			CanonRef:       fmt.Sprintf("(no canon path for flavor %s — name-referenced from a divergent target file)", flavor),
 		}
-		// AC120 Part B: emit unified diff against empty canon (all target lines as `+`).
+		// emit unified diff against empty canon (all target lines as `+`).
 		if targetBytes, rerr := os.ReadFile(filepath.Join(cfg.Target, rel)); rerr == nil {
 			fr.Diff = unifiedDiff("", string(targetBytes), rel, cfg.DiffLines)
 		}
 		report.Files = append(report.Files, fr)
 	}
 
-	// AC119 retrench: emit report-pair files at consumer repo root, no AC
+	// emit report-pair files at consumer repo root, no AC
 	// staging. Director-set: overwrite silently on existing files (idempotent
 	// re-scan). Director-set: minimal one-line stdout summary after emission.
 	if cfg.JSON {
@@ -401,7 +400,7 @@ var expectedDivergencePaths = map[string]bool{
 // docs/drift-scan.md `## Format-defining files`).
 //
 // A file belongs in this registry iff its content defines the form of a
-// section INSTANTIATED in the staged AC. Two shapes (AC108 Class P):
+// section INSTANTIATED in the staged AC. Two shapes:
 //
 //  1. **Tool-emitted form** — canon file content defines the form of a
 //     section the staged AC's tool-emitted text instantiates (e.g.,
@@ -576,7 +575,7 @@ func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 	targetBytes, err := os.ReadFile(targetPath)
 	if err != nil {
 		fr.Classification = ClassMissingTarget
-		// AC120 Part B: emit unified diff against empty target so the file
+		// emit unified diff against empty target so the file
 		// surfaces in drift-report-<sha>-diffs.md with all canon lines as `-`.
 		fr.Diff = unifiedDiff(canon, "", relpath, cfg.DiffLines)
 		return fr
@@ -895,7 +894,7 @@ func writeDriftReport(target, sha string, r Report) error {
 
 // writeDriftReportDiffs writes the drift-report file 2 to <target>/drift-report-<sha>-diffs.md.
 // Per-file H2 section + diff hunk for each divergent file, prefaced with the
-// AC108 Class U convention stamp. Overwrites any existing file (Director-set Q2).
+// convention stamp. Overwrites any existing file (Director-set Q2).
 func writeDriftReportDiffs(target, sha string, r Report) error {
 	path := filepath.Join(target, "drift-report-"+sha+"-diffs.md")
 	var b strings.Builder
@@ -930,7 +929,7 @@ func writeDriftReportDiffs(target, sha string, r Report) error {
 
 // computeDirection counts target-only (`+`-prefixed) and canon-only
 // (`-`-prefixed) lines in a unified-diff string, excluding the `+++ ` and
-// `--- ` header lines and `@@ ` hunk headers. AC123 Part C — input to
+// `--- ` header lines and `@@ ` hunk headers. input to
 // formatDirection for the per-file Direction line in the diffs file.
 func computeDirection(diff string) (canonOnly, targetOnly int) {
 	for line := range strings.SplitSeq(diff, "\n") {
@@ -950,7 +949,7 @@ func computeDirection(diff string) (canonOnly, targetOnly int) {
 
 // formatDirection returns a one-line natural-language summary of which side
 // carries which content. Emitted above each per-file diff hunk in the diffs
-// file (AC123 Part C — Class N mitigation).
+// file.
 func formatDirection(canonOnly, targetOnly int) string {
 	switch {
 	case targetOnly > 0 && canonOnly == 0:
@@ -1059,7 +1058,7 @@ func targetGovernanceFilesNotInCanon(target string, ourCanon map[string]string, 
 	return out
 }
 
-// nameReferencedPathRe forms the AC112 Class Z extraction set: backticked,
+// nameReferencedPathRe forms the name-reference extraction set: backticked,
 // double-quoted, and bare paths after `go run` or `exec` keywords. The
 // captured path must start with `.` or `/` (relative or absolute) so we
 // don't false-positive on prose tokens like backticked words.
@@ -1072,7 +1071,7 @@ var (
 // extractPathReferences returns path-like substrings found in content via
 // three forms: backticked paths starting with . or /, double-quoted paths,
 // and bare path tokens following `go run` or `exec` keywords. Used by the
-// name-reference body scan (AC112 Class Z) to find target-only files
+// name-reference body scan to find target-only files
 // referenced from divergent target files.
 func extractPathReferences(content string) []string {
 	var refs []string
@@ -1116,7 +1115,7 @@ func normalizeRefPath(ref, refererRel string) string {
 // nameReferencedTargetOnlyFiles scans divergent target files for path
 // references to other target files that have no canon counterpart in
 // either flavor. Returns the deduplicated, sorted list. Implements the
-// asymmetry note's second branch (AC112 Class Z): name-reference body scan.
+// asymmetry note's second branch: name-reference body scan.
 func nameReferencedTargetOnlyFiles(target string, divergent []FileResult, ourCanon map[string]string, otherCanon map[string]bool, alreadySurfaced map[string]bool) []string {
 	found := map[string]bool{}
 	for _, f := range divergent {
