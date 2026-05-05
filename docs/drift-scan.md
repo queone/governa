@@ -23,7 +23,7 @@ Two files at the consumer repo root, plus a single-line stdout summary.
 
 Diff hunks live in the sister file, not file 1.
 
-**`<target>/drift-report-v<version>-diffs.md`** — the per-file diffs. Title `# Drift-Scan Diffs (governa @ v<version>)`. Convention stamp on line 2: `_Diff convention: \`+\` lines exist in TARGET; \`-\` lines exist in CANON. \`+\` is "target has this; canon does not"; \`-\` is "canon has this; target does not"._`. One `## \`<relpath>\`` H2 section per divergent file, each with the verbatim `diff -u` hunk in a fenced code block. Empty body when no divergent files.
+**`<target>/drift-report-v<version>-diffs.md`** — the per-file diffs. Title `# Drift-Scan Diffs (governa @ v<version>)`. Convention stamp on line 2: `_Diff convention: \`+\` lines exist in TARGET; \`-\` lines exist in CANON. \`+\` is "target has this; canon does not"; \`-\` is "canon has this; target does not"._`. One `## \`<relpath>\`` H2 section per divergent file. Each section carries a `Direction:` line above the diff hunk (`target leads`, `canon leads`, or mutual line counts), then the verbatim `diff -u` hunk in a fenced code block. Empty body when no divergent files.
 
 **Stdout summary** — single line: `wrote drift-report-v<version>.md and drift-report-v<version>-diffs.md (<counts>)`. Suppressed when `--json` is set; in JSON mode the full Report struct goes to stdout instead.
 

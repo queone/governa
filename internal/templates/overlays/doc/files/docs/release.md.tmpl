@@ -25,14 +25,18 @@ Source axis (`[Automated]` / `[Manual]`) names who verifies. Timing axis (`[Pre-
 
 Do not start this checklist unless the user explicitly asks to prep for release or equivalent.
 
-Before running the release command:
-
 1. **Verify all in-scope AC work is complete.** Every AT in the AC has been run and passes.
-2. **Update CHANGELOG.md.** Insert a row for the new version under `| Unreleased | |`.
-3. **Delete completed AC files.** Remove `docs/ac<N>-*.md` files for ACs shipping in this release.
-4. **Run the release command.** `./rel.sh vX.Y.Z "message"`. The tool shows the file list and plan, then prompts for confirmation.
+2. **Determine the version.** Classify the change set using semver: PATCH (formatting, fixes, refactors invisible to users) or MINOR (structure, navigation, schema changes visible to users). Bump from the latest tag accordingly.
+3. **Derive the release message.** Summarize the change set in ≤ 80 characters. Lead with the AC reference if any (e.g., `AC1: adopt Governa v0.90.0 DOC overlay`).
+4. **Update CHANGELOG.md.** Insert a row for the new version under `| Unreleased | |`.
+5. **Delete completed AC files.** Remove `docs/ac<N>-*.md` files for ACs shipping in this release.
+6. **Present the release command.** Print the exact command for the director to run:
 
-Present only the release command after prep; do not add trailing commentary. The director already knows.
+```
+./rel.sh vX.Y.Z "derived message"
+```
+
+The agent never runs `./rel.sh` — only the director does. Do not add trailing commentary after presenting the command. The director already knows.
 
 ## CHANGELOG Conventions
 

@@ -917,12 +917,51 @@ func writeDriftReportDiffs(target, sha string, r Report) error {
 	}
 	for _, f := range divergent {
 		fmt.Fprintf(&b, "## `%s`\n\n", f.Relpath)
+		canonOnly, targetOnly := computeDirection(f.Diff)
+		fmt.Fprintln(&b, formatDirection(canonOnly, targetOnly))
+		fmt.Fprintln(&b)
 		fmt.Fprintln(&b, "```diff")
 		fmt.Fprintln(&b, f.Diff)
 		fmt.Fprintln(&b, "```")
 		fmt.Fprintln(&b)
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// computeDirection counts target-only (`+`-prefixed) and canon-only
+// (`-`-prefixed) lines in a unified-diff string, excluding the `+++ ` and
+// `--- ` header lines and `@@ ` hunk headers. AC123 Part C — input to
+// formatDirection for the per-file Direction line in the diffs file.
+func computeDirection(diff string) (canonOnly, targetOnly int) {
+	for line := range strings.SplitSeq(diff, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
+			continue
+		case strings.HasPrefix(line, "@@"):
+			continue
+		case strings.HasPrefix(line, "+"):
+			targetOnly++
+		case strings.HasPrefix(line, "-"):
+			canonOnly++
+		}
+	}
+	return canonOnly, targetOnly
+}
+
+// formatDirection returns a one-line natural-language summary of which side
+// carries which content. Emitted above each per-file diff hunk in the diffs
+// file (AC123 Part C — Class N mitigation).
+func formatDirection(canonOnly, targetOnly int) string {
+	switch {
+	case targetOnly > 0 && canonOnly == 0:
+		return fmt.Sprintf("Direction: target leads — target carries %d lines absent in canon.", targetOnly)
+	case canonOnly > 0 && targetOnly == 0:
+		return fmt.Sprintf("Direction: canon leads — canon carries %d lines absent in target.", canonOnly)
+	case targetOnly > 0 && canonOnly > 0:
+		return fmt.Sprintf("Direction: target carries %d lines absent in canon; canon carries %d lines absent in target.", targetOnly, canonOnly)
+	default:
+		return "Direction: no line-level divergence detected."
+	}
 }
 
 // isDivergentClass reports whether c is one of the classifications that

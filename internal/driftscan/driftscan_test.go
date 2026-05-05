@@ -633,3 +633,55 @@ func TestAC120_TargetHasNoCanonInDiffs(t *testing.T) {
 		t.Errorf("AC120 AT4: cmd/foo/color.go section must carry `+` lines (target-only). got:\n%s", section)
 	}
 }
+
+// =====================================================================
+// AC123 — Per-file Direction line in diffs file (Class N mitigation)
+// =====================================================================
+
+// AC123 AT8/9/10 — Direction line emitted per-file in the diffs file.
+// docFixture has missing-in-target (.gitignore: canon-only → canon leads).
+// Add a target-has-no-canon file via the Class Z fixture pattern (target
+// content via name-reference from divergent rel.sh → target leads).
+func TestAC123_DirectionLineEmitted(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n")
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/foo/main.go ./cmd/foo/color.go \"$@\"\n")
+	mustWrite(t, filepath.Join(dir, "cmd/foo/main.go"), "package main\nfunc main() {}\n")
+	mustWrite(t, filepath.Join(dir, "cmd/foo/color.go"), "package main\n\nfunc col() string { return \"yellow\" }\n")
+	gitInit(t, dir)
+	gitAddCommit(t, dir, "AC1: rel.sh + color.go")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
+
+	// Each per-file H2 section should carry a Direction line.
+	if !strings.Contains(diffs, "Direction: ") {
+		t.Errorf("AC123 AT8: diffs file missing Direction lines:\n%s", diffs)
+	}
+	// rel.sh diverges (target +1 / canon -1) → mutual form (target carries N lines absent in canon; canon carries M lines absent in target).
+	// .gitignore is missing-in-target (canon has content; target empty) → canon leads.
+	gitignoreIdx := strings.Index(diffs, "## `.gitignore`")
+	if gitignoreIdx < 0 {
+		t.Fatal("AC123: .gitignore section not found in diffs file")
+	}
+	gitignoreSection := diffs[gitignoreIdx:]
+	if !strings.Contains(gitignoreSection[:200], "Direction: canon leads") {
+		t.Errorf("AC123 AT9: .gitignore section must carry `Direction: canon leads` near the heading. got:\n%s", gitignoreSection[:min(len(gitignoreSection), 400)])
+	}
+	// cmd/foo/color.go is target-has-no-canon (target has content; canon empty) → target leads.
+	colorIdx := strings.Index(diffs, "## `cmd/foo/color.go`")
+	if colorIdx < 0 {
+		t.Fatal("AC123: cmd/foo/color.go section not found in diffs file")
+	}
+	colorSection := diffs[colorIdx:]
+	if !strings.Contains(colorSection[:200], "Direction: target leads") {
+		t.Errorf("AC123 AT10: cmd/foo/color.go section must carry `Direction: target leads` near the heading. got:\n%s", colorSection[:min(len(colorSection), 400)])
+	}
+}
