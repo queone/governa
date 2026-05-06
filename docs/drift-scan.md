@@ -57,7 +57,7 @@ The gate sentence is the verbatim value of the exported `ReachabilityHeaderRemin
 Reachability check: verify divergent canon-code branches reach this consumer's structure before treating as drift.
 ```
 
-**Known limit.** This rule assumes canon-shaped branches; sync-omitted branches that look dormant are real drift (see `plan.md` IE10 for the divergence-classification procedure that resolves the locally-absent case).
+**Known limit.** This rule assumes canon-shaped branches; sync-omitted branches that look dormant are real drift. Consumer agents distinguish case-by-case based on the gate condition.
 
 `internal/preptool/preptool.go` is the canonical example: `detectChangelogTargets` carries a second candidate (`internal/templates/CHANGELOG.md`) gated on the host's templates tree, and `detectVersionTargets` has a template-tree block gated on `internal/templates/base/` presence. Both branches are dormant on consumers.
 

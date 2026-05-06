@@ -11,8 +11,8 @@ import (
 // must (a) name host-shape examples, (b) contain exactly one line whose
 // stripped content equals ReachabilityHeaderReminder byte-for-byte (the
 // constant, not a hardcoded string), (c) carry the known-limit caveat
-// referencing IE10, (d) name preptool.go as the canonical example, and
-// (e) end with the closing line.
+// about sync-omitted branches, (d) name preptool.go as the canonical
+// example, and (e) end with the closing line.
 func TestReachabilitySectionInDriftScanDocs(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -50,12 +50,9 @@ func TestReachabilitySectionInDriftScanDocs(t *testing.T) {
 		t.Error("missing host-shape example `internal/templates/` tree")
 	}
 
-	// (c) Known-limit caveat with IE10 reference.
+	// (c) Known-limit caveat about sync-omitted branches.
 	if !strings.Contains(s, "sync-omitted branches that look dormant are real drift") {
 		t.Error("missing known-limit caveat phrase `sync-omitted branches that look dormant are real drift`")
-	}
-	if !strings.Contains(s, "IE10") {
-		t.Error("missing IE10 reference in known-limit caveat")
 	}
 
 	// (d) preptool example named.
