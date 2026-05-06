@@ -13,3 +13,10 @@ IE6: Codify "fold small adjacent improvements into current AC/release" anti-piec
 IE7: Codify "draft new ACs as multi-part (Part A/B/C) by default" structure in `docs/ac-template.md`
 
 IE8: Codify "bundle consumer-agent review findings into one multi-part AC per cycle, one part per class" alongside the multi-part default
+
+
+IE10: Divergence-classification procedure for canon-code drift — covers (a) reachability-check taxonomy beyond filesystem-shape examples (config flag, runtime env, build tag) AND (b) distinguishing structurally-unreachable canon branches (dormant by host shape, not drift) from locally-absent canon branches (consumer skipped a sync, real drift). Extends AC125's gate with the procedure that turns it into actionable classification. Subsumes prior IE11.
+
+IE12: Flavor capability predicate for drift-scan emission gates — replace `cfg.Flavor == "code"` literal checks with a flavor-capability predicate (e.g., `HasExecutableCanon()`) so new flavors don't trigger per-flavor edits to every gate. Currently relevant gate: AC125's reachability-reminder emission.
+
+IE13: drift-scan report-header missing emission of the documented "scan-asymmetry note" — `docs/drift-scan.md` line 17 claims the header carries it, but `internal/driftscan/driftscan.go writeReport` never emits a corresponding line. Doc/code drift between two governa-internal surfaces; discovered during AC125 implementation. Either implement the asymmetry-note emission or amend `docs/drift-scan.md` to remove the claim.

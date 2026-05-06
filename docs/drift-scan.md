@@ -45,6 +45,24 @@ The tool emits one of the classifications below for every file. The Operator can
 
 For every divergent file, the report file 1 carries the verbatim preserve-marker citations (if any) and every commit returned by `git log -n 5 --follow -- <file>` (verbatim, not abridged). The full `diff -u` hunk lives in the sister file (`drift-report-v<version>-diffs.md`).
 
+## Reachability of canon-only branches
+
+**Scope.** This rule applies to canon code (code-flavor consumers); doc consumers don't have branching canon and the rule is structurally inapplicable to them.
+
+Canon code files may carry branches gated on governa's host shape (e.g., `cmd/<repo>/main.go` presence, `internal/templates/` tree). Such branches are dormant on consumers — byte-divergence on those lines is benign by construction. Before routing a divergent canon-code file as drift, verify the divergent code path is reachable in the consumer's structure.
+
+The gate sentence is the verbatim value of the exported `ReachabilityHeaderReminder` constant in `internal/driftscan/driftscan.go`, also emitted in every code-flavor drift-scan report header:
+
+```
+Reachability check: verify divergent canon-code branches reach this consumer's structure before treating as drift.
+```
+
+**Known limit.** This rule assumes canon-shaped branches; sync-omitted branches that look dormant are real drift (see `plan.md` IE10 for the divergence-classification procedure that resolves the locally-absent case).
+
+`internal/preptool/preptool.go` is the canonical example: `detectChangelogTargets` carries a second candidate (`internal/templates/CHANGELOG.md`) gated on the host's templates tree, and `detectVersionTargets` has a template-tree block gated on `internal/templates/base/` presence. Both branches are dormant on consumers.
+
+Structurally unreachable branches are not drift.
+
 ## Format-defining files
 
 The `formatDefiningCanonPaths` registry lists canon files whose content defines the form the consumer Operator's AC instantiates. The report flags these with a `Format-defining: yes` line in the per-file block — the consumer Operator sees the flag and decides routing accordingly. The tool itself does not auto-route; routing is the Operator's call.

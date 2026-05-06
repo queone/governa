@@ -50,6 +50,11 @@ const (
 	ClassExpectedDivergence Classification = "expected-divergence" // per-repo content files (e.g., plan.md)
 )
 
+// ReachabilityHeaderReminder is shared verbatim with the "Reachability of
+// canon-only branches" section in docs/drift-scan.md; AT1/AT2 reference
+// this constant directly to enforce byte-equality between both surfaces.
+const ReachabilityHeaderReminder = "Reachability check: verify divergent canon-code branches reach this consumer's structure before treating as drift."
+
 // Config holds drift-scan invocation parameters.
 type Config struct {
 	Target     string // resolved absolute path to target repo
@@ -851,6 +856,11 @@ func writeReport(out io.Writer, r Report, asJSON bool) {
 	fmt.Fprintf(out, "- Repo name: %s\n", r.Header.RepoName)
 	fmt.Fprintf(out, "- Counts: %s\n", tallyClassifications(r.Files))
 	fmt.Fprintln(out)
+
+	if r.Header.Flavor == "code" {
+		fmt.Fprintln(out, ReachabilityHeaderReminder)
+		fmt.Fprintln(out)
+	}
 
 	fmt.Fprintln(out, "## Files")
 	fmt.Fprintln(out)

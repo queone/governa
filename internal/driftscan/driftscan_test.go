@@ -685,3 +685,102 @@ func TestDirectionLineEmittedPerFile(t *testing.T) {
 		t.Errorf("cmd/foo/color.go section must carry `Direction: target leads` near the heading. got:\n%s", colorSection[:min(len(colorSection), 400)])
 	}
 }
+
+// codeFixture creates a code-flavor target dir with a Go module manifest,
+// minimal scaffolding, and a one-commit history. Module path is NOT
+// github.com/queone/governa, and internal/templates/base/ is absent, so
+// the governa-self fail-safe does not trigger.
+func codeFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module github.com/example/test\n\ngo 1.22\n")
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | initial |\n")
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	gitInit(t, dir)
+	gitAddCommit(t, dir, "initial")
+	return dir
+}
+
+// AT2 — Code-flavor drift-scan report header carries the reachability
+// reminder. Substring assertion against ReachabilityHeaderReminder
+// (referenced as the constant, not a hardcoded string).
+func TestReachabilityReminderEmittedInCodeFlavorHeader(t *testing.T) {
+	dir := codeFixture(t)
+	cfg := Config{Target: dir, Flavor: "code", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	if !strings.Contains(report, ReachabilityHeaderReminder) {
+		t.Errorf("expected ReachabilityHeaderReminder in code-flavor report header, got:\n%s", report)
+	}
+}
+
+// AT3 — Doc-flavor drift-scan report header has no line beginning with
+// `Reachability check:`. Stronger than asserting the exact reminder is
+// absent: closes the escape hatch where a future AC adds a different
+// `Reachability check: ...` line for doc flavor.
+func TestNoReachabilityLineInDocFlavorHeader(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	header, _, ok := strings.Cut(report, "## Files")
+	if !ok {
+		t.Fatalf("report missing `## Files` heading, got:\n%s", report)
+	}
+	for line := range strings.SplitSeq(header, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Reachability check:") {
+			t.Errorf("doc-flavor header contains forbidden line: %q\nfull header:\n%s", line, header)
+		}
+	}
+}
+
+// AT4 — Drift-scan classification behavior is unchanged. The reachability
+// reminder is a header-level addition only; no per-file flag, no new
+// FileResult field. Per Round 2 disposition (registry rejected), no
+// `Host-shape-dependent:` line should ever appear in the rendered report.
+func TestClassificationUnaffectedByReachabilityReminder(t *testing.T) {
+	dir := codeFixture(t)
+	cfg := Config{Target: dir, Flavor: "code", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	if strings.Contains(report, "Host-shape-dependent:") {
+		t.Errorf("unexpected `Host-shape-dependent:` flag in report (per-file flag is out of scope per Round 2 disposition):\n%s", report)
+	}
+	if !strings.Contains(report, "- Counts: ") {
+		t.Errorf("report missing Counts line — classification path may be broken:\n%s", report)
+	}
+}
+
+// AT5 — JSON output is markdown-only-out-of-scope (Round 10): the
+// reachability reminder is a human-targeted nudge; JSON consumers are
+// tools. JSON output must NOT contain the `Reachability check:` prefix or
+// any `reachability_header_reminder` field. Future PRs proposing a struct
+// field for symmetry-with-markdown should be rejected unless the
+// audience-boundary justification has changed.
+func TestNoReachabilityReminderInJSONOutput(t *testing.T) {
+	dir := codeFixture(t)
+	cfg := Config{Target: dir, Flavor: "code", DiffLines: 50, JSON: true, OverrideCanonID: "v0.0.0-test"}
+	out := captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	if strings.Contains(out, "Reachability check:") {
+		t.Errorf("JSON output unexpectedly contains `Reachability check:` line; markdown-only scope per Round 10 disposition:\n%s", out)
+	}
+	if strings.Contains(out, "reachability_header_reminder") {
+		t.Errorf("JSON output unexpectedly contains `reachability_header_reminder` field; markdown-only scope per Round 10 disposition:\n%s", out)
+	}
+}
