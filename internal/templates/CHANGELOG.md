@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.117.0 | AC127: canon-cycle doctrine in standalone overlay-tracked doc |
 | 0.116.4 | AC126: cleanup-after-AC instruction in drift-scan reports |
 | 0.116.3 | AGENTS.md: generalize test-label rule per utils feedback |
 | 0.116.2 | canon: strip trailing space in cmd/build/main.go.tmpl per utils feedback |
