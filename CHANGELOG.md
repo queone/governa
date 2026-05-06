@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.116.2 | canon: strip trailing space in cmd/build/main.go.tmpl per utils feedback |
 | 0.116.1 | drift-scan: clarify 'not drift' wording per utils feedback |
 | 0.116.0 | AC125: reachability rule for canon-only branches in drift-scan reports |
 | 0.115.0 | AC124: behavior-named tests + strip AC/Class numbering + canonize convention |
