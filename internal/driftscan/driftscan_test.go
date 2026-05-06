@@ -784,3 +784,63 @@ func TestNoReachabilityReminderInJSONOutput(t *testing.T) {
 		t.Errorf("JSON output unexpectedly contains `reachability_header_reminder` field; markdown-only scope per Round 10 disposition:\n%s", out)
 	}
 }
+
+// Main drift-report file carries the cleanup-after-AC instruction. Test
+// references CleanupReminder directly (not hardcoded), so editing the
+// constant without updating the emission breaks this assertion.
+func TestCleanupReminderInMainReport(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	if !strings.Contains(report, CleanupReminder) {
+		t.Errorf("expected CleanupReminder in main drift-report, got:\n%s", report)
+	}
+}
+
+// Diffs drift-report file carries the cleanup-after-AC instruction.
+func TestCleanupReminderInDiffsReport(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
+	if !strings.Contains(diffs, CleanupReminder) {
+		t.Errorf("expected CleanupReminder in diffs drift-report, got:\n%s", diffs)
+	}
+}
+
+// Stdout summary carries no `Cleanup:` prefix line — audience boundary:
+// stdout is the tool-confirmation channel for invokers, not a
+// workflow-instruction surface.
+func TestNoCleanupLineInStdoutSummary(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	out := captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Cleanup:") {
+			t.Errorf("stdout summary contains forbidden `Cleanup:` line: %q\nfull stdout:\n%s", line, out)
+		}
+	}
+}
+
+// JSON output is markdown-only-out-of-scope — cleanup instruction is a
+// human-targeted nudge; JSON consumers are tools.
+func TestNoCleanupReminderInJSONOutput(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, JSON: true, OverrideCanonID: "v0.0.0-test"}
+	out := captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	if strings.Contains(out, CleanupReminder) {
+		t.Errorf("JSON output unexpectedly contains CleanupReminder; markdown-only scope:\n%s", out)
+	}
+	if strings.Contains(out, "cleanup_reminder") {
+		t.Errorf("JSON output unexpectedly contains `cleanup_reminder` field; markdown-only scope:\n%s", out)
+	}
+}

@@ -20,3 +20,6 @@ IE10: Divergence-classification procedure for canon-code drift — covers (a) re
 IE12: Flavor capability predicate for drift-scan emission gates — replace `cfg.Flavor == "code"` literal checks with a flavor-capability predicate (e.g., `HasExecutableCanon()`) so new flavors don't trigger per-flavor edits to every gate. Currently relevant gate: AC125's reachability-reminder emission.
 
 IE13: drift-scan report-header missing emission of the documented "scan-asymmetry note" — `docs/drift-scan.md` line 17 claims the header carries it, but `internal/driftscan/driftscan.go writeReport` never emits a corresponding line. Doc/code drift between two governa-internal surfaces; discovered during AC125 implementation. Either implement the asymmetry-note emission or amend `docs/drift-scan.md` to remove the claim.
+
+
+IE15: Canonize Canon Baseline Sync doctrine in `docs/drift-scan.md` — rule (overlay-tracked files adopted as whole-file canon snapshots, not hunk-merged) plus pure-canon vs mixed-content carve-out (hunk-level merge for files with consumer-local content interleaved with canon structure: AGENTS.md, README.md, .gitignore, CHANGELOG.md, arch.md, docs/development-guidelines.md, docs/build-release.md, etc.). Source: utils note 2026-05-06 (re-route from utils when AC127 drafting begins). Target AC127 (deferred for post-AC126 focus per Director 2026-05-06).

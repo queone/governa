@@ -50,10 +50,11 @@ const (
 	ClassExpectedDivergence Classification = "expected-divergence" // per-repo content files (e.g., plan.md)
 )
 
-// ReachabilityHeaderReminder is shared verbatim with the "Reachability of
-// canon-only branches" section in docs/drift-scan.md; AT1/AT2 reference
-// this constant directly to enforce byte-equality between both surfaces.
+// ReachabilityHeaderReminder is shared verbatim with the "Reachability of canon-only branches" section in docs/drift-scan.md; tests reference this constant directly to enforce byte-equality between both surfaces.
 const ReachabilityHeaderReminder = "Reachability check: verify divergent canon-code branches reach this consumer's structure before treating as drift."
+
+// CleanupReminder is shared verbatim by both drift-scan report files (markdown only); tests reference this constant directly to enforce single-source-of-truth wording.
+const CleanupReminder = "**Cleanup:** Delete both drift-report files after drafting your AC."
 
 // Config holds drift-scan invocation parameters.
 type Config struct {
@@ -849,6 +850,8 @@ func writeReport(out io.Writer, r Report, asJSON bool) {
 	}
 	fmt.Fprintln(out, "# Drift-Scan Report")
 	fmt.Fprintln(out)
+	fmt.Fprintln(out, CleanupReminder)
+	fmt.Fprintln(out)
 	fmt.Fprintf(out, "- Invocation: `%s`\n", r.Header.Invocation)
 	fmt.Fprintf(out, "- Canon: governa @ %s\n", r.Header.CanonSHA)
 	fmt.Fprintf(out, "- Target: %s\n", r.Header.Target)
@@ -909,6 +912,8 @@ func writeDriftReportDiffs(target, sha string, r Report) error {
 	path := filepath.Join(target, "drift-report-"+sha+"-diffs.md")
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Drift-Scan Diffs (governa @ %s)\n\n", sha)
+	fmt.Fprintln(&b, CleanupReminder)
+	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON. `+` is \"target has this; canon does not\"; `-` is \"canon has this; target does not\".")
 	fmt.Fprintln(&b)
 	var divergent []FileResult

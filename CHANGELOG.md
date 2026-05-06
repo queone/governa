@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.116.4 | AC126: cleanup-after-AC instruction in drift-scan reports |
 | 0.116.3 | AGENTS.md: generalize test-label rule per utils feedback |
 | 0.116.2 | canon: strip trailing space in cmd/build/main.go.tmpl per utils feedback |
 | 0.116.1 | drift-scan: clarify 'not drift' wording per utils feedback |
