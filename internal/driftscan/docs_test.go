@@ -202,3 +202,107 @@ func TestCanonCycleTypicalExamplesPresent(t *testing.T) {
 		}
 	}
 }
+
+// guidelineOverlayPaths returns absolute paths to the two consumer-facing
+// guideline overlay templates: development-guidelines.md.tmpl (code-flavor)
+// and editing-guidelines.md.tmpl (doc-flavor). Both must follow the
+// canon-above-local-below structure with `## Project Practices` as the
+// project-extension tail.
+func guidelineOverlayPaths(t *testing.T) (codeDev, docEdit string) {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	codeDev = filepath.Join(repoRoot, "internal", "templates", "overlays", "code", "files", "docs", "development-guidelines.md.tmpl")
+	docEdit = filepath.Join(repoRoot, "internal", "templates", "overlays", "doc", "files", "docs", "editing-guidelines.md.tmpl")
+	return
+}
+
+// lastH2Heading returns the text of the last `^## ` heading in s. Returns
+// empty string if no H2 heading is present.
+func lastH2Heading(s string) string {
+	last := ""
+	for line := range strings.SplitSeq(s, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			last = line
+		}
+	}
+	return last
+}
+
+// development-guidelines.md.tmpl ends with `## Project Practices` as the
+// last top-level heading — the project-extension tail per the
+// canon-above-local-below structure.
+func TestDevelopmentGuidelinesEndsWithProjectPracticesSection(t *testing.T) {
+	codeDev, _ := guidelineOverlayPaths(t)
+	content, err := os.ReadFile(codeDev)
+	if err != nil {
+		t.Fatalf("read %s: %v", codeDev, err)
+	}
+	got := lastH2Heading(string(content))
+	if got != "## Project Practices" {
+		t.Errorf("development-guidelines.md.tmpl: last H2 heading = %q, want `## Project Practices`", got)
+	}
+	if !strings.Contains(string(content), "- Follow existing repo patterns unless an approved improvement says otherwise.") {
+		t.Error("development-guidelines.md.tmpl: missing Project Practices placeholder bullet")
+	}
+}
+
+// editing-guidelines.md.tmpl ends with `## Project Practices` as the
+// last top-level heading — same convention as code overlay.
+func TestEditingGuidelinesEndsWithProjectPracticesSection(t *testing.T) {
+	_, docEdit := guidelineOverlayPaths(t)
+	content, err := os.ReadFile(docEdit)
+	if err != nil {
+		t.Fatalf("read %s: %v", docEdit, err)
+	}
+	got := lastH2Heading(string(content))
+	if got != "## Project Practices" {
+		t.Errorf("editing-guidelines.md.tmpl: last H2 heading = %q, want `## Project Practices`", got)
+	}
+	if !strings.Contains(string(content), "- Follow existing repo patterns unless an approved improvement says otherwise.") {
+		t.Error("editing-guidelines.md.tmpl: missing Project Practices placeholder bullet")
+	}
+}
+
+// Both consumer-facing guideline overlays carry the verbatim
+// boundary-explainer preamble sentence (Director-set wording).
+func TestGuidelinesPreambleNamesCanonVsLocalBoundary(t *testing.T) {
+	codeDev, docEdit := guidelineOverlayPaths(t)
+	want := "Sections above ## Project Practices are governa-maintained canon and update via canon syncs; repo-specific practices in ## Project Practices."
+	for _, p := range []string{codeDev, docEdit} {
+		content, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("read %s: %v", p, err)
+		}
+		if !strings.Contains(string(content), want) {
+			t.Errorf("%s: missing boundary-explainer sentence: %q", p, want)
+		}
+	}
+}
+
+// docs/canon-cycle.md carries the doctrine paragraph naming
+// canon-above-local-below structure as a reusable pattern. The
+// three-surface byte-equality is enforced by
+// TestCanonCycleAllThreeSurfacesByteEqual; this test pins the doctrine
+// content on the governa-root surface.
+func TestCanonCycleProjectTailDoctrinePresent(t *testing.T) {
+	root, _, _ := canonCycleSurfacePaths(t)
+	content, err := os.ReadFile(root)
+	if err != nil {
+		t.Fatalf("read %s: %v", root, err)
+	}
+	s := string(content)
+	for _, sub := range []string{
+		"Canon-above-local-below structure",
+		"## Project Rules",
+		"## Project Practices",
+		"governa-maintained, replaced at sync",
+		"repo-maintained, untouched at sync",
+	} {
+		if !strings.Contains(s, sub) {
+			t.Errorf("canon-cycle.md missing doctrine substring: %q", sub)
+		}
+	}
+}

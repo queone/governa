@@ -23,5 +23,4 @@ IE13: drift-scan report-header missing emission of the documented "scan-asymmetr
 
 
 
-IE16: docs/development-guidelines.md canon-vs-local rationalization — canon subsections pinned at top and stable, consumer-local sections at bottom. Follow-up to AC127 (canon-cycle doctrine). Director-set 2026-05-06: file as separate AC, out of scope of AC127 to keep tight.
 

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.119.0 | AC129: canon-vs-local rationalization in consumer-facing guidelines |
 | 0.118.0 | AC128: canon-cycle bridge in drift-scan reports |
 | 0.117.0 | AC127: canon-cycle doctrine in standalone overlay-tracked doc |
 | 0.116.4 | AC126: cleanup-after-AC instruction in drift-scan reports |
