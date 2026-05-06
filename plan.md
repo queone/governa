@@ -15,6 +15,3 @@ Ideas captured for future reference. Prefix each with `IE<N>:` (sequential N) fo
 - IE12: Flavor capability predicate for drift-scan emission gates — replace `cfg.Flavor == "code"` literal checks with a flavor-capability predicate (e.g., `HasExecutableCanon()`) so new flavors don't trigger per-flavor edits to every gate. Currently relevant gate: AC125's reachability-reminder emission.
 - IE13: drift-scan report-header missing emission of the documented "scan-asymmetry note" — `docs/drift-scan.md` line 17 claims the header carries it, but `internal/driftscan/driftscan.go writeReport` never emits a corresponding line. Doc/code drift between two governa-internal surfaces; discovered during AC125 implementation. Either implement the asymmetry-note emission or amend `docs/drift-scan.md` to remove the claim.
 
-
-
-
