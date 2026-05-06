@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.120.1 | AGENTS.md: tighten exploratory-discussion default with style guidance |
 | 0.120.0 | plan.md: retire IE6/7/8/10/12; drop orphan IE10 doc reference |
 | 0.119.1 | drift-scan: remove stale 'scan-asymmetry note' claim per IE13 |
 | 0.119.0 | AC129: canon-vs-local rationalization in consumer-facing guidelines |
