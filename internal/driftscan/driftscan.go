@@ -290,9 +290,9 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		report.Files = append(report.Files, fr)
 	}
 
-	// name-reference body scan — the asymmetry note's second
-	// branch. Surface target-only files referenced from divergent target
-	// files (e.g., rel.sh references ./cmd/rel/color.go which is target-only).
+	// name-reference body scan — the second branch of `target-has-no-canon`.
+	// Surface target-only files referenced from divergent target files
+	// (e.g., rel.sh references ./cmd/rel/color.go which is target-only).
 	// Same `target-has-no-canon` classification as the cross-flavor case;
 	// shared Director Review Q (keep / delete / migrate-to-canon).
 	var divergentForScan []FileResult
@@ -1137,7 +1137,7 @@ func normalizeRefPath(ref, refererRel string) string {
 // nameReferencedTargetOnlyFiles scans divergent target files for path
 // references to other target files that have no canon counterpart in
 // either flavor. Returns the deduplicated, sorted list. Implements the
-// asymmetry note's second branch: name-reference body scan.
+// second branch of `target-has-no-canon`: name-reference body scan.
 func nameReferencedTargetOnlyFiles(target string, divergent []FileResult, ourCanon map[string]string, otherCanon map[string]bool, alreadySurfaced map[string]bool) []string {
 	found := map[string]bool{}
 	for _, f := range divergent {

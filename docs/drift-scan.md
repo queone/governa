@@ -14,7 +14,7 @@
 
 Two files at the consumer repo root, plus a single-line stdout summary.
 
-**`<target>/drift-report-v<version>.md`** — the file-level drift report. Opens with two universal cross-flavor reminders immediately after the H1: `CleanupReminder` (delete-after-AC instruction) and `AdoptionReminder` (pointer to `docs/canon-cycle.md ## Consumer-side workflow` for the whole-file rule + mixed-content carve-out). Header then carries `Invocation`, `Canon: governa @ v<version>`, `Target`, `Flavor`, `Repo name`, `Counts: ...` (per-classification tally), and the scan-asymmetry note. Then a `## Files` section with one `### \`<relpath>\` — <classification>` block per file, each carrying:
+**`<target>/drift-report-v<version>.md`** — the file-level drift report. Opens with two universal cross-flavor reminders immediately after the H1: `CleanupReminder` (delete-after-AC instruction) and `AdoptionReminder` (pointer to `docs/canon-cycle.md ## Consumer-side workflow` for the whole-file rule + mixed-content carve-out). Header then carries `Invocation`, `Canon: governa @ v<version>`, `Target`, `Flavor`, `Repo name`, and `Counts: ...` (per-classification tally). Then a `## Files` section with one `### \`<relpath>\` — <classification>` block per file, each carrying:
 
 - `Canon ref: \`<canon-path>\`` — the path under canon that produced the comparison (or a "no canon path for flavor" annotation for `target-has-no-canon` files).
 - `Format-defining: yes` — when the file is in `formatDefiningCanonPaths` (consumer Operator decides routing; the tool only flags).
@@ -37,7 +37,7 @@ The tool emits one of the classifications below for every file. The Operator can
 - **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. The file's commits appear under `### Divergent files`; the Director routes it via the auto-populated `## Director Review` entry. Format-defining files (see `## Format-defining files`) are an exception: they are hard-routed to sync regardless of classification, so they emit no Director Review Q. Not softened with "could be intentional" in `## Out Of Scope`.
 - **`clear-sync`** — divergent with neither local commits nor preserve marker. Routed to this AC's `## In Scope` as `sync to canon`.
 - **`missing-in-target`** — canon ships the file; target does not. If canon is non-empty, routed to `## In Scope` as `create from canon` and detailed under `### Missing in target (create candidates)` with a content preview. The auto-emitted AT is a byte-equality check against canon content. If canon is empty, listed under `### Warnings` only.
-- **`target-has-no-canon`** — file exists in target, NOT in canon for this flavor. Two branches surface a file under this classification (per the asymmetry note's promise):
+- **`target-has-no-canon`** — file exists in target, NOT in canon for this flavor. Two branches surface a file under this classification:
   - **Cross-flavor branch:** the file exists in the OTHER flavor's canon. Possible flavor mismatch.
   - **Name-reference branch:** the file exists in target only (no canon counterpart in either flavor) but is name-referenced from a divergent target file (e.g., `rel.sh` references `./cmd/rel/color.go` and color.go has no canon presence).
 

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.119.1 | drift-scan: remove stale 'scan-asymmetry note' claim per IE13 |
 | 0.119.0 | AC129: canon-vs-local rationalization in consumer-facing guidelines |
 | 0.118.0 | AC128: canon-cycle bridge in drift-scan reports |
 | 0.117.0 | AC127: canon-cycle doctrine in standalone overlay-tracked doc |
