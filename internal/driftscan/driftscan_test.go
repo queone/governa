@@ -844,3 +844,101 @@ func TestNoCleanupReminderInJSONOutput(t *testing.T) {
 		t.Errorf("JSON output unexpectedly contains `cleanup_reminder` field; markdown-only scope:\n%s", out)
 	}
 }
+
+// Main drift-report emits AdoptionReminder exactly once as a stripped-equal
+// line. Test references the exported constant directly so editing the
+// constant without updating the emission breaks this assertion.
+func TestAdoptionReminderEmittedInMainReport(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	matchCount := 0
+	for line := range strings.SplitSeq(report, "\n") {
+		if strings.TrimSpace(line) == AdoptionReminder {
+			matchCount++
+		}
+	}
+	if matchCount != 1 {
+		t.Errorf("expected exactly 1 exact-line match for AdoptionReminder in main drift-report, got %d\nreport:\n%s", matchCount, report)
+	}
+}
+
+// Diffs drift-report emits AdoptionReminder exactly once as a stripped-equal
+// line. Mirrors main-report emission.
+func TestAdoptionReminderEmittedInDiffsReport(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
+	matchCount := 0
+	for line := range strings.SplitSeq(diffs, "\n") {
+		if strings.TrimSpace(line) == AdoptionReminder {
+			matchCount++
+		}
+	}
+	if matchCount != 1 {
+		t.Errorf("expected exactly 1 exact-line match for AdoptionReminder in diffs drift-report, got %d\ndiffs:\n%s", matchCount, diffs)
+	}
+}
+
+// Stdout summary carries no `**Adoption:` prefix line — audience boundary:
+// stdout is the tool-confirmation channel for invokers, not a
+// workflow-instruction surface.
+func TestNoAdoptionReminderInStdoutSummary(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	out := captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "**Adoption:") {
+			t.Errorf("stdout summary contains forbidden `**Adoption:` line: %q\nfull stdout:\n%s", line, out)
+		}
+	}
+}
+
+// JSON output is markdown-only-out-of-scope — adoption reminder is
+// human-targeted; JSON consumers are tools.
+func TestNoAdoptionReminderInJSONOutput(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, JSON: true, OverrideCanonID: "v0.0.0-test"}
+	out := captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	if strings.Contains(out, AdoptionReminder) {
+		t.Errorf("JSON output unexpectedly contains AdoptionReminder; markdown-only scope:\n%s", out)
+	}
+	if strings.Contains(out, "adoption_reminder") {
+		t.Errorf("JSON output unexpectedly contains `adoption_reminder` field; markdown-only scope:\n%s", out)
+	}
+}
+
+// AdoptionReminder is universal across flavors (canon-cycle.md is universal).
+// Both code- and doc-flavor reports carry the reminder.
+func TestAdoptionReminderEmittedInBothFlavors(t *testing.T) {
+	cases := []struct {
+		flavor  string
+		fixture func(*testing.T) string
+	}{
+		{"code", codeFixture},
+		{"doc", docFixture},
+	}
+	for _, tc := range cases {
+		t.Run(tc.flavor, func(t *testing.T) {
+			dir := tc.fixture(t)
+			cfg := Config{Target: dir, Flavor: tc.flavor, DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+			captureOut(t, func(f *os.File) {
+				Run(cfg, EmbeddedFS, f)
+			})
+			report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+			if !strings.Contains(report, AdoptionReminder) {
+				t.Errorf("%s-flavor report missing AdoptionReminder:\n%s", tc.flavor, report)
+			}
+		})
+	}
+}

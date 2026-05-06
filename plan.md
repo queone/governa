@@ -25,4 +25,3 @@ IE13: drift-scan report-header missing emission of the documented "scan-asymmetr
 
 IE16: docs/development-guidelines.md canon-vs-local rationalization — canon subsections pinned at top and stable, consumer-local sections at bottom. Follow-up to AC127 (canon-cycle doctrine). Director-set 2026-05-06: file as separate AC, out of scope of AC127 to keep tight.
 
-IE17: drift-scan report → canon-cycle.md bridge — drift-scan reports (`drift-report-v<sha>.md` and diffs file) currently emit no pointer to `docs/canon-cycle.md`, leaving the doctrine functionally unreachable from the artifact consumers actually read when addressing drift. Adds a one-line reminder (similar pattern to CleanupReminder/ReachabilityHeaderReminder, exported constant + markdown-only emission) so the consumer's drift-handling path lands them on the whole-file rule + carve-out doctrine. Director-set 2026-05-06: deferred from AC127 QA Finding 2; file as separate AC.
