@@ -49,7 +49,7 @@ For every divergent file, the report file 1 carries the verbatim preserve-marker
 
 **Scope.** This rule applies to canon code (code-flavor consumers); doc consumers don't have branching canon and the rule is structurally inapplicable to them.
 
-Canon code files may carry branches gated on governa's host shape (e.g., `cmd/<repo>/main.go` presence, `internal/templates/` tree). Such branches are dormant on consumers — byte-divergence on those lines is benign by construction. Before routing a divergent canon-code file as drift, verify the divergent code path is reachable in the consumer's structure.
+Canon code files may carry branches gated on governa's host shape (e.g., `cmd/<repo>/main.go` presence, `internal/templates/` tree). Such branches are dormant on consumers — byte-divergence on those lines is benign by construction; drift-scan does not flag them as action-requiring sync gaps, though consumers may still voluntarily adopt them for operational reasons (e.g., maintaining canonical shape across periodic baseline syncs). Before routing a divergent canon-code file as drift, verify the divergent code path is reachable in the consumer's structure.
 
 The gate sentence is the verbatim value of the exported `ReachabilityHeaderReminder` constant in `internal/driftscan/driftscan.go`, also emitted in every code-flavor drift-scan report header:
 
