@@ -72,7 +72,7 @@ Overlay templates are shipped snapshots: the propagation discipline below ensure
 
 - All commands must accept `-h`, `-?`, and `--help` as help flags
 - Help output uses `color.FormatUsage` from the `github.com/queone/governa-color` library for consistent formatting
-- "Usage:" is rendered in bold white (`color.BoldW`)
+- "Usage:" is rendered in bold white (`color.Bold(color.Whi5(...))`)
 - Each flag line is indented 2 spaces; descriptions align at column 38
 - Short and long flag forms are combined on one line (e.g. `-m, --mode string`)
 - Footer text (constraints, notes) appears after a blank line following the flag list

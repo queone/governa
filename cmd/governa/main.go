@@ -12,7 +12,7 @@ import (
 	"github.com/queone/governa/internal/templates"
 )
 
-const programVersion = "0.121.0"
+const programVersion = "0.122.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -104,8 +104,8 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "%s v%s\n", color.BoldW("governa"), programVersion)
-	fmt.Fprintln(os.Stderr, color.Gra(fmt.Sprintf("Repo governance templates — %s", sourceRepo)))
+	fmt.Fprintf(os.Stderr, "%s v%s\n", color.Bold(color.Whi5("governa")), programVersion)
+	fmt.Fprintln(os.Stderr, color.Gra5(fmt.Sprintf("Repo governance templates — %s", sourceRepo)))
 	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
 		{Flag: "apply", Desc: "apply governance template to a repo"},
 		{Flag: "drift-scan", Desc: "scan an adopted repo against governa canon"},

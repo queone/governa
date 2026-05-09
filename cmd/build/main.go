@@ -46,7 +46,7 @@ func main() {
 // governa-buildtool leave PostInstallHook nil.
 func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer) error {
 	return func(out, errOut io.Writer) error {
-		fmt.Fprintln(out, "\n"+color.Yel("==> Render example repos and validate"))
+		fmt.Fprintln(out, "\n"+color.Yel5("==> Render example repos and validate"))
 		exDir := "/tmp/governa-examples"
 		if err := runStreaming(out, errOut, "go", "run", "./cmd/governa", "examples"); err != nil {
 			return fmt.Errorf("governa examples: %w", err)
@@ -99,7 +99,7 @@ func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer)
 		// (no args = print usage, exit 0). A future regression that re-
 		// introduces a module-mode dependency in the DOC rel surface fails
 		// here.
-		fmt.Fprintln(out, "\n"+color.Yel("==> Smoke test DOC overlay (no-go.mod adoption)"))
+		fmt.Fprintln(out, "\n"+color.Yel5("==> Smoke test DOC overlay (no-go.mod adoption)"))
 		smokeDir := "/tmp/governa-doc-smoke"
 		if err := runStreaming(out, errOut, "go", "run", "./cmd/governa", "examples", "--smoke-doc"); err != nil {
 			return fmt.Errorf("DOC smoke render: %w", err)
@@ -118,7 +118,7 @@ func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer)
 
 func runStreaming(out, errOut io.Writer, name string, args ...string) error {
 	command := strings.TrimSpace(name + " " + strings.Join(args, " "))
-	fmt.Fprintf(out, "    %s\n", color.Grn(command))
+	fmt.Fprintf(out, "    %s\n", color.Grn5(command))
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = out
 	cmd.Stderr = errOut
@@ -130,7 +130,7 @@ func runStreaming(out, errOut io.Writer, name string, args ...string) error {
 
 func runStreamingInDir(dir string, out, errOut io.Writer, name string, args ...string) error {
 	command := strings.TrimSpace(name + " " + strings.Join(args, " "))
-	fmt.Fprintf(out, "    %s (in %s)\n", color.Grn(command), dir)
+	fmt.Fprintf(out, "    %s (in %s)\n", color.Grn5(command), dir)
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Stdout = out
