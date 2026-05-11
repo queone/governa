@@ -1,6 +1,6 @@
-github.com/queone/governa-buildtool v1.0.1 h1:ZBgIpjyL5+Lw6TUGHfyFA/dv8616hxqsS/NLw7WmyeU=
-github.com/queone/governa-buildtool v1.0.1/go.mod h1:KpZQSXLsIz2TBVjN9MNXs1mzgHacZJc5+N8qsg2+XcY=
-github.com/queone/governa-color v1.0.1 h1:lZwKfLjVBjcywVRmAVsGAKTv5HIY/P+fEjORHzGKczM=
-github.com/queone/governa-color v1.0.1/go.mod h1:hQRFFa1Ko11gJl8iUe2EzFG75cfWBCSSb+aoTUAy9UY=
-github.com/queone/governa-reltool v1.0.1 h1:Hd5iybQ541sJqOYnRkJznnzCUgoaJPim7Qu/gcaXlq0=
-github.com/queone/governa-reltool v1.0.1/go.mod h1:njI8U7RLV+jmLClGtOgkxZ4ixOtE8/pQE/IHJGn2U0I=
+github.com/queone/governa-buildtool v1.1.1 h1:xEc5W68xqLiXHV5QVtC3AEu6b8J2bpIgHtAQj/Kbe0M=
+github.com/queone/governa-buildtool v1.1.1/go.mod h1:wwQCNyfHytjUFOjjrrgbIxdOLXMcTJkbaB3jcxDuudo=
+github.com/queone/governa-color v1.2.1 h1:US69hYeJccDlB/ELHScZTbMGZfgfre/g2rodVdTCdX0=
+github.com/queone/governa-color v1.2.1/go.mod h1:NQFmFNm6FJDo5bD+Zi314ayYTZ5e1gMVSSwS+BUsayA=
+github.com/queone/governa-reltool v1.1.1 h1:u6k9xt5qkMRoDuqZ3y3Cwxq/f00u6BgTu1KuoEPzs+s=
+github.com/queone/governa-reltool v1.1.1/go.mod h1:DyxFBnuSvbCMbmdtU23Pd7xGDweHwb1yRh663rb4/zo=

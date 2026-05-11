@@ -5,6 +5,15 @@ These are durable coding practices, not workflow or process rules.
 For workflow, see `development-cycle.md`. For validation, see `build-release.md`.
 Sections above ## Project Practices are governa-maintained canon and update via canon syncs; repo-specific practices in ## Project Practices.
 
+## Rule Style
+
+Apply these to every rule in AGENTS.md and to the rules in this file.
+
+- State each rule as a positive procedure that leads with a verb naming the action.
+- Use imperative voice throughout; start every rule with a verb.
+- Prescribe the action; put rationale, state, or context in a separate note.
+- Keep each rule to one sentence; split or relocate anything longer.
+
 ## Identifier Strategy
 
 - Choose a primary key strategy early and document it in `arch.md`
