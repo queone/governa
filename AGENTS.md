@@ -80,8 +80,8 @@ Rules:
 
 ## Base Rules
 
-- Use the repo's canonical build command (`./build.sh` or equivalent). Never run individual tool commands directly. See `docs/build-release.md`.
-- For single-utility smoke tests, use `go run ./cmd/<tool>/` or `go build -o /tmp/<name> ./cmd/<tool>/`. Do not `go build ./cmd/<tool>/` from repo root — drops a stray binary.
+- Run `./build.sh` for every "is the repo green" verification. Do not substitute direct `go test`, `go vet`, `go fmt`, `go fix`, or `staticcheck` invocations — a green direct run does not guarantee a green `./build.sh`. Running two or more of these in sequence means you are reimplementing the pipeline; stop and run `./build.sh`. See `docs/build-release.md`.
+- Use targeted single-purpose `go` calls only for non-verification work: `go test -run <Name> ./pkg` to debug one failure, `go list`, `go doc`, or smoke-running one binary with `go run ./cmd/<tool>/` or `go build -o /tmp/<name> ./cmd/<tool>/`. Do not `go build ./cmd/<tool>/` from repo root — drops a stray binary.
 - Follow semver. PATCH: invisible to users (fixes, refactors, tooling). MINOR: user-visible (commands, flags, schema, behavior). Batch PATCH-level changes.
 - Pin dependencies to explicit versions. Document any reason to stay on an older version.
 - Every feature or logic change includes tests in the same pass.
@@ -90,7 +90,7 @@ Rules:
 - New CLI flags pair a one-letter short form (standard, leads help output) with a long-form alias. Migrate existing flags when their code is next touched.
 - Follow existing repo patterns unless an approved improvement says otherwise.
 - Comment public functions.
-- Don't put AC-body labels in code (AC/AT/Class/Part/Round numbers — anything whose referent dies with the AC at release prep). Name tests, comments, and errors by behavior: `TestDirectionLineEmittedInDiffs`, not `TestAC123_DirectionLineEmitted` / `TestAT5_HeaderEmits` / `TestClassZ_Foo`. Traceability lives in CHANGELOG rows and commit messages. Migrate existing violations when the code is next touched; prefix genuinely historical references with `Historical:` or delete them.
+- Name tests, comments, and errors by the behavior they describe: `TestDirectionLineEmittedInDiffs`. Do not embed AC, AT, Class, Part, or Round numbers in identifiers (`TestAC123_DirectionLineEmitted`, `TestAT5_HeaderEmits`, `TestClassZ_Foo`, `TestPartA_X`, `TestRound2_Y`) — these labels die with the AC at release prep. If you find yourself typing `AC<N>`, `AT<N>`, `Class<X>`, `Part<X>`, or `Round<N>` into an identifier or a non-CHANGELOG comment, stop — that's the failure pattern. Traceability lives in CHANGELOG rows and commit messages, not in code identifiers. When migrating existing violations on next touch, default to renaming by behavior; use the `Historical:` prefix only when the reference points to a shipped AC and the historical context genuinely aids the reader.
 - Prefer dedicated tools: `fd` (files), `rg` (text), `jq` (JSON), `pup` (HTML), `sd` (in-place replace), `sqlite-utils` (SQLite), `ast-grep` (structural). Batch independent shell calls. Do not re-read files already in context.
 
 ## Project Rules
