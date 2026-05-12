@@ -403,6 +403,7 @@ type Report struct {
 // stubs are added here in the same code change that introduces them.
 var expectedDivergencePaths = map[string]bool{
 	"plan.md": true,
+	"arch.md": true,
 }
 
 // formatDefiningCanonPaths is the format-defining-files registry (see

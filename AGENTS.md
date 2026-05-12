@@ -21,17 +21,18 @@ Rules:
 - Preserve each section's semantic intent across edits.
 - Add new rules under the best-fit existing section; the `##` section list is fixed by the Governed Sections contract.
 - Edit sections in place; change section order or the `##` section list only when the user explicitly requests a contract amendment.
-- When updating, name the exact sections to change and keep edits local.
+- Name the exact sections to change and keep edits local during every update.
 - Edit this file as a governed config artifact, with rule-shaped bullets only.
 - Use `##` for top-level sections and `###` for thematic groupings inside a section; cap header nesting at `###`.
-- Apply Rule Style (`docs/development-guidelines.md` "Rule Style") to every rule you add or rewrite in this file.
+- Apply Instruction Style (`docs/development-guidelines.md` "Instruction Style") to every new or rewritten instruction in this file.
+- Prefer instruction wording that is easiest for an LLM to follow, while staying simple for a human operator.
 - Treat AGENTS.md as the authoritative source for the rules it describes; conform overlay templates and other canon files to it (drift-scan's canon-coherence precondition catches violations).
 
 ## Interaction Mode
 
 - Open each response with the answer, finding, open question, or one-sentence note on what you're about to do; use terse flat bullets; skip preambles, recaps, and implication walk-throughs.
 - Create files and make repository edits only after explicit user authorization — including draft files, scratch scripts, scaffolding, and config tweaks.
-- When authorized, make the smallest change that satisfies the request.
+- Make the smallest change that satisfies the request once authorized.
 - Surface assumptions, ambiguities, and missing context before any direction-changing action.
 - Operate as the Operator on every interaction (per `docs/roles.md`); the role is fixed and unannounced.
 
@@ -45,32 +46,32 @@ Rules:
 - Edit only the files listed in the AC's `## In Scope` section, even after the user has authorized implementation.
 - Stop and ask when a request is ambiguous, or when the change is hard to reverse.
 - Wait for explicit user request before preparing, executing, publishing, deploying, or distributing — including drafting commit messages, version bumps, or release notes.
-- **Hand every `git commit` to the user — draft the full command for them to run, then stop. No EXCEPTION.**
+- **Leave every `git commit` for the user to execute. No EXCEPTION.**
+- Draft the full commit command for the user at handoff.
 - Begin release-prep bookkeeping (CHANGELOG row insertion, release-tag drafting) only after the user explicitly asks to prep for release; commit messages and version bumps remain governed by the broader pre-action gate.
 - Present the release command for the user to run; follow the Pre-Release Checklist in `docs/build-release.md`.
 
 ### AC-First Workflow
 
-For non-trivial changes:
-
+- Treat every non-trivial change as AC-first work.
 - Draft `docs/ac<N>-<slug>.md` before implementation using `docs/ac-template.md` if available; define scope, out-of-scope, objective fit, and required tests.
 - Objective Fit must state: (1) **Outcome** — what this delivers, in one sentence; (2) **Priority** — why this over higher-priority work, naming the trade-off if it's an intentional pivot; (3) **Dependencies** — prior ACs or decisions this builds on or contradicts.
 - Wait for explicit user confirmation that the AC is implementation-ready before starting implementation.
 
 ### AC Critique Gate
 
+- Start AC critique handling whenever the Director provides critique findings on the drafted AC.
 - Transcribe Director critique findings into the AC's `## Critique` section after each round.
-- Wait for the Director's explicit confirmation that the AC is implementation-ready before proceeding. See `docs/critique-protocol.md`.
+- Wait for the Director's explicit confirmation that the AC is implementation-ready before proceeding (see `docs/critique-protocol.md`).
 
 ### Pre-Implementation Verification
 
-After Director resolves all review questions:
-
+- Run this checklist after the Director resolves all review questions.
 - Confirm each settled decision landed verbatim in the AC.
 - Confirm Objective Fit uses the current form (Outcome / Priority / Dependencies).
 - Confirm Director Review is `None` with resolutions attributed inline.
 - Confirm ATs match settled wording.
-- Confirm every new or rewritten rule in AGENTS.md follows Rule Style.
+- Confirm every new or rewritten instruction in AGENTS.md follows Instruction Style.
 - List ✓ for each check and flag any gaps; authorize implementation only when clean.
 
 ## File-Change Discipline
@@ -78,7 +79,7 @@ After Director resolves all review questions:
 - Prefer targeted edits over broad rewrites.
 - Preserve user changes and unrelated local modifications.
 - Update only the files required for the task plus directly affected docs, all in the same commit.
-- When a change adds a file, command, flag, or major decision, update affected docs in the same pass.
+- Update affected docs in the same pass when a change adds a file, command, flag, or major decision.
 - Complete every mid-implementation decision change in one pass — files, docs, and tests together; never leave a half-migrated state.
 - Update user-facing docs when commands, setup, workflows, outputs, published structure, or operating instructions change.
 - Update architecture, planning, or style docs only when materially affected.
@@ -106,6 +107,7 @@ After Director resolves all review questions:
 
 - **Run `./build.sh` for every "is the repo green" check — never substitute direct `go test`, `go vet`, `go fmt`, `go fix`, or `staticcheck` invocations.**
 - Use direct `go` and `staticcheck` calls only for debugging a single failure (`go test -run <Name>`), inspecting code (`go list`, `go doc`), or smoking one binary (`go run ./cmd/<tool>/` or `go build -o /tmp/<name> ./cmd/<tool>/`) — never `go build ./cmd/<tool>/` from repo root, which drops a stray binary.
+- Complete the repo's canonical validation before preparing any commit handoff.
 
 ### Versioning and Dependencies
 
@@ -137,12 +139,12 @@ After Director resolves all review questions:
 ## Project Rules
 
 - Propagate every source-level change to `internal/` Go code (not governance text) to two sites in the same pass — the source file and its overlay template under `internal/templates/overlays/`; validate with `./build.sh`.
-- Before staging any commit that touches AGENTS.md rules applying to consumer repos, mirror the changes across governa source `AGENTS.md`, `internal/templates/base/AGENTS.md`, and `internal/templates/overlays/doc/files/AGENTS.md.tmpl` (CODE consumer inherits base unchanged).
-- Before staging any commit that touches a doc referenced from AGENTS.md, mirror the changes across governa source `docs/`, `internal/templates/overlays/code/files/docs/`, and `internal/templates/overlays/doc/files/docs/`.
+- Mirror every AGENTS.md change that applies to consumer repos across governa source `AGENTS.md`, `internal/templates/base/AGENTS.md`, and `internal/templates/overlays/doc/files/AGENTS.md.tmpl` (CODE consumer inherits base unchanged) before staging the commit.
+- Mirror every change to a doc referenced from AGENTS.md across governa source `docs/`, `internal/templates/overlays/code/files/docs/`, and `internal/templates/overlays/doc/files/docs/` before staging the commit.
 - Keep generated repos self-contained — every dependency lives in the generated repo itself.
 - Track forward-looking work in `plan.md` only via IE entries (pre-rubric IEs or AC-pointers, per `plan.md`'s docstring).
 - Limit `plan.md` structure to its existing top-level sections (`## Product Direction`, `## Ideas To Explore`); add new content only as IE bullets.
-- For multi-AC tracks, draft skeleton AC stubs first, then register one AC-pointer IE per stub.
+- Draft skeleton AC stubs first for every multi-AC track, then register one AC-pointer IE per stub.
 - Remove each AC-pointer IE when its AC ships and the AC file is deleted at release prep.
-- Director may skip the IE entirely when an AC is drafted and implemented inside a single cycle.
+- Skip the IE entirely (at Director's discretion) when an AC is drafted and implemented inside a single cycle.
 - `drift-scan <repo-path>`: run `governa drift-scan <repo-path>`, then print exactly — `Wrote:\n    <path>/<report>.md\n    <path>/<diffs>.md\n\nReport produced; governa's part is done; <repo> agent takes it from here.` — and stop.

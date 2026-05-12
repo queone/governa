@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.125.0 | AC132: Instruction Style canon + ownership handling + arch.md divergence |
 | 0.124.0 | AC131: prohibition rewrites, Rule Style canon, Base Rules H3 restructure |
 | 0.123.0 | AGENTS.md: rewrite ./build.sh and AC-labels rules (positive substitution) |
 | 0.122.0 | AC130: migrate to governa-color v1.0 (umbrella + helper-repo bumps) |

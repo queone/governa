@@ -79,7 +79,7 @@ The `formatDefiningCanonPaths` registry lists canon files whose content defines 
 
 The `ExpectedDivergencePaths` registry lists canon files that are per-repo stubs by design — files whose canon content is a placeholder and whose target content is expected to diverge. The tool skips the byte-compare for these paths and classifies them as `expected-divergence`.
 
-**Initial registry:** `plan.md`.
+**Initial registry:** `plan.md`; consumer-repo-root `arch.md` (governa-templated architecture stub — consumer fills in repo-specific architecture).
 
 **Extension:** when a future canon file is introduced as a per-repo stub, the contributing AC MUST add the file's path to `ExpectedDivergencePaths` in the same code change. The registry MAY be per-flavor if a stub is flavor-specific.
 
@@ -118,4 +118,18 @@ When shipping an AC that locks a local form against canon, include one of these 
 ## Match evidence
 
 For every `match`-classified file, the staged AC's `### Match evidence` sub-subsection names the comparison method — `byte-equal (canon @ v<version> vs <relpath>)`. Files whose canon is a per-repo stub appear under `### Expected per-repo divergence` instead, with a note explaining the divergence is by design.
+
+## Ownership and consumer response
+
+- Apply these rules whenever reviewing a drift-scan report.
+- Treat canon-owned violations as governa feedback.
+- Report canon-owned violations upstream to the governa maintainer.
+- Skip local patches of canon-owned text.
+- Treat repo-owned violations as local repo work.
+- Fix repo-owned violations directly in the next AC.
+- Pause when a canon update introduces an Instruction Style violation.
+- Report the violation upstream.
+- Skip local rewrites of canon-owned text unless an explicit AC declares intentional divergence.
+
+Note: drift-scan provides the diff payload; the consumer agent's review is the classifier that decides what to do with each divergence. Local patches of canon-owned text create drift. Inside the governa repo itself, both ownership paths apply: canon-owned template/source files need canon fixes; governa-local docs can be edited as local repo work.
 

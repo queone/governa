@@ -268,6 +268,22 @@ func TestPlanMdExpectedDivergence(t *testing.T) {
 	}
 }
 
+// arch.md is a per-repo stub like plan.md (governa-templated at consumer-repo
+// root; consumer fills in repo-specific architecture). It must classify as
+// expected-divergence, not as ambiguity / clear-sync.
+func TestArchMdExpectedDivergence(t *testing.T) {
+	dir := codeFixture(t)
+	mustWrite(t, filepath.Join(dir, "arch.md"), "# arch\n\nrepo-specific content\n")
+	cfg := Config{Target: dir, Flavor: "code", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	if !strings.Contains(report, "### `arch.md` — expected-divergence") {
+		t.Errorf("expected arch.md classified as expected-divergence, got:\n%s", report)
+	}
+}
+
 // Sanity check that the report is valid markdown headed by the right title.
 func TestReportShape(t *testing.T) {
 	r := Report{
