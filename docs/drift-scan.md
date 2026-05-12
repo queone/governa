@@ -14,7 +14,7 @@
 
 Two files at the consumer repo root, plus a single-line stdout summary.
 
-**`<target>/drift-report-v<version>.md`** — the file-level drift report. Opens with two universal cross-flavor reminders immediately after the H1: `CleanupReminder` (delete-after-AC instruction) and `AdoptionReminder` (pointer to `docs/canon-cycle.md ## Consumer-side workflow` for the whole-file rule + mixed-content carve-out). Header then carries `Invocation`, `Canon: governa @ v<version>`, `Target`, `Flavor`, `Repo name`, and `Counts: ...` (per-classification tally). Then a `## Files` section with one `### \`<relpath>\` — <classification>` block per file, each carrying:
+**`<target>/drift-report-v<version>.md`** — the file-level drift report. Opens with two universal cross-flavor reminders immediately after the H1: `CleanupReminder` (the reports are disposable working artifacts to delete after drafting the adoption AC) and `AdoptionReminder` (inline whole-file overwrite guidance for pure-canon files plus the hunk-level mixed-content carve-out). Header then carries `Invocation`, `Canon: governa @ v<version>`, `Target`, `Flavor`, `Repo name`, and `Counts: ...` (per-classification tally). Then a `## Files` section with one `### \`<relpath>\` — <classification>` block per file, each carrying:
 
 - `Canon ref: \`<canon-path>\`` — the path under canon that produced the comparison (or a "no canon path for flavor" annotation for `target-has-no-canon` files).
 - `Format-defining: yes` — when the file is in `formatDefiningCanonPaths` (consumer Operator decides routing; the tool only flags).
@@ -23,7 +23,7 @@ Two files at the consumer repo root, plus a single-line stdout summary.
 
 Diff hunks live in the sister file, not file 1.
 
-**`<target>/drift-report-v<version>-diffs.md`** — the per-file diffs. Title `# Drift-Scan Diffs (governa @ v<version>)`. Opens with the same `CleanupReminder` + `AdoptionReminder` block as the main report. Then the convention stamp: `_Diff convention: \`+\` lines exist in TARGET; \`-\` lines exist in CANON. \`+\` is "target has this; canon does not"; \`-\` is "canon has this; target does not"._`. One `## \`<relpath>\`` H2 section per divergent file. Each section carries a `Direction:` line above the diff hunk (`target leads`, `canon leads`, or mutual line counts), then the verbatim `diff -u` hunk in a fenced code block. Empty body when no divergent files.
+**`<target>/drift-report-v<version>-diffs.md`** — the per-file diffs. Title `# Drift-Scan Diffs (governa @ v<version>)`. Opens with the same self-contained `CleanupReminder` + `AdoptionReminder` block as the main report. Then the convention stamp: `_Diff convention: \`+\` lines exist in TARGET; \`-\` lines exist in CANON. \`+\` is "target has this; canon does not"; \`-\` is "canon has this; target does not"._`. One `## \`<relpath>\`` H2 section per divergent file. Each section carries a `Direction:` line above the diff hunk (`target leads`, `canon leads`, or mutual line counts), then the verbatim `diff -u` hunk in a fenced code block. Empty body when no divergent files.
 
 **Stdout summary** — single line: `wrote drift-report-v<version>.md and drift-report-v<version>-diffs.md (<counts>)`. Suppressed when `--json` is set; in JSON mode the full Report struct goes to stdout instead.
 
@@ -132,4 +132,3 @@ For every `match`-classified file, the staged AC's `### Match evidence` sub-subs
 - Skip local rewrites of canon-owned text unless an explicit AC declares intentional divergence.
 
 Note: drift-scan provides the diff payload; the consumer agent's review is the classifier that decides what to do with each divergence. Local patches of canon-owned text create drift. Inside the governa repo itself, both ownership paths apply: canon-owned template/source files need canon fixes; governa-local docs can be edited as local repo work.
-

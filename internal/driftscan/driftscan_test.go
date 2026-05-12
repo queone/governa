@@ -801,7 +801,7 @@ func TestNoReachabilityReminderInJSONOutput(t *testing.T) {
 	}
 }
 
-// Main drift-report file carries the cleanup-after-AC instruction. Test
+// Main drift-report file carries the disposable-artifact cleanup reminder. Test
 // references CleanupReminder directly (not hardcoded), so editing the
 // constant without updating the emission breaks this assertion.
 func TestCleanupReminderInMainReport(t *testing.T) {
@@ -816,7 +816,7 @@ func TestCleanupReminderInMainReport(t *testing.T) {
 	}
 }
 
-// Diffs drift-report file carries the cleanup-after-AC instruction.
+// Diffs drift-report file carries the disposable-artifact cleanup reminder.
 func TestCleanupReminderInDiffsReport(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
@@ -861,7 +861,7 @@ func TestNoCleanupReminderInJSONOutput(t *testing.T) {
 	}
 }
 
-// Main drift-report emits AdoptionReminder exactly once as a stripped-equal
+// Main drift-report emits the inline AdoptionReminder exactly once as a stripped-equal
 // line. Test references the exported constant directly so editing the
 // constant without updating the emission breaks this assertion.
 func TestAdoptionReminderEmittedInMainReport(t *testing.T) {
@@ -882,7 +882,7 @@ func TestAdoptionReminderEmittedInMainReport(t *testing.T) {
 	}
 }
 
-// Diffs drift-report emits AdoptionReminder exactly once as a stripped-equal
+// Diffs drift-report emits the inline AdoptionReminder exactly once as a stripped-equal
 // line. Mirrors main-report emission.
 func TestAdoptionReminderEmittedInDiffsReport(t *testing.T) {
 	dir := docFixture(t)
@@ -934,7 +934,7 @@ func TestNoAdoptionReminderInJSONOutput(t *testing.T) {
 	}
 }
 
-// AdoptionReminder is universal across flavors (canon-cycle.md is universal).
+// AdoptionReminder is universal across flavors because the inline rule is flavor-independent.
 // Both code- and doc-flavor reports carry the reminder.
 func TestAdoptionReminderEmittedInBothFlavors(t *testing.T) {
 	cases := []struct {

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.126.0 | AC133: self-contained drift-report cleanup and adoption reminders |
 | 0.125.0 | AC132: Instruction Style canon + ownership handling + arch.md divergence |
 | 0.124.0 | AC131: prohibition rewrites, Rule Style canon, Base Rules H3 restructure |
 | 0.123.0 | AGENTS.md: rewrite ./build.sh and AC-labels rules (positive substitution) |
