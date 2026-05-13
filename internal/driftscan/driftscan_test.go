@@ -1,7 +1,6 @@
 package driftscan
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -104,19 +103,7 @@ func TestRefuseGovernaSelf(t *testing.T) {
 	}
 }
 
-// Repo name override propagates into the report file 1 header.
-func TestRepoNameResolution(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test", RepoName: "my-override"}
-
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	if !strings.Contains(report, "Repo name: my-override") {
-		t.Errorf("expected override in report file, got:\n%s", report)
-	}
-}
+// (Removed under AC136: RepoName is not emitted as a header field in the new AC-stub format.)
 
 // AT4 (subset) — Numbering computation.
 func TestPreserveMarker(t *testing.T) {
@@ -197,6 +184,7 @@ func TestNoGitWorktree(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
 	// No gitInit — target has no .git/.
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
@@ -254,23 +242,21 @@ func TestNonexistentTarget(t *testing.T) {
 }
 
 // H2 regression: plan.md content divergence is expected and must classify
-// as expected-divergence (not ambiguity / clear-sync, and not the misleading
-// `match` label used pre-fix).
+// as expected-divergence and appear in the AC stub's ## Out Of Scope section.
 func TestPlanMdExpectedDivergence(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	if !strings.Contains(report, "### `plan.md` — expected-divergence") {
-		t.Errorf("expected plan.md classified as expected-divergence, got:\n%s", report)
+	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	if !strings.Contains(stub, "`plan.md` — expected-divergence") {
+		t.Errorf("expected plan.md classified as expected-divergence in stub, got:\n%s", stub)
 	}
 }
 
-// arch.md is a per-repo stub like plan.md (governa-templated at consumer-repo
-// root; consumer fills in repo-specific architecture). It must classify as
-// expected-divergence, not as ambiguity / clear-sync.
+// arch.md is a per-repo stub like plan.md. It must classify as
+// expected-divergence and appear in the AC stub's ## Out Of Scope section.
 func TestArchMdExpectedDivergence(t *testing.T) {
 	dir := codeFixture(t)
 	mustWrite(t, filepath.Join(dir, "arch.md"), "# arch\n\nrepo-specific content\n")
@@ -278,43 +264,14 @@ func TestArchMdExpectedDivergence(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	if !strings.Contains(report, "### `arch.md` — expected-divergence") {
-		t.Errorf("expected arch.md classified as expected-divergence, got:\n%s", report)
+	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	if !strings.Contains(stub, "`arch.md` — expected-divergence") {
+		t.Errorf("expected arch.md classified as expected-divergence in stub, got:\n%s", stub)
 	}
 }
 
-// Sanity check that the report is valid markdown headed by the right title.
-func TestReportShape(t *testing.T) {
-	r := Report{
-		Header: ReportHeader{Invocation: "test", CanonSHA: "v0.0.0-test", Target: "/tmp/x", Flavor: "doc", RepoName: "x"},
-	}
-	var buf bytes.Buffer
-	writeReport(&buf, r, false)
-	if !strings.HasPrefix(buf.String(), "# Drift-Scan Report") {
-		t.Errorf("expected report header, got: %s", buf.String()[:50])
-	}
-}
-
-// Counts tally line appears in the report file 1 header and the stdout summary.
-func TestCountsTallyLine(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-
-	out := captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	if !strings.Contains(out, "missing-in-target") {
-		t.Errorf("stdout summary missing counts (expected missing-in-target), got:\n%s", out)
-	}
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	if !strings.Contains(report, "- Counts: ") {
-		t.Errorf("report file missing Counts line, got:\n%s", report)
-	}
-	if !strings.Contains(report, "missing-in-target") {
-		t.Errorf("report Counts line missing missing-in-target, got:\n%s", report)
-	}
-}
+// (Removed under AC136: TestReportShape and TestCountsTallyLine asserted
+// the old report-pair format that AC136 replaced with AC-stub emission.)
 
 // Pure-function test for tallyClassifications.
 func TestTallyClassifications(t *testing.T) {
@@ -438,7 +395,7 @@ func TestNameReferenceSurfacesTargetOnlyFile(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	report := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
 
 	// cmd/foo/color.go should appear under target-has-no-canon (via name-reference).
 	if !strings.Contains(report, "`cmd/foo/color.go`") {
@@ -462,7 +419,7 @@ func TestNameReferenceNoFalsePositiveOnCanonResidentRef(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	report := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
 
 	// main.go is in canon — must not appear under target-has-no-canon classification.
 	if strings.Contains(report, "### `cmd/rel/main.go` — target-has-no-canon") {
@@ -471,11 +428,11 @@ func TestNameReferenceNoFalsePositiveOnCanonResidentRef(t *testing.T) {
 }
 
 // =====================================================================
-// Historical: Drift-scan retrench: report-pair emission
+// AC136: AC-stub + sister-diffs emission under <target>/docs/
 // =====================================================================
 
-// Two report files emitted at consumer root.
-func TestReportPairEmittedAtConsumerRoot(t *testing.T) {
+// AT6 (subset): both emission files exist and are non-empty.
+func TestACStubAndDiffsEmitted(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
@@ -483,78 +440,55 @@ func TestReportPairEmittedAtConsumerRoot(t *testing.T) {
 			t.Errorf("expected ExitOK, got %d", exit)
 		}
 	})
-	for _, name := range []string{"drift-report-v0.0.0-test.md", "drift-report-v0.0.0-test-diffs.md"} {
+	for _, name := range []string{"docs/ac1-drift-scan-v0.0.0-test.md", "docs/ac1-drift-scan-v0.0.0-test-diffs.md"} {
 		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		if err != nil {
-			t.Fatalf("expected %s at consumer root, got: %v", name, err)
+			t.Fatalf("expected %s under target docs/, got: %v", name, err)
 		}
 		if info.Size() == 0 {
 			t.Errorf("%s is empty", name)
 		}
 	}
-}
-
-// Report file 1 carries header + per-file blocks + format-defining flag.
-func TestReport1HeaderAndPerFileBlocks(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	for _, want := range []string{
-		"# Drift-Scan Report",
-		"- Canon: governa @ v0.0.0-test",
-		"- Flavor: doc",
-		"- Counts: ",
-		"## Files",
-		"### `AGENTS.md`",
-		"Format-defining: yes", // AGENTS.md is in formatDefiningCanonPaths
-	} {
-		if !strings.Contains(report, want) {
-			t.Errorf("report file 1 missing %q. got:\n%s", want, report)
+	// Old root-level report-pair must NOT exist.
+	for _, name := range []string{"drift-report-v0.0.0-test.md", "drift-report-v0.0.0-test-diffs.md"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("legacy %s should not be emitted under AC136", name)
 		}
 	}
 }
 
-// Report file 2 carries the convention stamp + per-file H2 sections.
-func TestReport2DiffsHeaderAndConvention(t *testing.T) {
+// AT7 (subset): AC stub conforms to ac-template skeleton.
+func TestACStubConformsToTemplate(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
+	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
 	for _, want := range []string{
-		"# Drift-Scan Diffs (governa @ v0.0.0-test)",
-		"Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON.",
+		"# AC1 Drift-Scan Adoption from governa v0.0.0-test",
+		"## Summary",
+		"## Objective Fit",
+		"1. **Outcome.**",
+		"2. **Priority.**",
+		"3. **Dependencies.**",
+		"## In Scope",
+		"## Out Of Scope",
+		"## Implementation Notes",
+		"## Acceptance Tests",
+		"## Documentation Updates",
+		"## Director Review",
+		"## Status",
+		"`PENDING`",
 	} {
-		if !strings.Contains(diffs, want) {
-			t.Errorf("diffs file missing %q. got:\n%s", want, diffs)
+		if !strings.Contains(stub, want) {
+			t.Errorf("AC stub missing %q. got:\n%s", want, stub)
 		}
 	}
 }
 
-// Run() does NOT stage an AC under <target>/docs/ and does NOT
-// modify plan.md.
-func TestRunDoesNotStageACOrModifyPlan(t *testing.T) {
-	dir := docFixture(t)
-	planBefore := mustRead(t, filepath.Join(dir, "plan.md"))
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-
-	// No new AC files under docs/.
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
-	if len(matches) != 0 {
-		t.Errorf("expected no staged AC under docs/, got %v", matches)
-	}
-	// plan.md unchanged.
-	planAfter := mustRead(t, filepath.Join(dir, "plan.md"))
-	if planBefore != planAfter {
-		t.Errorf("plan.md must not be modified.\nbefore:\n%s\nafter:\n%s", planBefore, planAfter)
-	}
-}
-
-// Idempotent re-scan: invoking Run() twice against the same
-// canon SHA produces identical files (overwrite, no append, no error).
-func TestRescanOverwritesIdempotently(t *testing.T) {
+// AT8 (subset): re-running against same canon version on unedited stub
+// is idempotent — both files overwrite in place with identical content.
+func TestRescanOverwritesIdempotentlyOnUnedited(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {
@@ -562,15 +496,155 @@ func TestRescanOverwritesIdempotently(t *testing.T) {
 			t.Fatalf("first run: expected ExitOK, got %d", exit)
 		}
 	})
-	report1 := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	stub1 := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
 	captureOut(t, func(f *os.File) {
 		if exit, _ := Run(cfg, EmbeddedFS, f); exit != ExitOK {
 			t.Fatalf("second run: expected ExitOK, got %d", exit)
 		}
 	})
-	report2 := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	if report1 != report2 {
-		t.Errorf("re-scan produced different report (overwrite must be idempotent)")
+	stub2 := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	if stub1 != stub2 {
+		t.Errorf("re-scan produced different stub (overwrite must be idempotent on unedited)")
+	}
+}
+
+// AT15: edit-detection guard refuses overwrite on edited stub.
+func TestEditDetectionRefusesOverwrite(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		if exit, _ := Run(cfg, EmbeddedFS, f); exit != ExitOK {
+			t.Fatalf("first run: expected ExitOK, got %d", exit)
+		}
+	})
+	// Edit the stub body without rewriting the marker.
+	stubPath := filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md")
+	original := mustRead(t, stubPath)
+	edited := original + "\n\n## Critique\n\n### Round 1\n\nedited by hand\n"
+	if err := os.WriteFile(stubPath, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Re-run must refuse.
+	exit, err := Run(cfg, EmbeddedFS, devNull(t))
+	if exit == ExitOK {
+		t.Errorf("expected non-zero exit on edited-stub re-run, got ExitOK")
+	}
+	if err == nil || !strings.Contains(err.Error(), "edited since last drift-scan emission") {
+		t.Errorf("expected edit-detection error, got: %v", err)
+	}
+	// Stub should still carry the edited content (no overwrite).
+	after := mustRead(t, stubPath)
+	if after != edited {
+		t.Errorf("edited stub was overwritten — refuse path failed")
+	}
+}
+
+// AT10 (subset): --json emission includes the emitted file paths.
+func TestJSONIncludesEmittedPaths(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, JSON: true, OverrideCanonID: "v0.0.0-test"}
+	out := captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	var r Report
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if r.Emitted == nil {
+		t.Fatalf("JSON output missing emitted-paths block: %s", out)
+	}
+	if want := "docs/ac1-drift-scan-v0.0.0-test.md"; r.Emitted.ACStub != want {
+		t.Errorf("emitted.ac_stub = %q, want %q", r.Emitted.ACStub, want)
+	}
+	if want := "docs/ac1-drift-scan-v0.0.0-test-diffs.md"; r.Emitted.Diffs != want {
+		t.Errorf("emitted.diffs = %q, want %q", r.Emitted.Diffs, want)
+	}
+}
+
+// Format-defining files override raw classification: any divergence on a
+// file in formatDefiningCanonPaths routes to ## In Scope as a sync item
+// regardless of whether the raw classification was preserve / ambiguity.
+// docFixture's docs/ac-template.md has minimal content (canon is the full
+// template); after the single fixture commit, it classifies as ambiguity
+// (1 commit, no marker) — without the override it would route to Director
+// Review. With override, it must appear in ## In Scope with a
+// (format-defining) annotation and not in ## Director Review.
+func TestFormatDefiningOverrideRoutesToInScope(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+
+	// In Scope section must list the format-defining file with annotation.
+	inScopeStart := strings.Index(stub, "## In Scope")
+	inScopeEnd := strings.Index(stub, "## Out Of Scope")
+	if inScopeStart < 0 || inScopeEnd < 0 {
+		t.Fatalf("stub missing required sections: %s", stub)
+	}
+	inScope := stub[inScopeStart:inScopeEnd]
+	if !strings.Contains(inScope, "`docs/ac-template.md`") {
+		t.Errorf("expected docs/ac-template.md in ## In Scope (format-defining override), got:\n%s", inScope)
+	}
+	if !strings.Contains(inScope, "(format-defining)") {
+		t.Errorf("expected (format-defining) annotation in ## In Scope, got:\n%s", inScope)
+	}
+
+	// Director Review section must NOT list the format-defining file (that
+	// is the override's whole point).
+	dirReviewStart := strings.Index(stub, "## Director Review")
+	if dirReviewStart < 0 {
+		t.Fatalf("stub missing ## Director Review section: %s", stub)
+	}
+	dirReviewEnd := strings.Index(stub[dirReviewStart:], "## Status")
+	dirReview := stub[dirReviewStart : dirReviewStart+dirReviewEnd]
+	if strings.Contains(dirReview, "`docs/ac-template.md`") {
+		t.Errorf("docs/ac-template.md must not appear in ## Director Review (format-defining override failed), got:\n%s", dirReview)
+	}
+}
+
+// docs/ is created on emission if missing. Adoption check can pass on
+// AGENTS.md + CHANGELOG row alone; emission must still succeed.
+func TestEmissionCreatesDocsDir(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| 0.1.0 | initial governa apply |\n")
+	gitInit(t, dir)
+	gitAddCommit(t, dir, "initial")
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	exit, err := Run(cfg, EmbeddedFS, devNull(t))
+	if exit != ExitOK {
+		t.Fatalf("expected ExitOK, got %d (err=%v)", exit, err)
+	}
+	// docs/ should now exist with the AC stub inside.
+	if _, err := os.Stat(filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md")); err != nil {
+		t.Errorf("expected AC stub at docs/ac1-drift-scan-v0.0.0-test.md after auto-MkdirAll, got: %v", err)
+	}
+}
+
+// AT14: adoption check hard-errors when AGENTS.md present without secondary signal.
+func TestAdoptionCheckFailsWithoutSignal(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	gitInit(t, dir)
+	gitAddCommit(t, dir, "initial")
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	exit, err := Run(cfg, EmbeddedFS, devNull(t))
+	if exit == ExitOK {
+		t.Errorf("expected non-zero exit when AGENTS.md present without adoption signal")
+	}
+	if err == nil || !strings.Contains(err.Error(), "no governa adoption signal") {
+		t.Errorf("expected adoption-signal error, got: %v", err)
+	}
+}
+
+// Plan.md must remain unmodified across drift-scan runs (only the AC stub
+// + sister diffs file under docs/ are written).
+func TestRunDoesNotModifyPlan(t *testing.T) {
+	dir := docFixture(t)
+	planBefore := mustRead(t, filepath.Join(dir, "plan.md"))
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	planAfter := mustRead(t, filepath.Join(dir, "plan.md"))
+	if planBefore != planAfter {
+		t.Errorf("plan.md must not be modified by drift-scan")
 	}
 }
 
@@ -584,7 +658,7 @@ func TestMissingInTargetSurfacesInDiffsFile(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
+	diffs := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test-diffs.md"))
 
 	// docFixture's canon includes .gitignore. Target lacks it.
 	if !strings.Contains(diffs, "## `.gitignore`") {
@@ -628,7 +702,7 @@ func TestTargetHasNoCanonSurfacesInDiffsFile(t *testing.T) {
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
+	diffs := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test-diffs.md"))
 
 	if !strings.Contains(diffs, "## `cmd/foo/color.go`") {
 		t.Errorf("target-has-no-canon file (cmd/foo/color.go) absent from diffs file:\n%s", diffs)
@@ -675,7 +749,7 @@ func TestDirectionLineEmittedPerFile(t *testing.T) {
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
+	diffs := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test-diffs.md"))
 
 	// Each per-file H2 section should carry a Direction line.
 	if !strings.Contains(diffs, "Direction: ") {
@@ -732,54 +806,27 @@ func TestReachabilityReminderEmittedInCodeFlavorHeader(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
+	report := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
 	if !strings.Contains(report, ReachabilityHeaderReminder) {
 		t.Errorf("expected ReachabilityHeaderReminder in code-flavor report header, got:\n%s", report)
 	}
 }
 
-// AT3 — Doc-flavor drift-scan report header has no line beginning with
-// `Reachability check:`. Stronger than asserting the exact reminder is
-// absent: closes the escape hatch where a future AC adds a different
-// `Reachability check: ...` line for doc flavor.
-func TestNoReachabilityLineInDocFlavorHeader(t *testing.T) {
+// Doc-flavor AC stub does not carry the Reachability reminder.
+func TestNoReachabilityLineInDocFlavorStub(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	header, _, ok := strings.Cut(report, "## Files")
-	if !ok {
-		t.Fatalf("report missing `## Files` heading, got:\n%s", report)
-	}
-	for line := range strings.SplitSeq(header, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "Reachability check:") {
-			t.Errorf("doc-flavor header contains forbidden line: %q\nfull header:\n%s", line, header)
-		}
+	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	if strings.Contains(stub, "Reachability check:") {
+		t.Errorf("doc-flavor AC stub must not contain `Reachability check:`. got:\n%s", stub)
 	}
 }
 
-// AT4 — Drift-scan classification behavior is unchanged. The reachability
-// reminder is a header-level addition only; no per-file flag, no new
-// FileResult field. Per Round 2 disposition (registry rejected), no
-// `Host-shape-dependent:` line should ever appear in the rendered report.
-func TestClassificationUnaffectedByReachabilityReminder(t *testing.T) {
-	dir := codeFixture(t)
-	cfg := Config{Target: dir, Flavor: "code", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	if strings.Contains(report, "Host-shape-dependent:") {
-		t.Errorf("unexpected `Host-shape-dependent:` flag in report (per-file flag is out of scope per Round 2 disposition):\n%s", report)
-	}
-	if !strings.Contains(report, "- Counts: ") {
-		t.Errorf("report missing Counts line — classification path may be broken:\n%s", report)
-	}
-}
+// (Removed under AC136: TestClassificationUnaffectedByReachabilityReminder
+// asserted the old "Counts:" header line, which is not part of the new AC
+// stub format. Classification correctness is still covered by the
+// per-classification tests above.)
 
 // AT5 — JSON output is markdown-only-out-of-scope (Round 10): the
 // reachability reminder is a human-targeted nudge; JSON consumers are
@@ -801,37 +848,11 @@ func TestNoReachabilityReminderInJSONOutput(t *testing.T) {
 	}
 }
 
-// Main drift-report file carries the disposable-artifact cleanup reminder. Test
-// references CleanupReminder directly (not hardcoded), so editing the
-// constant without updating the emission breaks this assertion.
-func TestCleanupReminderInMainReport(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	if !strings.Contains(report, CleanupReminder) {
-		t.Errorf("expected CleanupReminder in main drift-report, got:\n%s", report)
-	}
-}
+// (Removed under AC136: CleanupReminder applied to the old disposable
+// report-pair. The new emission IS an AC stub the consumer Operator
+// iterates on, not a disposable artifact.)
 
-// Diffs drift-report file carries the disposable-artifact cleanup reminder.
-func TestCleanupReminderInDiffsReport(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
-	if !strings.Contains(diffs, CleanupReminder) {
-		t.Errorf("expected CleanupReminder in diffs drift-report, got:\n%s", diffs)
-	}
-}
-
-// Stdout summary carries no `Cleanup:` prefix line — audience boundary:
-// stdout is the tool-confirmation channel for invokers, not a
-// workflow-instruction surface.
+// Stdout summary has no `Cleanup:` line (no reminder is emitted by the new flow).
 func TestNoCleanupLineInStdoutSummary(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
@@ -845,116 +866,8 @@ func TestNoCleanupLineInStdoutSummary(t *testing.T) {
 	}
 }
 
-// JSON output is markdown-only-out-of-scope — cleanup instruction is a
-// human-targeted nudge; JSON consumers are tools.
-func TestNoCleanupReminderInJSONOutput(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, JSON: true, OverrideCanonID: "v0.0.0-test"}
-	out := captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	if strings.Contains(out, CleanupReminder) {
-		t.Errorf("JSON output unexpectedly contains CleanupReminder; markdown-only scope:\n%s", out)
-	}
-	if strings.Contains(out, "cleanup_reminder") {
-		t.Errorf("JSON output unexpectedly contains `cleanup_reminder` field; markdown-only scope:\n%s", out)
-	}
-}
-
-// Main drift-report emits the inline AdoptionReminder exactly once as a stripped-equal
-// line. Test references the exported constant directly so editing the
-// constant without updating the emission breaks this assertion.
-func TestAdoptionReminderEmittedInMainReport(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-	matchCount := 0
-	for line := range strings.SplitSeq(report, "\n") {
-		if strings.TrimSpace(line) == AdoptionReminder {
-			matchCount++
-		}
-	}
-	if matchCount != 1 {
-		t.Errorf("expected exactly 1 exact-line match for AdoptionReminder in main drift-report, got %d\nreport:\n%s", matchCount, report)
-	}
-}
-
-// Diffs drift-report emits the inline AdoptionReminder exactly once as a stripped-equal
-// line. Mirrors main-report emission.
-func TestAdoptionReminderEmittedInDiffsReport(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-	captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	diffs := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test-diffs.md"))
-	matchCount := 0
-	for line := range strings.SplitSeq(diffs, "\n") {
-		if strings.TrimSpace(line) == AdoptionReminder {
-			matchCount++
-		}
-	}
-	if matchCount != 1 {
-		t.Errorf("expected exactly 1 exact-line match for AdoptionReminder in diffs drift-report, got %d\ndiffs:\n%s", matchCount, diffs)
-	}
-}
-
-// Stdout summary carries no `**Adoption:` prefix line — audience boundary:
-// stdout is the tool-confirmation channel for invokers, not a
-// workflow-instruction surface.
-func TestNoAdoptionReminderInStdoutSummary(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-	out := captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	for line := range strings.SplitSeq(out, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "**Adoption:") {
-			t.Errorf("stdout summary contains forbidden `**Adoption:` line: %q\nfull stdout:\n%s", line, out)
-		}
-	}
-}
-
-// JSON output is markdown-only-out-of-scope — adoption reminder is
-// human-targeted; JSON consumers are tools.
-func TestNoAdoptionReminderInJSONOutput(t *testing.T) {
-	dir := docFixture(t)
-	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, JSON: true, OverrideCanonID: "v0.0.0-test"}
-	out := captureOut(t, func(f *os.File) {
-		Run(cfg, EmbeddedFS, f)
-	})
-	if strings.Contains(out, AdoptionReminder) {
-		t.Errorf("JSON output unexpectedly contains AdoptionReminder; markdown-only scope:\n%s", out)
-	}
-	if strings.Contains(out, "adoption_reminder") {
-		t.Errorf("JSON output unexpectedly contains `adoption_reminder` field; markdown-only scope:\n%s", out)
-	}
-}
-
-// AdoptionReminder is universal across flavors because the inline rule is flavor-independent.
-// Both code- and doc-flavor reports carry the reminder.
-func TestAdoptionReminderEmittedInBothFlavors(t *testing.T) {
-	cases := []struct {
-		flavor  string
-		fixture func(*testing.T) string
-	}{
-		{"code", codeFixture},
-		{"doc", docFixture},
-	}
-	for _, tc := range cases {
-		t.Run(tc.flavor, func(t *testing.T) {
-			dir := tc.fixture(t)
-			cfg := Config{Target: dir, Flavor: tc.flavor, DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
-			captureOut(t, func(f *os.File) {
-				Run(cfg, EmbeddedFS, f)
-			})
-			report := mustRead(t, filepath.Join(dir, "drift-report-v0.0.0-test.md"))
-			if !strings.Contains(report, AdoptionReminder) {
-				t.Errorf("%s-flavor report missing AdoptionReminder:\n%s", tc.flavor, report)
-			}
-		})
-	}
-}
+// (Removed under AC136: TestAdoptionReminder* and the Adoption/Cleanup
+// reminder constants were tied to the old report-pair format. The new
+// AC stub carries adoption guidance through Implementation Notes / the
+// emitted ATs themselves; the inline reminder constants are no longer
+// emitted.)

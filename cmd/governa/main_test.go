@@ -59,6 +59,11 @@ func TestDriftScanSubcommandListed(t *testing.T) {
 }
 
 // drift-scan dispatches to the drift-scan handler (not "unknown command").
+// Note: dispatch with no args reaches the drift-scan handler, then fails the
+// governa-adoption check (the binary's own cwd at test time is the governa
+// source tree, but the cwd of the spawned process is the test's TempDir or
+// the test working dir; either way, the failure is from drift-scan, not from
+// the top-level unknown-command path).
 func TestDriftScanDispatch(t *testing.T) {
 	t.Parallel()
 	bin := governaBinary(t)
@@ -75,5 +80,15 @@ func TestDriftScanHelp(t *testing.T) {
 	out, _ := exec.Command(bin, "drift-scan", "-h").CombinedOutput()
 	if !strings.Contains(string(out), "Scan an adopted-governa repo") {
 		t.Errorf("drift-scan help should describe the command, got:\n%s", out)
+	}
+}
+
+// AT13: drift-scan rejects positional arguments — no <repo-path> accepted.
+func TestDriftScanRejectsPositionalArg(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+	out, _ := exec.Command(bin, "drift-scan", "/some/path").CombinedOutput()
+	if !strings.Contains(string(out), "no positional arguments accepted") {
+		t.Errorf("expected positional-arg rejection, got:\n%s", out)
 	}
 }

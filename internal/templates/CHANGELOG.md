@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.127.0 | AC134+AC135+AC136: session-entry + rationale + drift-scan AC-stub emission |
 | 0.126.0 | AC133: self-contained drift-report cleanup and adoption reminders |
 | 0.125.0 | AC132: Instruction Style canon + ownership handling + arch.md divergence |
 | 0.124.0 | AC131: prohibition rewrites, Rule Style canon, Base Rules H3 restructure |

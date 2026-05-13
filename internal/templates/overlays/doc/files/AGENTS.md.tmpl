@@ -36,6 +36,15 @@ Rules:
 - Surface assumptions, ambiguities, and missing context before any direction-changing action.
 - Operate as the Operator on every interaction (per `docs/roles.md`); the role is fixed and unannounced.
 
+### Session Entry
+
+- Treat AGENTS.md as the active operating contract for this repository.
+- State "Governa contract loaded." before the first substantive Governa-governed action of a session, and only after internalizing AGENTS.md.
+- Treat planning, editing, reviewing, command choice, and implementation work as substantive actions.
+- Before any file change, confirm the gate set: AC status, explicit authorization, scoped edits, tests in the same pass, and no agent-run commits.
+- Resolve instruction conflicts in this order: user instruction within authorized scope, then AGENTS.md, then referenced Governa docs, then model defaults.
+- Stop and ask when a request bypasses a required Governa gate or lacks required authorization, scope, or context.
+
 ## Approval Boundaries
 
 ### General Gates
@@ -45,11 +54,9 @@ Rules:
 - Require explicit approval for: governance files, CI/release config, secrets handling, external integrations.
 - Edit only the files listed in the AC's `## In Scope` section, even after the user has authorized implementation.
 - Stop and ask when a request is ambiguous, or when the change is hard to reverse.
-- Wait for explicit user request before preparing, executing, publishing, deploying, or distributing — including drafting commit messages, version bumps, or release notes.
+- Wait for explicit user request before preparing, executing, publishing, deploying, or distributing — including drafting commit messages, commit commands, version bumps, or release notes.
 - **Leave every `git commit` for the user to execute. No EXCEPTION.**
-- Draft the full commit command for the user at handoff.
-- Begin release-prep bookkeeping (CHANGELOG row insertion, release-tag drafting) only after the user explicitly asks to prep for release; commit messages and version bumps remain governed by the broader pre-action gate.
-- Present the release command for the user to run; follow the Pre-Release Checklist in `docs/release.md`.
+- Treat an explicit "prep for release" request as the trigger for release-prep bookkeeping, including CHANGELOG row insertion, release-tag drafting, commit-command drafting, and release-command presentation; follow the Pre-Release Checklist in `docs/release.md`.
 
 ### AC-First Workflow
 
@@ -93,10 +100,13 @@ Rules:
 
 - Lead each review with findings and cite file paths and concrete behavior; skip preamble summaries.
 - Prioritize regressions, broken links, missing cross-references, and drift from documented behavior.
+- Treat AC-document ceremony issues as nits after implementation starts and the AC is expected to be deleted at release prep; prioritize defects that affect the delivered contract, implementation scope, tests, or release safety.
 - Report "no issues" directly when none are found; note any residual risk or verification gaps.
 - Keep completions terse — what changed, flat bullets, one-sentence next step — and skip "What's in it" / "Main conclusion" / "Next steps" headers unless asked.
+- Skip settled repo mechanics in completions, including symlink behavior, mirror mechanics, governance structure, and contract conventions.
 - Default to plain text and simple bullets; reach for tables or richer structure only when content clearly benefits.
 - Note skipped checks only when the omission is unusual or affects confidence.
+- Run required validation gates, but report successful routine gates only when they materially affect confidence; always report failures and skipped required gates.
 - Present editorial decisions to the director as: a recommendation when one viable option exists; two bounded options plus a recommendation when two exist; the best two plus a one-line note on the rest when more than two exist.
 - Include the three-part self-review structure (Verified / Red-teamed / Not checked) defined in `docs/roles.md` in every substantial completion report, even when the default is terse.
 

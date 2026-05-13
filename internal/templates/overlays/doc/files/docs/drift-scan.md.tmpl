@@ -93,8 +93,6 @@ Reachability check: verify divergent canon-code branches reach this consumer's s
 
 **Known limit.** This rule assumes canon-shaped branches; sync-omitted branches that look dormant are real drift. Consumer agents distinguish case-by-case based on the gate condition.
 
-`internal/preptool/preptool.go` is the canonical example: `detectChangelogTargets` carries a second candidate (`internal/templates/CHANGELOG.md`) gated on the host's templates tree, and `detectVersionTargets` has a template-tree block gated on `internal/templates/base/` presence. Both branches are dormant on consumers.
-
 Structurally unreachable branches are not drift.
 
 ## Format-defining files
@@ -147,7 +145,7 @@ The tool recognizes exactly the four phrases below in `<cwd>/CHANGELOG.md` table
 | `intentional divergence: <path>` | `intentional divergence: rel.sh` |
 | `<path>: keep local` | `docs/team-rituals.md: keep local` |
 
-When shipping an AC that locks a local form against canon, include one of these phrases in the CHANGELOG row alongside whatever else the row says. See `docs/build-release.md` for the release-flow rule (DOC consumers see `docs/release.md`).
+When shipping an AC that locks a local form against canon, include one of these phrases in the CHANGELOG row alongside whatever else the row says. See `docs/release.md` for the release-flow rule.
 
 ## Match evidence
 

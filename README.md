@@ -18,7 +18,7 @@ governa ships a closed two-role model so agent sessions have a predictable start
 - **Operator** — LLM agent role. Owns implementation, tests, doc alignment, and mandatory self-review. Automatic and unannounced; it is the only agent role.
 - **Director** — human role. Owns intent, priorities, irreversible decisions (releases, architectural bets, scope), and the meta-loop. Not assignable to an agent.
 
-Full role definitions and the self-review contract live in [`docs/roles.md`](docs/roles.md). The shared `AGENTS.md` contract applies in every case.
+Full role definitions and the self-review contract live in [`docs/roles.md`](docs/roles.md). The shared `AGENTS.md` contract applies in every case. The reasoning behind the contract structure — particularly the session-entry rule — is in [`docs/operator-contract-rationale.md`](docs/operator-contract-rationale.md).
 
 ## Usage
 
@@ -56,7 +56,7 @@ Run `governa help` for available commands, or `governa apply --help` for apply-s
 
 ### Self-service updates
 
-To adopt future governa improvements, have a coding agent in the consumer repo read governa's `AGENTS.md`, role files, and `CHANGELOG.md`, then cherry-pick what's useful. There is no re-sync mechanism — improvements are pulled by the consumer, not pushed by the template.
+To adopt future governa improvements, run `governa drift-scan` from the consumer repo root. The command compares the consumer repo against canon embedded in the installed binary and emits an AC stub (under `docs/`) plus a sister diffs file. The consumer Operator iterates on the emitted stub under normal AC discipline. See [`docs/drift-scan.md`](docs/drift-scan.md) for the full flow. Manual cherry-picking from governa's `AGENTS.md`, role files, and `CHANGELOG.md` remains a fallback.
 
 ## Design
 The target repo stays self-contained. The template repo is read-only at bootstrap time and is not imported as a submodule, package, or runtime dependency. The bootstrap tool is Go-based so the template works across macOS, Linux, and Windows without requiring a specific shell.
