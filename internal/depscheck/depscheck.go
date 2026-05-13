@@ -59,11 +59,13 @@ func RunCLI(args []string, out, errOut io.Writer) (int, error) {
 	if err != nil {
 		return ExitEnvError, fmt.Errorf("governa deps: resolve cwd: %w", err)
 	}
-	if err := emission.RefuseGovernaSource(target, "governa deps"); err != nil {
-		return ExitEnvError, err
-	}
-	if err := emission.RequireGovernaAdopted(target, "governa deps"); err != nil {
-		return ExitEnvError, err
+	// `governa deps` is permitted against the governa source repo (so the
+	// maintainer can audit governa's own deps); other consumer-run commands
+	// still refuse the source via emission.RefuseGovernaSource.
+	if !emission.IsGovernaCheckout(target) {
+		if err := emission.RequireGovernaAdopted(target, "governa deps"); err != nil {
+			return ExitEnvError, err
+		}
 	}
 	if _, err := os.Stat(filepath.Join(target, "go.mod")); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -122,23 +124,24 @@ func renderReport(out io.Writer, modules []moduleUpdate) {
 			other = append(other, mod)
 		}
 	}
+	pathWidth, currentWidth, latestWidth := columnWidths(modules)
 	fmt.Fprintln(out, "governa deps")
 	if len(helper) > 0 {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, color.Bold(color.Cya5("governa helper libraries")))
-		renderRows(out, helper)
+		renderRows(out, helper, pathWidth, currentWidth, latestWidth)
 	}
 	if len(other) > 0 {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, color.Bold(color.Whi5("direct dependencies")))
-		renderRows(out, other)
+		renderRows(out, other, pathWidth, currentWidth, latestWidth)
 	}
 	if len(modules) == 0 {
 		fmt.Fprintln(out, "no direct dependencies found")
 	}
 }
 
-func renderRows(out io.Writer, modules []moduleUpdate) {
+func renderRows(out io.Writer, modules []moduleUpdate, pathWidth, currentWidth, latestWidth int) {
 	for _, mod := range modules {
 		latest := mod.Version
 		status := color.Grn5("current")
@@ -152,8 +155,21 @@ func renderRows(out io.Writer, modules []moduleUpdate) {
 				status = color.Cya5("pre-release")
 			}
 		}
-		fmt.Fprintf(out, "%s  %s  %s  %s\n", mod.Path, mod.Version, latest, status)
+		fmt.Fprintf(out, "%-*s  %-*s  %-*s  %s\n", pathWidth, mod.Path, currentWidth, mod.Version, latestWidth, latest, status)
 	}
+}
+
+func columnWidths(modules []moduleUpdate) (pathWidth, currentWidth, latestWidth int) {
+	for _, mod := range modules {
+		latest := mod.Version
+		if mod.Update != nil && mod.Update.Version != "" && mod.Update.Version != mod.Version {
+			latest = mod.Update.Version
+		}
+		pathWidth = max(pathWidth, len(mod.Path))
+		currentWidth = max(currentWidth, len(mod.Version))
+		latestWidth = max(latestWidth, len(latest))
+	}
+	return pathWidth, currentWidth, latestWidth
 }
 
 func majorVersion(v string) int {
@@ -173,5 +189,5 @@ func helpRequested(args []string) bool {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, color.FormatUsage("governa deps", nil, "Report direct Go dependency freshness for an adopted CODE consumer repo."))
+	fmt.Fprint(w, color.FormatUsage("governa deps", nil, "Report direct Go dependency freshness for an adopted CODE consumer repo or the governa source repo."))
 }

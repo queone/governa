@@ -21,9 +21,16 @@ const (
 	markerSuffix = " -->"
 )
 
+// IsGovernaCheckout reports whether target points at a governa source checkout.
+// Callers that need to permit governa-source operation (e.g., `governa deps`)
+// branch on this directly rather than catching RefuseGovernaSource's error.
+func IsGovernaCheckout(target string) bool {
+	return governance.DetectGovernaCheckoutAt(target) == nil
+}
+
 // RefuseGovernaSource prevents consumer-run commands from targeting governa's source repo.
 func RefuseGovernaSource(target, tool string) error {
-	if err := governance.DetectGovernaCheckoutAt(target); err == nil {
+	if IsGovernaCheckout(target) {
 		return fmt.Errorf("%s: target %s looks like a governa checkout — %s is for adopted repos, not the governa source", tool, target, tool)
 	}
 	return nil

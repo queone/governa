@@ -15,7 +15,7 @@ import (
 	"github.com/queone/governa/internal/updatecheck"
 )
 
-const programVersion = "0.128.0"
+const programVersion = "0.129.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -132,7 +132,7 @@ func printUsage() {
 		{Flag: "apply", Desc: "apply governance template to a repo"},
 		{Flag: "drift-scan", Desc: "scan an adopted repo against governa canon"},
 		{Flag: "rm", Desc: "emit cleanup AC for removing Governa canon"},
-		{Flag: "deps", Desc: "report direct dependency freshness for adopted CODE repos"},
+		{Flag: "deps", Desc: "report direct dependency freshness for adopted CODE repos or governa source"},
 		{Flag: "examples", Desc: "render example repos to /tmp/governa-examples/"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help, h", Desc: "show this help"},

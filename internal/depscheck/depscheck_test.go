@@ -65,6 +65,29 @@ func TestDepsAdoptionRequired(t *testing.T) {
 	}
 }
 
+func TestDepsAllowsGovernaSource(t *testing.T) {
+	dir := t.TempDir()
+	writeDepsFile(t, filepath.Join(dir, "go.mod"), "module github.com/queone/governa\n\ngo 1.25\n")
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "templates", "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	withDepsCWD(t, dir)
+	oldRun := runGoList
+	runGoList = func(string) ([]byte, error) {
+		return []byte(`{"Path":"github.com/queone/governa","Main":true}
+{"Path":"github.com/queone/governa-color","Version":"v1.0.0"}`), nil
+	}
+	t.Cleanup(func() { runGoList = oldRun })
+	var out bytes.Buffer
+	exit, err := RunCLI(nil, &out, &bytes.Buffer{})
+	if err != nil || exit != ExitOK {
+		t.Fatalf("exit=%d err=%v", exit, err)
+	}
+	if !strings.Contains(out.String(), "github.com/queone/governa-color") {
+		t.Fatalf("expected governa source deps report, got:\n%s", out.String())
+	}
+}
+
 func TestDepsReportHighlightsGovernaHelpers(t *testing.T) {
 	dir := adoptedDepsFixture(t, true)
 	writeDepsFile(t, filepath.Join(dir, "go.sum"), "example checksum\n")
@@ -94,6 +117,14 @@ func TestDepsReportHighlightsGovernaHelpers(t *testing.T) {
 	}
 	if got := fileSHA(t, filepath.Join(dir, "go.sum")); got != beforeSum {
 		t.Fatal("go.sum changed during deps report")
+	}
+	for _, want := range []string{
+		"github.com/queone/governa-color  v1.0.0  v1.2.0  ",
+		"example.com/other                v1.0.0  v1.0.0  ",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("aligned report missing %q:\n%s", want, got)
+		}
 	}
 }
 

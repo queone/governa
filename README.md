@@ -60,7 +60,7 @@ Run `governa rm` from an adopted consumer repo root to emit a cleanup AC stub pl
 
 ### `deps`
 
-Run `governa deps` from an adopted CODE consumer repo root to report direct Go dependency freshness without modifying `go.mod` or `go.sum`. Governa helper libraries (`github.com/queone/governa-*`) are grouped first.
+Run `governa deps` from an adopted CODE consumer repo root, or from the governa source repo itself, to report direct Go dependency freshness without modifying `go.mod` or `go.sum`. Governa helper libraries (`github.com/queone/governa-*`) are grouped first.
 
 ### Self-service updates
 
@@ -91,7 +91,7 @@ The `governa` CLI may print a quiet stderr notice when a newer governa release i
 
 ## Library Family
 
-governa is shifting from a single one-off-applied template to a layered model: convention applied once + code distributed as separate-repo libraries (`governa-<x>`). Extractions are gated by [`docs/library-policy.md`](docs/library-policy.md). See also [`docs/advisories/`](docs/advisories/) for portable advisories surfaced from consumer repos.
+governa is shifting from a single one-off-applied template to a layered model: convention applied once + code distributed as separate-repo libraries (`governa-<x>`). Extractions are gated by [`docs/library-policy.md`](docs/library-policy.md).
 
 - [`governa-color`](https://github.com/queone/governa-color) — ANSI terminal color helpers for CLI output.
 - [`governa-reltool`](https://github.com/queone/governa-reltool) — Git tag, commit, and push orchestration for release flows.

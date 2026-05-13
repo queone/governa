@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.129.0 | deps: allow source repo + align columns; retire docs/advisories/ |
 | 0.128.0 | AC137: lifecycle and maintenance subcommands |
 | 0.127.0 | AC134+AC135+AC136: session-entry + rationale + drift-scan AC-stub emission |
 | 0.126.0 | AC133: self-contained drift-report cleanup and adoption reminders |

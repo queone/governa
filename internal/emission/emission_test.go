@@ -53,6 +53,20 @@ func TestRequireGovernaAdoptedAndPreserveMarkers(t *testing.T) {
 	}
 }
 
+func TestIsGovernaCheckout(t *testing.T) {
+	dir := t.TempDir()
+	if IsGovernaCheckout(dir) {
+		t.Fatal("empty tempdir should not register as a governa checkout")
+	}
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module github.com/queone/governa\n")
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "templates", "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !IsGovernaCheckout(dir) {
+		t.Fatal("seeded governa-shape tempdir should register as a checkout")
+	}
+}
+
 func TestAllocateACNumberHandlesEmptyGitHistory(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "docs", "ac3-existing.md"), "# AC3\n")

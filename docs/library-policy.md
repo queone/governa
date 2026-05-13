@@ -136,26 +136,4 @@ Returns clean if no governance terms slipped through extraction. A match (e.g., 
 
 ## Pivot-Period Consumer Guidance
 
-This section is **transitional**. It is expected to be removed (or rewritten as historical context) once all extractable internals have shipped as libraries and the consumer fleet has migrated. Future readers should not treat it as evergreen guidance.
-
-### When this guidance applies
-
-A consumer repo discovers an issue ("IE") in its copy of formerly-governa code that is *slated for extraction but not yet libraryized*. Examples: a regex bug, a doctrine ambiguity, a test gap, a behavior that diverges from intent.
-
-### The four-step pattern
-
-1. **Draft a portable advisory.** Describe the symptom, the trap (if any naive fix would worsen the situation), the root cause (across layers — regex, semantics, etc.), the canonical fix venue (which library will resolve it under the relevant extraction AC), and per-consumer-shape guidance. Use the existing advisories in [`docs/advisories/`](advisories/) as format reference. The advisory is intended for archive in governa's `docs/advisories/`, where it serves as design input for the eventual extraction AC.
-
-2. **Ship a doctrine fix locally.** Codify the intended behavior in the consumer's own release docs (e.g. `docs/build-release.md`). This prevents future agents from re-introducing the bug or "fixing" it in a regressive way.
-
-3. **Ship a guard test locally.** Add a test that asserts the intended behavior and fails if anyone modifies the underlying code in a way that worsens the situation. Assertion direction is "values must NOT change" — typically a bytes-equal end-to-end check with a sentinel input. The test's failure message should cite the relevant advisory in `docs/advisories/`.
-
-4. **Do NOT patch the formerly-governa code itself.** Any local code patch to the slated-for-extraction code is throwaway when the consumer migrates to the eventual library; it adds drift in the meantime with zero lasting value. The structural fix lands in the library, not in the consumer copy.
-
-### Worked example
-
-The first instance of this pattern was set by the `utils` consumer repo's AC26 / IE9 handling — the `programVersion` bump regex. The canonical advisory is archived at [`docs/advisories/program-version-bump.md`](advisories/program-version-bump.md). Read it as the template shape for future advisories.
-
-### Advisory archive
-
-`docs/advisories/` is the canonical archive for portable advisories surfaced from consumer repos. Each advisory is a single Markdown file describing one issue and its canonical fix venue. The formal advisory-log mechanism (intake process, severity tiers, per-consumer ledger, lifecycle rules) is future work and is tracked as an Idea To Explore in [`plan.md`](../plan.md). Until it lands, the directory functions as a flat archive: each advisory follows the format established by `program-version-bump.md`, and the steward intakes new advisories ad hoc.
+When a consumer repo discovers an issue in its copy of formerly-governa code that is *slated for extraction but not yet libraryized*, the consumer Operator surfaces it to the governa team (Director + agent) rather than patching the slated-for-extraction code locally. The governa team responds by drafting an AC (or deferring as a `plan.md` IE) against governa source; the structural fix lands in the eventual library, not in the consumer copy. Local doctrine notes and guard tests in the consumer repo are encouraged where they prevent regressive "fixes" before the library ships.
