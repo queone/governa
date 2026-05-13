@@ -7,19 +7,28 @@ import (
 	"path/filepath"
 
 	"github.com/queone/governa-color"
+	"github.com/queone/governa/internal/depscheck"
 	"github.com/queone/governa/internal/driftscan"
 	"github.com/queone/governa/internal/governance"
+	"github.com/queone/governa/internal/governarm"
 	"github.com/queone/governa/internal/templates"
+	"github.com/queone/governa/internal/updatecheck"
 )
 
-const programVersion = "0.127.0"
+const programVersion = "0.128.0"
 
 const sourceRepo = "github.com/queone/governa"
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
+	defer updatecheck.Check(programVersion)
+
 	if len(os.Args) < 2 {
 		printUsage()
-		os.Exit(2)
+		return 2
 	}
 
 	subcmd := os.Args[1]
@@ -28,26 +37,26 @@ func main() {
 	switch subcmd {
 	case "version", "ver":
 		fmt.Printf("governa v%s (template %s)\nsource: %s\n", programVersion, templates.TemplateVersion, sourceRepo)
-		return
+		return 0
 	case "examples":
 		if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "-?") {
 			fmt.Fprint(os.Stderr, color.FormatUsage("governa examples", []color.UsageLine{
 				{Flag: "--smoke-doc", Desc: "render DOC overlay only, no go.mod, to /tmp/governa-doc-smoke/ (build.sh adoption smoke test)"},
 			}, "Render both CODE and DOC overlays to /tmp/governa-examples/ for inspection or testing."))
-			return
+			return 0
 		}
 		if len(args) > 0 && args[0] == "--smoke-doc" {
 			if err := runDocSmoke(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
+				return 1
 			}
-			return
+			return 0
 		}
 		if err := runExamples(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return 1
 		}
-		return
+		return 0
 	case "apply":
 		// handled below
 	case "drift-scan":
@@ -55,26 +64,38 @@ func main() {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
-		os.Exit(exit)
+		return exit
+	case "rm":
+		exit, err := governarm.RunCLI(args, templates.EmbeddedFS, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		return exit
+	case "deps":
+		exit, err := depscheck.RunCLI(args, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		return exit
 	case "sync":
 		fmt.Fprintf(os.Stderr, "unknown command: sync (use \"governa apply\")\n")
-		os.Exit(2)
+		return 2
 	case "new":
 		fmt.Fprintf(os.Stderr, "unknown command: new (use \"governa apply\")\n")
-		os.Exit(2)
+		return 2
 	case "adopt":
 		fmt.Fprintf(os.Stderr, "unknown command: adopt (use \"governa apply\")\n")
-		os.Exit(2)
+		return 2
 	case "enhance", "ack":
 		fmt.Fprintf(os.Stderr, "command removed in v0.50.0: %q (see CHANGELOG)\n", subcmd)
-		os.Exit(2)
+		return 2
 	case "-h", "--help", "-?", "help", "h":
 		printUsage()
-		return
+		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", subcmd)
 		printUsage()
-		os.Exit(2)
+		return 2
 	}
 
 	mode := governance.Mode(subcmd)
@@ -82,25 +103,26 @@ func main() {
 	cfg, help, err := governance.ParseModeArgs(mode, args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 	if help {
-		return
+		return 0
 	}
 
 	// Fail-safe: refuse to apply into the governa repo itself.
 	if target, _ := filepath.Abs(cfg.Target); target != "" {
 		if err := governance.DetectGovernaCheckoutAt(target); err == nil {
 			fmt.Fprintln(os.Stderr, "error: cannot run apply against the governa repo itself — apply is for consumer repos")
-			os.Exit(1)
+			return 1
 		}
 	}
 
 	var tfs fs.FS = templates.EmbeddedFS
 	if err := governance.RunWithFS(tfs, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func printUsage() {
@@ -109,6 +131,8 @@ func printUsage() {
 	fmt.Fprint(os.Stderr, color.FormatUsage("governa <command> [options]", []color.UsageLine{
 		{Flag: "apply", Desc: "apply governance template to a repo"},
 		{Flag: "drift-scan", Desc: "scan an adopted repo against governa canon"},
+		{Flag: "rm", Desc: "emit cleanup AC for removing Governa canon"},
+		{Flag: "deps", Desc: "report direct dependency freshness for adopted CODE repos"},
 		{Flag: "examples", Desc: "render example repos to /tmp/governa-examples/"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help, h", Desc: "show this help"},

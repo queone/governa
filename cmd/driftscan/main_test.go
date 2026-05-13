@@ -18,12 +18,18 @@ func driftScanBinary(t *testing.T) string {
 	return bin
 }
 
+func driftScanCmd(t *testing.T, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(driftScanBinary(t), args...)
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+	return cmd
+}
+
 // AC136: drift-scan accepts no positional arguments and runs against cwd.
 // When cwd is not a governa-adopted repo, the tool hard-errors with a
 // non-zero exit and a recovery-guidance message.
 func TestNoArgs(t *testing.T) {
-	bin := driftScanBinary(t)
-	cmd := exec.Command(bin)
+	cmd := driftScanCmd(t)
 	out, err := cmd.CombinedOutput()
 	exitErr, ok := err.(*exec.ExitError)
 	if !ok || exitErr.ExitCode() == 0 {
@@ -36,8 +42,7 @@ func TestNoArgs(t *testing.T) {
 
 // AC136: drift-scan rejects any positional argument with a clear error.
 func TestRejectsPositionalArg(t *testing.T) {
-	bin := driftScanBinary(t)
-	out, err := exec.Command(bin, "/some/path").CombinedOutput()
+	out, err := driftScanCmd(t, "/some/path").CombinedOutput()
 	exitErr, ok := err.(*exec.ExitError)
 	if !ok || exitErr.ExitCode() == 0 {
 		t.Errorf("expected non-zero exit when passing a positional argument, got: err=%v out=%s", err, out)
@@ -82,6 +87,7 @@ func TestNoArgsSucceedsInAdoptedRepo(t *testing.T) {
 	}
 
 	cmd := exec.Command(bin)
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -97,9 +103,8 @@ func TestNoArgsSucceedsInAdoptedRepo(t *testing.T) {
 }
 
 func TestHelpFlag(t *testing.T) {
-	bin := driftScanBinary(t)
 	for _, arg := range []string{"-h", "--help"} {
-		out, err := exec.Command(bin, arg).CombinedOutput()
+		out, err := driftScanCmd(t, arg).CombinedOutput()
 		if err != nil {
 			t.Errorf("driftscan %s: %v", arg, err)
 		}

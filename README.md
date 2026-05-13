@@ -54,6 +54,14 @@ governa apply
 
 Run `governa help` for available commands, or `governa apply --help` for apply-specific flags.
 
+### `rm`
+
+Run `governa rm` from an adopted consumer repo root to emit a cleanup AC stub plus a sister diffs file under `docs/`. The emitted AC lists whole-file removals, preserves repo-owned content, and routes hybrid files through Director Review before any deletion occurs.
+
+### `deps`
+
+Run `governa deps` from an adopted CODE consumer repo root to report direct Go dependency freshness without modifying `go.mod` or `go.sum`. Governa helper libraries (`github.com/queone/governa-*`) are grouped first.
+
 ### Self-service updates
 
 To adopt future governa improvements, run `governa drift-scan` from the consumer repo root. The command compares the consumer repo against canon embedded in the installed binary and emits an AC stub (under `docs/`) plus a sister diffs file. The consumer Operator iterates on the emitted stub under normal AC discipline. See [`docs/drift-scan.md`](docs/drift-scan.md) for the full flow. Manual cherry-picking from governa's `AGENTS.md`, role files, and `CHANGELOG.md` remains a fallback.
@@ -78,6 +86,8 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 - [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/README.md`](docs/README.md)
 - [`docs/roles.md`](docs/roles.md)
+
+The `governa` CLI may print a quiet stderr notice when a newer governa release is available. Set `GOVERNA_NO_UPDATE_CHECK=1` to suppress that best-effort check.
 
 ## Library Family
 

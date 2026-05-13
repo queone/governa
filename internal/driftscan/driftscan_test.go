@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/queone/governa/internal/emission"
 )
 
 // gitInit initializes a git repo at dir with one commit so `git log` works.
@@ -111,7 +113,7 @@ func TestPreserveMarker(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
 		"| 0.1.0 | preserve docs/foo.md customization |\n",
 	)
-	hits := grepPreserveMarkers(dir, "docs/foo.md")
+	hits := emission.PreserveMarkers(dir, "docs/foo.md")
 	if len(hits) != 1 {
 		t.Errorf("expected 1 hit, got %d: %v", len(hits), hits)
 	}
@@ -204,7 +206,7 @@ func TestPreserveMarkerNotInProse(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
 		"In some future state we should preserve docs/foo.md customization where appropriate.\n",
 	)
-	hits := grepPreserveMarkers(dir, "docs/foo.md")
+	hits := emission.PreserveMarkers(dir, "docs/foo.md")
 	if len(hits) != 0 {
 		t.Errorf("expected 0 hits for prose, got %d: %v", len(hits), hits)
 	}
@@ -213,7 +215,7 @@ func TestPreserveMarkerNotInProse(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
 		"| 0.1.0 | preserve docs/foo.md customization |\n",
 	)
-	hits = grepPreserveMarkers(dir, "docs/foo.md")
+	hits = emission.PreserveMarkers(dir, "docs/foo.md")
 	if len(hits) != 1 {
 		t.Errorf("expected 1 hit for table row, got %d: %v", len(hits), hits)
 	}
@@ -222,7 +224,7 @@ func TestPreserveMarkerNotInProse(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
 		"| 0.1.0 | AC1: did stuff; preserve docs/foo.md customization |\n",
 	)
-	hits = grepPreserveMarkers(dir, "docs/foo.md")
+	hits = emission.PreserveMarkers(dir, "docs/foo.md")
 	if len(hits) != 1 {
 		t.Errorf("expected 1 hit for cell separator, got %d: %v", len(hits), hits)
 	}

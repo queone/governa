@@ -21,8 +21,6 @@
 package driftscan
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -34,9 +32,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/queone/governa/internal/emission"
 	"github.com/queone/governa/internal/governance"
 	"github.com/queone/governa/internal/templates"
 )
@@ -179,14 +177,14 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	}
 
 	// Fail-safe: refuse governa-self.
-	if err := governance.DetectGovernaCheckoutAt(cfg.Target); err == nil {
-		return ExitEnvError, fmt.Errorf("drift-scan: target %s looks like a governa checkout — drift-scan is for adopted repos, not the governa source", cfg.Target)
+	if err := emission.RefuseGovernaSource(cfg.Target, "drift-scan"); err != nil {
+		return ExitEnvError, err
 	}
 
 	// Positive adoption check: cwd must be a governa-adopted repo. AGENTS.md
 	// plus one secondary signal (docs/ac-template.md, docs/release.md,
 	// docs/build-release.md, or a CHANGELOG row referencing governa apply).
-	if err := requireGovernaAdopted(cfg.Target); err != nil {
+	if err := emission.RequireGovernaAdopted(cfg.Target, "drift-scan"); err != nil {
 		return ExitEnvError, err
 	}
 
@@ -335,7 +333,7 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 
 	// Determine AC number: reuse existing same-canon-version stub's N, else
 	// allocate next monotonic N from <target>/docs/ac*.md + git log AC refs.
-	acNum, reused, err := findOrAllocateACNumber(cfg.Target, sha)
+	acNum, reused, err := emission.AllocateACNumber(cfg.Target, "drift-scan", sha)
 	if err != nil {
 		return ExitEnvError, fmt.Errorf("drift-scan: allocate AC number: %w", err)
 	}
@@ -350,7 +348,7 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	if reused {
 		for _, p := range []string{stubPath, diffsPath} {
 			if _, statErr := os.Stat(p); statErr == nil {
-				unedited, vErr := verifyStubUnedited(p)
+				unedited, vErr := emission.VerifyUnedited(p, driftScanMarkerPrefix)
 				if vErr != nil {
 					return ExitEnvError, fmt.Errorf("drift-scan: verify %s: %w", p, vErr)
 				}
@@ -368,15 +366,15 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 
 	// Ensure <target>/docs/ exists. Adoption check may pass on AGENTS.md +
 	// CHANGELOG row alone; docs/ is required for emission.
-	if err := os.MkdirAll(filepath.Join(cfg.Target, "docs"), 0o755); err != nil {
-		return ExitEnvError, fmt.Errorf("drift-scan: ensure docs/ exists: %w", err)
+	if err := emission.EnsureDocsDir(cfg.Target, "drift-scan"); err != nil {
+		return ExitEnvError, err
 	}
 
 	// Write with emission markers on line 1 (sha covers body only).
-	if err := writeWithEmissionMarker(stubPath, sha, stubBody); err != nil {
+	if err := emission.WriteWithMarker(stubPath, driftScanMarkerPrefix, sha, stubBody); err != nil {
 		return ExitEnvError, fmt.Errorf("drift-scan: write %s: %w", stubRel, err)
 	}
-	if err := writeWithEmissionMarker(diffsPath, sha, diffsBody); err != nil {
+	if err := emission.WriteWithMarker(diffsPath, driftScanMarkerPrefix, sha, diffsBody); err != nil {
 		return ExitEnvError, fmt.Errorf("drift-scan: write %s: %w", diffsRel, err)
 	}
 
@@ -673,7 +671,7 @@ func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 	// Divergent — collect evidence.
 	fr.Diff = unifiedDiff(canon, target, relpath, cfg.DiffLines)
 	fr.Commits = gitLogN(cfg.Target, relpath, 5)
-	fr.Markers = grepPreserveMarkers(cfg.Target, relpath)
+	fr.Markers = emission.PreserveMarkers(cfg.Target, relpath)
 
 	switch {
 	case len(fr.Markers) > 0:
@@ -747,83 +745,6 @@ func gitLogN(targetRoot, relpath string, n int) []string {
 		result = append(result, line)
 	}
 	return result
-}
-
-// preserveMarkerPatterns is the fixed phrase set per docs/drift-scan.md.
-// Format strings %s = relpath, %%s = literal %s placeholder for the qualifier.
-var preserveMarkerPatterns = []string{
-	`preserve %s`,
-	`do not sync %s`,
-	`intentional divergence: %s`,
-	`%s: keep local`,
-}
-
-// grepPreserveMarkers scans CHANGELOG and docs/ac*.md for verbatim preserve
-// markers naming relpath. C2: phrases must appear at a "boundary" — start of
-// line, after a `|` (CHANGELOG table cell), or after a `;` (CHANGELOG cell
-// separator) — optionally preceded by a list/bold marker. This avoids
-// matching prose like "we should preserve docs/foo.md eventually" where the
-// phrase appears mid-sentence.
-func grepPreserveMarkers(targetRoot, relpath string) []string {
-	var hits []string
-
-	// Build per-pattern anchored regexes once.
-	type compiled struct {
-		re *regexp.Regexp
-	}
-	var compiledPats []compiled
-	anchor := `(?:^|[|;])\s*(?:[-*]\s+|\*\*[^*]+\*\*\s+)?`
-	for _, pat := range preserveMarkerPatterns {
-		phrase := fmt.Sprintf(pat, relpath)
-		compiledPats = append(compiledPats, compiled{
-			re: regexp.MustCompile(anchor + regexp.QuoteMeta(phrase)),
-		})
-	}
-
-	scan := func(content string) {
-		for line := range strings.SplitSeq(content, "\n") {
-			for _, c := range compiledPats {
-				if c.re.MatchString(line) {
-					hits = append(hits, strings.TrimSpace(line))
-					break
-				}
-			}
-		}
-	}
-
-	if changelog, err := os.ReadFile(filepath.Join(targetRoot, "CHANGELOG.md")); err == nil {
-		scan(string(changelog))
-	}
-
-	docsDir := filepath.Join(targetRoot, "docs")
-	if entries, err := os.ReadDir(docsDir); err == nil {
-		for _, e := range entries {
-			name := e.Name()
-			if !strings.HasPrefix(name, "ac") || !strings.HasSuffix(name, ".md") {
-				continue
-			}
-			content, err := os.ReadFile(filepath.Join(docsDir, name))
-			if err != nil {
-				continue
-			}
-			scan(string(content))
-		}
-	}
-
-	return uniq(hits)
-}
-
-func uniq(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	var out []string
-	for _, s := range in {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
 }
 
 func fileExists(p string) bool {
@@ -912,172 +833,7 @@ func previewCanonContent(s string, maxLines int) string {
 // AdoptionReminder constants were tied to the markdown branch and removed
 // alongside it.)
 
-// requireGovernaAdopted verifies cwd is a governa-adopted repo. Hard-fails
-// with recovery guidance if the check fails. Adoption signals: AGENTS.md
-// must be present, plus at least one of (a) docs/ac-template.md,
-// (b) docs/release.md, (c) docs/build-release.md, or (d) a CHANGELOG.md row
-// referencing governa apply.
-func requireGovernaAdopted(target string) error {
-	if !fileExists(filepath.Join(target, "AGENTS.md")) {
-		return fmt.Errorf("drift-scan: %s is not a governa-adopted repo (AGENTS.md not found); run from the consumer repo root after `governa apply`", target)
-	}
-	for _, sig := range []string{"docs/ac-template.md", "docs/release.md", "docs/build-release.md"} {
-		if fileExists(filepath.Join(target, sig)) {
-			return nil
-		}
-	}
-	if changelog, err := os.ReadFile(filepath.Join(target, "CHANGELOG.md")); err == nil {
-		if regexp.MustCompile(`(?i)governa\s+apply`).Match(changelog) {
-			return nil
-		}
-	}
-	return fmt.Errorf("drift-scan: %s has AGENTS.md but no governa adoption signal (expected one of: docs/ac-template.md, docs/release.md, docs/build-release.md, or CHANGELOG row referencing 'governa apply'); ensure you are running from a governa-adopted repo root", target)
-}
-
-// findOrAllocateACNumber returns the AC number for the emitted stub.
-// If a same-canon-version stub already exists at <target>/docs/ac<N>-drift-scan-<sha>.md,
-// reuses N (returns reused=true). Otherwise allocates the next monotonic N
-// per docs/ac-template.md line 3: max((a) AC numbers in docs/ac*.md filenames,
-// (b) AC references anywhere in `git log --all --pretty=%B` output covering
-// subject and body, counting composites like "AC53+AC54") + 1.
-func findOrAllocateACNumber(target, sha string) (int, bool, error) {
-	docsDir := filepath.Join(target, "docs")
-
-	// Same-canon-version stub check.
-	pattern := filepath.Join(docsDir, "ac*-drift-scan-"+sha+".md")
-	matches, _ := filepath.Glob(pattern)
-	var stubs []string
-	for _, m := range matches {
-		if !strings.HasSuffix(m, "-diffs.md") {
-			stubs = append(stubs, m)
-		}
-	}
-	stubRe := regexp.MustCompile(`^ac(\d+)-`)
-	if len(stubs) == 1 {
-		base := filepath.Base(stubs[0])
-		m := stubRe.FindStringSubmatch(base)
-		if m == nil {
-			return 0, false, fmt.Errorf("unexpected drift-scan stub filename: %s", base)
-		}
-		n, err := strconv.Atoi(m[1])
-		if err != nil {
-			return 0, false, fmt.Errorf("parse AC number from %s: %w", base, err)
-		}
-		return n, true, nil
-	}
-	if len(stubs) > 1 {
-		return 0, false, fmt.Errorf("multiple drift-scan stubs for the same canon version: %v", stubs)
-	}
-
-	// Allocate next monotonic N.
-	maxN := 0
-	if entries, err := os.ReadDir(docsDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			m := stubRe.FindStringSubmatch(e.Name())
-			if m != nil {
-				if n, err := strconv.Atoi(m[1]); err == nil && n > maxN {
-					maxN = n
-				}
-			}
-		}
-	}
-	// git log --all --pretty=%B covers subject + body; AC<N> may appear anywhere.
-	// The earlier Run() checks guarantee a git worktree and a git binary, so
-	// `git log` should normally succeed. The one expected exception is an
-	// empty repo (init'd but no commits anywhere) — that yields a non-zero
-	// exit and a stderr message; we treat that as "no AC refs in history."
-	// Any other failure propagates with recovery guidance — AC-number
-	// allocation must not silently fall back to docs/ filenames alone.
-	cmd := exec.Command("git", "-C", target, "log", "--all", "--pretty=%B")
-	out, runErr := cmd.Output()
-	if runErr != nil {
-		var stderr string
-		if exitErr, ok := runErr.(*exec.ExitError); ok {
-			stderr = string(exitErr.Stderr)
-		}
-		switch {
-		case strings.Contains(stderr, "does not have any commits"),
-			strings.Contains(stderr, "bad default revision"),
-			strings.Contains(stderr, "Not a valid object name"):
-			// Empty repo / no commits anywhere — no AC refs in history.
-			out = nil
-		default:
-			return 0, false, fmt.Errorf("read git log for AC-number allocation in %s: %w (stderr: %s)", target, runErr, strings.TrimSpace(stderr))
-		}
-	}
-	acRefRe := regexp.MustCompile(`\bAC(\d+)\b`)
-	for _, m := range acRefRe.FindAllStringSubmatch(string(out), -1) {
-		if n, err := strconv.Atoi(m[1]); err == nil && n > maxN {
-			maxN = n
-		}
-	}
-	return maxN + 1, false, nil
-}
-
-// emissionMarkerPrefix/Infix/Suffix shape the HTML-comment marker line.
-const (
-	emissionMarkerPrefix = "<!-- drift-scan: emitted-by governa "
-	emissionMarkerInfix  = "; emission-sha="
-	emissionMarkerSuffix = " -->"
-)
-
-// formatEmissionMarker returns the line-1 marker carrying the canon version
-// and the SHA-256 of the file body (body excludes this marker line itself).
-func formatEmissionMarker(canonVersion, bodySHA string) string {
-	return emissionMarkerPrefix + canonVersion + emissionMarkerInfix + bodySHA + emissionMarkerSuffix
-}
-
-// parseEmissionMarker returns the stored body SHA from a marker line, or ""
-// if the line is not a valid marker.
-func parseEmissionMarker(line string) string {
-	if !strings.HasPrefix(line, emissionMarkerPrefix) || !strings.HasSuffix(line, emissionMarkerSuffix) {
-		return ""
-	}
-	inner := strings.TrimSuffix(strings.TrimPrefix(line, emissionMarkerPrefix), emissionMarkerSuffix)
-	_, sha, ok := strings.Cut(inner, emissionMarkerInfix)
-	if !ok {
-		return ""
-	}
-	return sha
-}
-
-// computeBodySHA returns hex SHA-256 of body. Used to populate and verify
-// the line-1 emission marker for edit detection.
-func computeBodySHA(body string) string {
-	h := sha256.Sum256([]byte(body))
-	return hex.EncodeToString(h[:])
-}
-
-// verifyStubUnedited reads the file, splits off the marker line, recomputes
-// the body SHA, and returns true if it matches the marker's stored SHA. A
-// file with no valid marker is treated as edited (returns false).
-func verifyStubUnedited(path string) (bool, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false, err
-	}
-	idx := strings.IndexByte(string(data), '\n')
-	if idx < 0 {
-		return false, nil
-	}
-	markerLine := string(data[:idx])
-	body := string(data[idx+1:])
-	stored := parseEmissionMarker(markerLine)
-	if stored == "" {
-		return false, nil
-	}
-	return stored == computeBodySHA(body), nil
-}
-
-// writeWithEmissionMarker writes path = marker line + "\n" + body. The
-// marker carries SHA-256(body) so re-runs can detect post-emission edits.
-func writeWithEmissionMarker(path, canonVersion, body string) error {
-	marker := formatEmissionMarker(canonVersion, computeBodySHA(body))
-	return os.WriteFile(path, []byte(marker+"\n"+body), 0o644)
-}
+const driftScanMarkerPrefix = "<!-- drift-scan: emitted-by governa "
 
 // classCounts tallies per-classification file counts for the report.
 func classCounts(files []FileResult) map[Classification]int {
