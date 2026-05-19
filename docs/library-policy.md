@@ -22,7 +22,7 @@ Each library repo contains:
 Explicitly **not** in library repos:
 
 - `AGENTS.md` / `CLAUDE.md`.
-- Governed-section conventions, AC file machinery, critique-protocol artifacts.
+- Governed-section conventions, AC file machinery.
 - Any other governance-encoding doc.
 
 Rationale: libraries inherit doctrine from governa, never duplicate it. A library repo with its own AGENTS.md re-creates the multi-repo coordination cost the apply-once model was built to retire.
@@ -100,7 +100,6 @@ The gating check applied during each extraction AC's drafting. It determines whe
 - `AGENTS.md` / `CLAUDE.md`
 - `ac<N>-<slug>.md` file shape
 - Governed section names (in `AGENTS.md` or governance docs)
-- The critique protocol artifacts (`### Round N`, `#### F<N>`, the four-field terminator, `### Disposition Log`)
 - Any other governance-file convention specific to governa or a consumer's adopted variant
 
 **If yes:** those concerns belong in a template-side adapter, not in the library core. The library core takes generic terms only — for example, "rewrite regex X in these files," "insert this row at this position in this table," "validate that this file declares this token." The adapter (in `internal/templates/` or in a consumer-side wrapper) supplies governa's specific convention names to the generic library API.
@@ -129,7 +128,7 @@ Each extraction AC MUST include an **automated** acceptance test that re-applies
 
 ```bash
 src=$(go list -m -json github.com/queone/governa-<x> | jq -r .Dir)
-! rg -i 'AGENTS|CLAUDE|CHANGELOG|critique|governed|governance|ac[0-9]+|docs/' "$src"/<src files>
+! rg -i 'AGENTS|CLAUDE|CHANGELOG|governed|governance|ac[0-9]+|docs/' "$src"/<src files>
 ```
 
 Returns clean if no governance terms slipped through extraction. A match (e.g., a stray AC reference in a code comment that came along with a verbatim copy) is a finding — clean it up and bump the library to a patch version. The recheck must remain automated; it is not a Director-eyeball task. The `rg` term list is the policy's enumerated governance touch-points (kept in sync with the Convention-Coupling Test section above).

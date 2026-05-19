@@ -525,10 +525,9 @@ func parseACRefs(message string) []int {
 }
 
 // findACFiles locates the main per-AC files to delete: docs/ac<N>-<slug>.md
-// for each AC number named in the release message. Critique and disposition
-// content live inside the AC file (see docs/critique-protocol.md), so there
-// are no separate companion files to enumerate. ac-template.md is always
-// skipped.
+// for each AC number named in the release message. AC files are deleted
+// whole; there are no separate companion files to enumerate.
+// ac-template.md is always skipped.
 func findACFiles(repoRoot string, acNums []int) ([]string, error) {
 	if len(acNums) == 0 {
 		return nil, nil

@@ -328,7 +328,7 @@ func TestAnnotateCommit(t *testing.T) {
 
 // format-defining files in the registry are auto-routed
 // to ## In Scope as sync (regardless of raw classification), suppressed
-// from Director Review, and named under ### Format-defining file routing
+// from Routing Decisions, and named under ### Format-defining file routing
 // with rationale.
 func TestCanonCoherenceHardFailEmitsReport(t *testing.T) {
 	// Use the live canon — it's coherent after reconciliation.
@@ -365,7 +365,7 @@ func TestCanonCoherenceHardFailEmitsReport(t *testing.T) {
 	}
 }
 
-// `target-has-no-canon` files emit a Director Review Q
+// `target-has-no-canon` files emit a routing question
 // with keep/delete/migrate-to-canon options. Closes the decision-surface
 // coverage gap — every non-terminal classification must pair with a Q.
 func TestAGENTSMdRegisteredAsFormatDefining(t *testing.T) {
@@ -469,21 +469,25 @@ func TestACStubConformsToTemplate(t *testing.T) {
 	for _, want := range []string{
 		"# AC1 Drift-Scan Adoption from governa v0.0.0-test",
 		"## Summary",
-		"## Objective Fit",
-		"1. **Outcome.**",
-		"2. **Priority.**",
-		"3. **Dependencies.**",
 		"## In Scope",
 		"## Out Of Scope",
-		"## Implementation Notes",
 		"## Acceptance Tests",
-		"## Documentation Updates",
-		"## Director Review",
 		"## Status",
 		"`PENDING`",
 	} {
 		if !strings.Contains(stub, want) {
 			t.Errorf("AC stub missing %q. got:\n%s", want, stub)
+		}
+	}
+	for _, absent := range []string{
+		"## Objective Fit",
+		"## Director Review",
+		"## Implementation Notes",
+		"## Documentation Updates",
+		"## Critique",
+	} {
+		if strings.Contains(stub, absent) {
+			t.Errorf("AC stub must not contain %q (retired in AC138). got:\n%s", absent, stub)
 		}
 	}
 }
@@ -522,7 +526,7 @@ func TestEditDetectionRefusesOverwrite(t *testing.T) {
 	// Edit the stub body without rewriting the marker.
 	stubPath := filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md")
 	original := mustRead(t, stubPath)
-	edited := original + "\n\n## Critique\n\n### Round 1\n\nedited by hand\n"
+	edited := original + "\n\nedited by hand\n"
 	if err := os.WriteFile(stubPath, []byte(edited), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -566,9 +570,9 @@ func TestJSONIncludesEmittedPaths(t *testing.T) {
 // regardless of whether the raw classification was preserve / ambiguity.
 // docFixture's docs/ac-template.md has minimal content (canon is the full
 // template); after the single fixture commit, it classifies as ambiguity
-// (1 commit, no marker) — without the override it would route to Director
-// Review. With override, it must appear in ## In Scope with a
-// (format-defining) annotation and not in ## Director Review.
+// (1 commit, no marker) — without the override it would route to Routing
+// Decisions. With override, it must appear in ## In Scope with a
+// (format-defining) annotation and not in ### Routing Decisions.
 func TestFormatDefiningOverrideRoutesToInScope(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
@@ -589,16 +593,17 @@ func TestFormatDefiningOverrideRoutesToInScope(t *testing.T) {
 		t.Errorf("expected (format-defining) annotation in ## In Scope, got:\n%s", inScope)
 	}
 
-	// Director Review section must NOT list the format-defining file (that
-	// is the override's whole point).
-	dirReviewStart := strings.Index(stub, "## Director Review")
-	if dirReviewStart < 0 {
-		t.Fatalf("stub missing ## Director Review section: %s", stub)
-	}
-	dirReviewEnd := strings.Index(stub[dirReviewStart:], "## Status")
-	dirReview := stub[dirReviewStart : dirReviewStart+dirReviewEnd]
-	if strings.Contains(dirReview, "`docs/ac-template.md`") {
-		t.Errorf("docs/ac-template.md must not appear in ## Director Review (format-defining override failed), got:\n%s", dirReview)
+	// Routing Decisions subheading (if present) must NOT list the format-
+	// defining file — that is the override's whole point.
+	if routingStart := strings.Index(stub, "### Routing Decisions"); routingStart >= 0 {
+		routingEnd := strings.Index(stub[routingStart:], "## In Scope")
+		if routingEnd < 0 {
+			routingEnd = len(stub) - routingStart
+		}
+		routing := stub[routingStart : routingStart+routingEnd]
+		if strings.Contains(routing, "`docs/ac-template.md`") {
+			t.Errorf("docs/ac-template.md must not appear in ### Routing Decisions (format-defining override failed), got:\n%s", routing)
+		}
 	}
 }
 
@@ -870,6 +875,5 @@ func TestNoCleanupLineInStdoutSummary(t *testing.T) {
 
 // (Removed under AC136: TestAdoptionReminder* and the Adoption/Cleanup
 // reminder constants were tied to the old report-pair format. The new
-// AC stub carries adoption guidance through Implementation Notes / the
-// emitted ATs themselves; the inline reminder constants are no longer
-// emitted.)
+// AC stub carries adoption guidance through `## Summary` / the emitted
+// ATs themselves; the inline reminder constants are no longer emitted.)

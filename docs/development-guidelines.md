@@ -4,18 +4,6 @@ Engineering guidance for any agent or contributor working in this repo.
 These are durable coding practices, not workflow or process rules.
 For workflow, see `development-cycle.md`. For validation, see `build-release.md`.
 
-## Instruction Style
-
-- Apply these rules whenever an instruction is added or rewritten in AGENTS.md or any governance doc.
-- Start each instruction with an action verb in imperative voice.
-- Keep each instruction to one short, direct command.
-- Carry scope or trigger conditions as the first imperative bullet of the section.
-- Keep section headings clean — no parentheticals, no preamble prose between heading and bullets.
-- Move other rationale or context to a separate note below the bullets.
-- Split multi-action instructions into separate bullets.
-
-Note: prefer wording that is easiest for an LLM to follow, while staying simple for a human operator.
-
 ## Identifier Strategy
 
 - Template placeholders use `{{UPPERCASE_NAME}}` — not a templating engine, just literal string substitution
@@ -37,7 +25,7 @@ Overlay templates are shipped snapshots: the propagation discipline below ensure
 
 - Source-of-truth code lives in `internal/`; overlay templates under `internal/templates/overlays/` carry standalone copies of the same logic
 - Fixes to `internal/preptool` or `build.sh` must propagate to the overlay template copies. The other former template-owned packages (`buildtool`, `reltool`, `color`) now ship as separate-repo libraries (`governa-buildtool`, `governa-reltool`, `governa-color`) and are versioned independently per `docs/library-policy.md`; source-overlay propagation does not apply to them.
-- Overlay copies of `roles.md` and `critique-protocol.md` are consumer-facing. When root governance docs evolve, propagate to overlay copies with targeted edits that filter governa-specific content. The DOC overlay `roles.md` references `docs/release.md` where the CODE overlay references `docs/build-release.md`.
+- Overlay copies of `roles.md` are consumer-facing. When root governance docs evolve, propagate to overlay copies with targeted edits that filter governa-specific content. The DOC overlay `roles.md` references `docs/release.md` where the CODE overlay references `docs/build-release.md`.
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
 - Exported functions in `internal/preptool` carry godoc single-line comments to keep the public surface self-documenting. Library packages (`governa-buildtool`, `governa-reltool`, `governa-color`) follow the same convention in their own repos.

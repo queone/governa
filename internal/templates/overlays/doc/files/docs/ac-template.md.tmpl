@@ -4,27 +4,15 @@ AC numbering is monotonic across release-prep deletions. Determine `N` by taking
 
 The AC is the implementation contract for one approved roadmap item. The full editing cycle that wraps around this template lives in `docs/editing-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
 
-## Companion Artifacts
-
-Critique lives inside the AC itself, not in a companion file. The AC carries a `## Critique` section (typically above `## Status`); Director findings per round land there. The Operator transcribes the Director's conversational findings; the Director may also edit the AC file directly. The Operator's responses land as AC revisions + `### Disposition Log` entries under `## Implementation Notes`. See `docs/critique-protocol.md` for round-append structure (`### Round N` / `#### F<N>`), `F-new-N` monotonic numbering across subsequent rounds, and the four-field terminator shape. Delete this `## Companion Artifacts` section when copying the template into a real AC.
-
 # AC<N> Title
-
-One-paragraph summary of what this AC delivers and why. State the change in plain terms — new content, restructure, or editorial improvement.
 
 ## Summary
 
-Describe the change in one short paragraph.
-
-## Objective Fit
-
-1. **Outcome.** What this delivers, in one sentence.
-2. **Priority.** Why this over higher-priority work. If it's an intentional pivot, name the trade-off.
-3. **Dependencies.** Prior ACs or decisions this builds on or contradicts. State explicit contradictions and why they're intentional.
+Describe the change in one short paragraph. State the nature (feature, refactor, infrastructure, doc) and note whether the work is code or doc-only. For multi-part ACs, name the parts (e.g. "Part A rewrites X; Part B amends Y; Part C propagates to overlays.").
 
 ## In Scope
 
-List the concrete changes this AC will make. Use sub-headings for grouping (e.g. "Files to create", "Files to modify"). Be specific — file paths, section names. The In Scope list is the authoritative scope contract.
+List the concrete changes this AC will make. Use sub-headings for grouping (e.g. "Files to create", "Files to modify", "Schema changes"). Be specific — file paths, function names, table columns. The In Scope list is the authoritative scope contract; the agent only edits files listed here even after the Director authorizes implementation.
 
 ### Files to create
 
@@ -34,6 +22,11 @@ List the concrete changes this AC will make. Use sub-headings for grouping (e.g.
 ### Files to modify
 
 - `existing_file` — what changes
+- `arch.md` — what gets updated
+
+### Schema changes
+
+(If any. Include the new schema version and the migration step.)
 
 ## Out Of Scope
 
@@ -43,41 +36,18 @@ List things the AC explicitly does **not** do. This is as important as the In Sc
 - Adjacent improvements that would be tempting but are not required
 - Things that look in scope but aren't (called out to prevent confusion)
 
-## Implementation Notes
-
-(Optional but encouraged.) Notes on approach, gotchas, edge cases, or design decisions that the implementer needs to know but that don't belong in the spec proper. If a particular approach was already considered and rejected, capture it here.
-
 ## Acceptance Tests
 
-Every AT must be labeled `[Automated]` or `[Manual]`:
+Every AT carries a source axis and a timing axis.
 
-- **Automated** — The result can be verified from CLI output, test assertions, or file inspection. Automated ATs are run during implementation and re-run as part of the pre-release checklist.
-- **Manual** — Requires a live end-to-end action and must be confirmed by the user. The agent cannot self-verify these.
+- **Source axis** — `[Automated]` or `[Manual]`. Default to `[Automated]` whenever the result is verifiable without a live external service; reserve `[Manual]` for behaviors that genuinely cannot be checked any other way.
+- **Timing axis** — `[Pre-release gate]` (default; may be omitted) or `[Post-release verification]` (explicit). Use `[Post-release verification]` only when automated regression coverage already gates pre-release on the underlying class.
 
-Default to Automated whenever the result is verifiable without a live external service. Manual ATs add friction to the release flow, so reserve them for behaviors that genuinely cannot be checked any other way.
-
-Source axis (`[Automated]` / `[Manual]`) names who verifies. Timing axis (`[Pre-release gate]` / `[Post-release verification]`) names when verification happens. `[Pre-release gate]` is the default and may be omitted; `[Post-release verification]` is explicit. Use `[Post-release verification]` only when automated regression coverage already gates pre-release on the underlying class. The label communicates that the AT is a confidence check, not a gate, so future Operators do not promote it back into a gate.
-
-**AT1** [Automated] — One-line description of what is verified, with the exact check (file existence, grep pattern, or inspection).
+**AT1** [Automated] — One-line description of what is verified, with the exact check (file existence, grep pattern, SQL query, or CLI output).
 
 **AT2** [Automated] — ...
 
 **AT3** [Manual] — One-line description plus the live action the user must take to confirm the result.
-
-## Documentation Updates
-
-List the docs that must be updated as part of this AC. If a change touches content that has corresponding documentation, update those docs in the same pass.
-
-- `README.md` — what section
-- `CHANGELOG.md` — the release row is added at release prep time, not during implementation (the file itself is created by `governa apply` as a stub)
-
-## Director Review
-
-This section lists trade-offs the Director still needs to decide. **Each entry must be numbered (`1.`, `2.`, …) and lead with a literal question ending in `?`** so the Director can reference entries inline ("Regarding #1, …"). If you cannot phrase the entry as an open question awaiting the Director's answer, it does not belong here. Send mechanical computations and showing-work notes to Implementation Notes; settled decisions go inline with `Director-set` attribution; choices covered by repo precedent are not surfaced at all. After the question, state the Operator's lean and a one-line why. Once the Director decides (in conversation or by editing the AC), move the item out of this section and attribute it inline (Summary, In Scope/Out of Scope, Implementation Notes) with a `Director-set` parenthetical. Write `None` when nothing is open.
-
-The Director resolves these during critique rounds — in conversation or by editing the AC directly.
-
-1. Should we do X or Y? Operator leans X (alternative: Y). Why: <one-line>.
 
 ## Status
 

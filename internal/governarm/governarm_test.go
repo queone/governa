@@ -66,7 +66,7 @@ func TestRunEmitsStubAndDiffs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"## Director Review",
+		"### Routing Decisions",
 		"`AGENTS.md`",
 		"`CLAUDE.md` — delete symlink",
 		"`README.md` — keep; preserve marker:",
@@ -74,6 +74,17 @@ func TestRunEmitsStubAndDiffs(t *testing.T) {
 	} {
 		if !strings.Contains(string(stub), want) {
 			t.Fatalf("stub missing %q:\n%s", want, stub)
+		}
+	}
+	for _, absent := range []string{
+		"## Objective Fit",
+		"## Director Review",
+		"## Implementation Notes",
+		"## Documentation Updates",
+		"## Critique",
+	} {
+		if strings.Contains(string(stub), absent) {
+			t.Fatalf("stub must not contain %q (retired in AC138):\n%s", absent, stub)
 		}
 	}
 }

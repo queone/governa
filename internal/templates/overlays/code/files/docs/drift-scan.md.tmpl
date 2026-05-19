@@ -21,16 +21,11 @@ Two files under the consumer repo's `docs/`, plus a single-line stdout summary.
 
 - H1 title: `# AC<N> Drift-Scan Adoption from governa v<X.Y.Z>`.
 - Opening one-sentence summary of the canon delta.
-- `## Summary` — concise paragraph describing the classifications surfaced and pointing at the sister diffs file.
-- `## Objective Fit` with three numbered items: **Outcome** ("Sync this repo to governa @ v<X.Y.Z> canon."), **Priority** ("Canon hygiene; recurring drift-scan cycle."), **Dependencies** ("governa @ v<X.Y.Z>; prior drift-scan ACs in this repo, if any.").
+- `## Summary` — concise paragraph describing the classifications surfaced and pointing at the sister diffs file; names the canon version being adopted (`governa @ v<X.Y.Z>`) and notes that the AC is part of the recurring drift-scan cycle. Code-flavor consumers also see the reachability gate sentence inside this section. Any `ambiguity` or `target-has-no-canon` items surface here under a `### Routing Decisions` subheading — one numbered item per file, phrased as the decision-surface question, awaiting the Director's chat-mode resolution before implementation.
 - `## In Scope` — `clear-sync` and non-empty `missing-in-target` entries, each citing the sister diffs file by H2 anchor.
 - `## Out Of Scope` — `preserve` (with marker citation) and `expected-divergence` entries.
-- `## Implementation Notes` — pointer to the sister diffs file. Code-flavor consumers also see the reachability gate sentence.
 - `## Acceptance Tests` — one byte-equality AT per `clear-sync` item plus an AT for the canon-coherence precondition pass.
-- `## Documentation Updates` — list of affected docs derived from the canon walk.
-- `## Director Review` — one numbered item per `ambiguity` and `target-has-no-canon` file, phrased as the existing decision-surface question.
 - `## Status` — `PENDING` on initial emission.
-- No `## Critique` section on initial emission; the consumer Operator adds it when critique rounds begin (per `docs/critique-protocol.md`).
 
 **`docs/ac<N>-drift-scan-v<X.Y.Z>-diffs.md`** — the sister diffs file. Carries one `## \`<relpath>\`` H2 section per divergent file with the verbatim `diff -u` hunk, prefaced with a `Direction:` line (`target leads`, `canon leads`, or mutual line counts). Empty body when no divergent files.
 
@@ -68,14 +63,14 @@ The tool emits one of the classifications below for every file. The Operator can
 - **`match`** — canon and target byte-equal. Not listed in the AC stub by default.
 - **`expected-divergence`** — canon is a per-repo stub by design and the file's path is in the `ExpectedDivergencePaths` registry (see `## Expected-divergence registry`); the tool skips the byte-compare and lists the file under `## Out Of Scope`. Treated as no-action.
 - **`preserve`** — a verbatim preserve-marker phrase was found citing this file in `<cwd>/CHANGELOG.md` or `<cwd>/docs/ac*.md`. Routed to `## Out Of Scope` with the marker quoted verbatim.
-- **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. Routed to `## Director Review` as a numbered routing question. Format-defining files (see `## Format-defining files`) are an exception: they are hard-routed to sync regardless of classification.
+- **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. Routed to `### Routing Decisions` under `## Summary` as a numbered routing question. Format-defining files (see `## Format-defining files`) are an exception: they are hard-routed to sync regardless of classification.
 - **`clear-sync`** — divergent with neither local commits nor preserve marker. Routed to `## In Scope` as `sync to canon`, with the sister diffs file referenced by H2 anchor.
 - **`missing-in-target`** — canon ships the file; target does not. If canon is non-empty, routed to `## In Scope` as `create from canon`. If canon is empty, surfaced as an informational note only.
 - **`target-has-no-canon`** — file exists in cwd, NOT in canon for this flavor. Two branches surface a file under this classification:
   - **Cross-flavor branch:** the file exists in the OTHER flavor's canon. Possible flavor mismatch.
   - **Name-reference branch:** the file exists in cwd only (no canon counterpart in either flavor) but is name-referenced from a divergent target file (e.g., `rel.sh` references `./cmd/rel/color.go` and color.go has no canon presence).
 
-  Both branches surface the file in `## Director Review` with `keep / delete / migrate-to-canon` options. Migrating a file into canon is a separate governa-side workflow, not a drift-scan resolution; the consumer agent surfaces the file via `keep` and the Director coordinates with the governa maintainer if upstream migration is desired.
+  Both branches surface the file in `### Routing Decisions` under `## Summary` with `keep / delete / migrate-to-canon` options. Migrating a file into canon is a separate governa-side workflow, not a drift-scan resolution; the consumer agent surfaces the file via `keep` and the Director coordinates with the governa maintainer if upstream migration is desired.
 
 For every divergent file, the AC stub references the sister diffs file by H2 anchor; the full `diff -u` hunk lives in `docs/ac<N>-drift-scan-v<X.Y.Z>-diffs.md`.
 
@@ -93,6 +88,8 @@ Reachability check: verify divergent canon-code branches reach this consumer's s
 
 **Known limit.** This rule assumes canon-shaped branches; sync-omitted branches that look dormant are real drift. Consumer agents distinguish case-by-case based on the gate condition.
 
+`internal/preptool/preptool.go` is the canonical example: `detectChangelogTargets` carries a second candidate (`internal/templates/CHANGELOG.md`) gated on the host's templates tree, and `detectVersionTargets` has a template-tree block gated on `internal/templates/base/` presence. Both branches are dormant on consumers.
+
 Structurally unreachable branches are not drift.
 
 ## Format-defining files
@@ -102,8 +99,7 @@ The `formatDefiningCanonPaths` registry lists canon files whose content defines 
 **Initial registry:**
 
 - `docs/ac-template.md` (defines every AC's section shape)
-- `docs/critique-protocol.md` (round-append structure + four-field terminator)
-- `AGENTS.md` (Objective Fit form, AT-label convention)
+- `AGENTS.md` (AC-template section shape, AT-label convention)
 
 **Inclusion criterion:** a canon file belongs in this registry iff syncing it is the only way to keep the consumer Operator's AC consistent with canon's section shape. Importance, frequency-of-edit, or being-a-template are not sufficient on their own.
 
@@ -132,7 +128,7 @@ Before any canon→cwd walk, the tool checks canon for internal coherence on a s
 - **Fire early:** the precondition runs canon-only and does not need the cwd. It runs before the canon→cwd walk so canon-side defects surface in seconds, not after a full target enumeration.
 - **No cwd writes:** nothing under `<cwd>/docs/` is emitted, no IE inserted into `<cwd>/plan.md`, no sister diffs file. The precondition runs before any cwd write, so nothing to roll back.
 
-The check is registry-driven: rule definitions live next to `FormatDefiningCanonPaths`, so adding future cross-file rules extends the check.
+The check is registry-driven: cross-file rule definitions live next to `FormatDefiningCanonPaths` in the source, so adding future rules extends the check. The cross-file rules registry (`coherenceRules` in code) is currently empty; the precondition always passes until a new rule is registered. (This is distinct from `FormatDefiningCanonPaths`, which is non-empty.)
 
 ## Preserve-marker phrase set
 
@@ -145,7 +141,7 @@ The tool recognizes exactly the four phrases below in `<cwd>/CHANGELOG.md` table
 | `intentional divergence: <path>` | `intentional divergence: rel.sh` |
 | `<path>: keep local` | `docs/team-rituals.md: keep local` |
 
-When shipping an AC that locks a local form against canon, include one of these phrases in the CHANGELOG row alongside whatever else the row says. See `docs/build-release.md` for the release-flow rule.
+When shipping an AC that locks a local form against canon, include one of these phrases in the CHANGELOG row alongside whatever else the row says. See `docs/build-release.md` for the release-flow rule (DOC consumers see `docs/release.md`).
 
 ## Match evidence
 
@@ -167,11 +163,11 @@ Note: drift-scan provides the diff payload; the consumer agent's review is the c
 
 ## Consumer Operator workflow
 
-The consumer-repo Operator handles drift-scan as a self-contained loop. The Director's role is to authorize the scan, review the summary, and resolve the Director Review items that the emission surfaces.
+The consumer-repo Operator handles drift-scan as a self-contained loop. The Director's role is to authorize the scan, review the summary, and resolve the routing decisions that the emission surfaces.
 
 - **Trigger phrase.** When the Director says "do a new drift-scan" or similar wording in a consumer repo, the Operator treats that as authorization to run `governa drift-scan` from the repo root. No additional authorization request is needed for the run itself.
 - **Post-emission review.** Immediately after the two files are emitted, the Operator performs a high-level review of both the AC stub and the sister diffs file, and reports a concise summary to the Director — without waiting for a separate "review the drift-scan report" request.
-- **Summary content.** The summary names: main drift categories (counts of `clear-sync`, `ambiguity`, `preserve`, `expected-divergence`, etc.); Director Review questions surfaced by the emission; obvious canon-owned issues that warrant upstream feedback rather than local sync; whether the emitted AC stub appears ready for critique and iteration.
+- **Summary content.** The summary names: main drift categories (counts of `clear-sync`, `ambiguity`, `preserve`, `expected-divergence`, etc.); routing decisions surfaced by the emission; obvious canon-owned issues that warrant upstream feedback rather than local sync; whether the emitted AC stub appears ready for critique and iteration.
 - **Scope discipline.** The summary is high-level; the emitted AC stub remains the source of truth. The Operator's role is to surface the report at a glance, not to recapitulate it.
 - **Not a governa-source handoff.** This is consumer-repo Operator behavior after a local scan. It does not require any action on the governa source side.
 - **Lifecycle symmetry.** When the Director wants to extricate Governa rather than refresh canon, run `governa rm` from the consumer repo root; it emits a cleanup AC stub plus a targeted sister diffs file for hybrid-file removal decisions.

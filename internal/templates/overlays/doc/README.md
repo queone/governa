@@ -10,7 +10,6 @@ Current contents:
 - `AGENTS.md`
 - `cmd/rel/main.go`
 - `docs/ac-template.md`
-- `docs/critique-protocol.md`
 - `docs/editing-cycle.md`
 - `docs/editing-guidelines.md`
 - `docs/README.md`

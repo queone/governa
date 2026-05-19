@@ -5,18 +5,6 @@ These are durable coding practices, not workflow or process rules.
 For workflow, see `development-cycle.md`. For validation, see `build-release.md`.
 Sections above ## Project Practices are governa-maintained canon and update via canon syncs; repo-specific practices in ## Project Practices.
 
-## Instruction Style
-
-- Apply these rules whenever an instruction is added or rewritten in AGENTS.md or any governance doc.
-- Start each instruction with an action verb in imperative voice.
-- Keep each instruction to one short, direct command.
-- Carry scope or trigger conditions as the first imperative bullet of the section.
-- Keep section headings clean — no parentheticals, no preamble prose between heading and bullets.
-- Move other rationale or context to a separate note below the bullets.
-- Split multi-action instructions into separate bullets.
-
-Note: prefer wording that is easiest for an LLM to follow, while staying simple for a human operator.
-
 ## Identifier Strategy
 
 - Choose a primary key strategy early and document it in `arch.md`

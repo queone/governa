@@ -305,7 +305,7 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	// Surface target-only files referenced from divergent target files
 	// (e.g., rel.sh references ./cmd/rel/color.go which is target-only).
 	// Same `target-has-no-canon` classification as the cross-flavor case;
-	// shared Director Review Q (keep / delete / migrate-to-canon).
+	// shared routing question (keep / delete / migrate-to-canon).
 	var divergentForScan []FileResult
 	for _, f := range report.Files {
 		if isDivergentClass(f.Classification) {
@@ -472,40 +472,31 @@ var expectedDivergencePaths = map[string]bool{
 // docs/drift-scan.md `## Format-defining files`).
 //
 // A file belongs in this registry iff its content defines the form of a
-// section INSTANTIATED in the emitted AC stub. Two shapes:
+// section instantiated in the emitted AC stub — either the form a tool-
+// emitted section conforms to, or the form an Operator-fill section
+// instantiates (e.g., AGENTS.md defines the AC-template section shape and
+// the AT-label convention every AT line carries).
 //
-//  1. **Tool-emitted form** — canon file content defines the form of a
-//     section the emitted AC stub's tool-emitted text instantiates (e.g.,
-//     docs/critique-protocol.md defines `## Director Review` round-append
-//     structure the tool emits on subsequent rounds).
-//
-//  2. **Operator-instantiated form** — canon file content defines the form
-//     of a section the emitted AC stub's Operator-fill text instantiates (e.g.,
-//     AGENTS.md defines the `## Objective Fit` 3-part form the Operator
-//     fills, and the AT-label convention every AT line carries).
-//
-// Both shapes hard-route to sync via the same mechanic. Importance,
-// frequency-of-edit, or being-a-template are not sufficient on their own —
-// the file must define a form INSTANTIATED in the emitted AC stub body.
+// Importance, frequency-of-edit, or being-a-template are not sufficient on
+// their own — the file must define a form instantiated in the emitted AC
+// stub body.
 //
 // When any registry file is divergent (any classification other than
 // ClassMatch or ClassExpectedDivergence), the file is auto-routed into
 // `## In Scope` as a sync action regardless of its raw classification, and
-// the emitted AC stub carries a `### Format-defining file routing` sub-subsection
-// under `## Implementation Notes` naming each one with the rationale. The
-// Director Review Q for these files is suppressed; the routing is forced.
+// the emitted AC stub carries a `### Format-defining file routing` sub-
+// subsection under `## Summary` naming each one with the rationale. The
+// routing question for these files is suppressed; the routing is forced.
 //
 // Initial registry:
-//   - docs/ac-template.md (tool-emit + Operator-fill: defines every AC's section shape)
-//   - docs/critique-protocol.md (tool-emit: round-append structure + four-field terminator)
-//   - AGENTS.md (Operator-fill: Objective Fit 3-part form, AT-label convention)
+//   - docs/ac-template.md (defines every AC's section shape)
+//   - AGENTS.md (AC-template section shape, AT-label convention)
 //
 // Addition criterion: a future canon file is added to this registry when
-// (and only when) it passes the inclusion test above (either shape).
+// (and only when) it passes the inclusion test above.
 var formatDefiningCanonPaths = map[string]bool{
-	"docs/ac-template.md":       true,
-	"docs/critique-protocol.md": true,
-	"AGENTS.md":                 true,
+	"docs/ac-template.md": true,
+	"AGENTS.md":           true,
 }
 
 // isFormatDefining reports whether relpath is in the format-defining registry.
@@ -515,7 +506,7 @@ func isFormatDefining(relpath string) bool {
 
 // CoherenceFailure records a single canon-coherence violation.
 type CoherenceFailure struct {
-	Rule     string // human-readable rule name (e.g. "Objective Fit form")
+	Rule     string // human-readable rule name (e.g. "AT-label convention")
 	Path     string // canon path where the failure was detected
 	Expected string // regex source string the path was expected to match
 	Preview  string // first lines of the path's content for context
@@ -549,19 +540,7 @@ type coherenceRule struct {
 // Sections` in AGENTS.md. When canon-internal drift is detected on any
 // rule below, drift-scan hard-fails before the canon→target walk and
 // emits a structured stdout report — no target writes occur.
-var coherenceRules = []coherenceRule{
-	{
-		Name:           "Objective Fit form",
-		AuthorityPath:  "AGENTS.md",
-		AuthorityRegex: regexp.MustCompile(`\*\*Outcome\*\* — what this delivers, in one sentence`),
-		Conformants: []coherenceConformant{
-			{
-				Path:  "docs/ac-template.md",
-				Regex: regexp.MustCompile(`\*\*Outcome\.\*\* What this delivers, in one sentence\.`),
-			},
-		},
-	},
-}
+var coherenceRules = []coherenceRule{}
 
 // checkCanonCoherence walks coherenceRules and returns failures. Empty
 // return means canon is internally coherent on all registered rules.
@@ -877,21 +856,47 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	}
 
 	fmt.Fprintf(&b, "# AC%d Drift-Scan Adoption from governa %s\n\n", acNum, canonVersion)
-	fmt.Fprintf(&b, "Adopt %d canon-owned changes from governa %s; %d entries require Director routing.\n\n",
+	fmt.Fprintf(&b, "Adopt %d canon-owned changes from governa %s; %d entries require routing decisions.\n\n",
 		counts[ClassClearSync]+counts[ClassMissingTarget],
 		canonVersion,
 		counts[ClassAmbiguity]+counts[ClassTargetNoCanon])
 
 	fmt.Fprintln(&b, "## Summary")
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "Drift-scan against governa %s surfaced %s. Per-file diff hunks live in `%s`.\n\n",
+	fmt.Fprintf(&b, "Sync this repo to governa @ %s canon as part of the recurring drift-scan cycle. Drift-scan surfaced %s. Per-file diff hunks live in `%s`.\n\n",
 		canonVersion, tallyClassifications(r.Files), diffsRel)
 
-	fmt.Fprintln(&b, "## Objective Fit")
+	if r.Header.Flavor == "code" {
+		fmt.Fprintln(&b, ReachabilityHeaderReminder)
+		fmt.Fprintln(&b)
+	}
+
+	if len(formatDefiningForced) > 0 {
+		fmt.Fprintln(&b, "### Format-defining file routing")
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "The following files were routed to `## In Scope` as sync items because they are in the format-defining registry; the raw classification (preserve / ambiguity / etc.) is overridden because the file's content defines the form the AC instantiates:")
+		fmt.Fprintln(&b)
+		for _, f := range formatDefiningForced {
+			fmt.Fprintf(&b, "- `%s` — raw classification: %s; forced to sync.\n", f.Relpath, f.Classification)
+		}
+		fmt.Fprintln(&b)
+	}
+
+	fmt.Fprintln(&b, "### Routing Decisions")
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "1. **Outcome.** Sync this repo to governa @ %s canon.\n", canonVersion)
-	fmt.Fprintln(&b, "2. **Priority.** Canon hygiene; recurring drift-scan cycle.")
-	fmt.Fprintf(&b, "3. **Dependencies.** governa @ %s; prior drift-scan ACs in this repo, if any.\n\n", canonVersion)
+	if len(reviewEntries) == 0 {
+		fmt.Fprintln(&b, "`None` — no ambiguities or target-only files surfaced.")
+	} else {
+		for i, f := range reviewEntries {
+			switch f.Classification {
+			case ClassAmbiguity:
+				fmt.Fprintf(&b, "%d. **`%s`**: local commits diverge from canon — sync to canon, preserve as repo-owned, or pin via preserve marker?\n", i+1, f.Relpath)
+			case ClassTargetNoCanon:
+				fmt.Fprintf(&b, "%d. **`%s`**: file exists in target but not in canon for this flavor — keep, delete, or migrate to canon?\n", i+1, f.Relpath)
+			}
+		}
+	}
+	fmt.Fprintln(&b)
 
 	fmt.Fprintln(&b, "## In Scope")
 	fmt.Fprintln(&b)
@@ -925,25 +930,6 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	}
 	fmt.Fprintln(&b)
 
-	fmt.Fprintln(&b, "## Implementation Notes")
-	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "Per-file diffs live in `%s`. Refer to that file when reviewing or editing sync items.\n", diffsRel)
-	if len(formatDefiningForced) > 0 {
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "### Format-defining file routing")
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "The following files were routed to `## In Scope` as sync items because they are in the format-defining registry; the raw classification (preserve / ambiguity / etc.) is overridden because the file's content defines the form the AC instantiates:")
-		fmt.Fprintln(&b)
-		for _, f := range formatDefiningForced {
-			fmt.Fprintf(&b, "- `%s` — raw classification: %s; forced to sync.\n", f.Relpath, f.Classification)
-		}
-	}
-	if r.Header.Flavor == "code" {
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, ReachabilityHeaderReminder)
-	}
-	fmt.Fprintln(&b)
-
 	fmt.Fprintln(&b, "## Acceptance Tests")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "**AT1** [Automated] — Canon-coherence precondition passed (emission was not blocked).")
@@ -951,33 +937,6 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	for i, f := range syncEntries {
 		fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` matches canon byte-for-byte after sync.\n\n", i+2, f.Relpath)
 	}
-
-	fmt.Fprintln(&b, "## Documentation Updates")
-	fmt.Fprintln(&b)
-	if len(syncEntries) == 0 {
-		fmt.Fprintln(&b, "None at scan time; updates depend on Director routing of any items below.")
-	} else {
-		for _, f := range syncEntries {
-			fmt.Fprintf(&b, "- `%s` — sync from canon.\n", f.Relpath)
-		}
-	}
-	fmt.Fprintln(&b)
-
-	fmt.Fprintln(&b, "## Director Review")
-	fmt.Fprintln(&b)
-	if len(reviewEntries) == 0 {
-		fmt.Fprintln(&b, "`None` — no ambiguities or target-only files surfaced.")
-	} else {
-		for i, f := range reviewEntries {
-			switch f.Classification {
-			case ClassAmbiguity:
-				fmt.Fprintf(&b, "%d. **`%s`**: local commits diverge from canon — sync to canon, preserve as repo-owned, or pin via preserve marker?\n", i+1, f.Relpath)
-			case ClassTargetNoCanon:
-				fmt.Fprintf(&b, "%d. **`%s`**: file exists in target but not in canon for this flavor — keep, delete, or migrate to canon?\n", i+1, f.Relpath)
-			}
-		}
-	}
-	fmt.Fprintln(&b)
 
 	fmt.Fprintln(&b, "## Status")
 	fmt.Fprintln(&b)

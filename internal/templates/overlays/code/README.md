@@ -15,7 +15,6 @@ Current contents:
 - `cmd/rel/main.go`
 - `docs/ac-template.md`
 - `docs/build-release.md`
-- `docs/critique-protocol.md`
 - `docs/development-cycle.md`
 - `docs/development-guidelines.md`
 - `docs/README.md`

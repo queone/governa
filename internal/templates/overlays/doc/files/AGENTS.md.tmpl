@@ -9,6 +9,7 @@ Detail and rationale live in `docs/editing-guidelines.md`, `docs/release.md`, `d
 Sections (fixed set):
 
 - `Governed Sections`
+- `Instruction Style`
 - `Interaction Mode`
 - `Approval Boundaries`
 - `File-Change Discipline`
@@ -24,9 +25,21 @@ Rules:
 - Name the exact sections to change and keep edits local during every update.
 - Edit this file as a governed config artifact, with rule-shaped bullets only.
 - Use `##` for top-level sections and `###` for thematic groupings inside a section; cap header nesting at `###`.
-- Apply Instruction Style (`docs/editing-guidelines.md` "Instruction Style") to every new or rewritten instruction in this file.
+- Apply the `## Instruction Style` section below to every new or rewritten instruction in this file.
 - Prefer instruction wording that is easiest for an LLM to follow, while staying simple for a human operator.
 - Treat AGENTS.md as the authoritative source for the rules it describes; conform overlay templates and other canon files to it (drift-scan's canon-coherence precondition catches violations).
+
+## Instruction Style
+
+- Apply these rules whenever an instruction is added or rewritten in AGENTS.md or any governance doc.
+- Start each instruction with an action verb in imperative voice.
+- Keep each instruction to one short, direct command.
+- Carry scope or trigger conditions as the first imperative bullet of the section.
+- Keep section headings clean — no parentheticals, no preamble prose between heading and bullets.
+- Move other rationale or context to a separate note below the bullets.
+- Split multi-action instructions into separate bullets.
+
+Note: prefer wording that is easiest for an LLM to follow, while staying simple for a human operator.
 
 ## Interaction Mode
 
@@ -35,6 +48,9 @@ Rules:
 - Make the smallest change that satisfies the request once authorized.
 - Surface assumptions, ambiguities, and missing context before any direction-changing action.
 - Operate as the Operator on every interaction (per `docs/roles.md`); the role is fixed and unannounced.
+- Place each structured deliverable (AC, plan, doc draft, scope card) in its target file; never paste the full body in chat.
+- Report each written deliverable with a one-paragraph chat summary plus the file path.
+- Quote at most short, targeted snippets from a written file when discussing a specific change.
 
 ### Session Entry
 
@@ -61,22 +77,17 @@ Rules:
 ### AC-First Workflow
 
 - Treat every non-trivial change as AC-first work.
-- Draft `docs/ac<N>-<slug>.md` before implementation using `docs/ac-template.md` if available; define scope, out-of-scope, objective fit, and required tests.
-- Objective Fit must state: (1) **Outcome** — what this delivers, in one sentence; (2) **Priority** — why this over higher-priority work, naming the trade-off if it's an intentional pivot; (3) **Dependencies** — prior ACs or decisions this builds on or contradicts.
+- Draft `docs/ac<N>-<slug>.md` before implementation using `docs/ac-template.md`; define scope, out-of-scope, and acceptance tests.
 - Wait for explicit user confirmation that the AC is implementation-ready before starting implementation.
 
 ### AC Critique Gate
 
-- Start AC critique handling whenever the Director provides critique findings on the drafted AC.
-- Transcribe Director critique findings into the AC's `## Critique` section after each round.
-- Wait for the Director's explicit confirmation that the AC is implementation-ready before proceeding (see `docs/critique-protocol.md`).
+- Wait for the Director's explicit implementation-ready confirmation; the Director flags scope concerns in chat during this window.
 
 ### Pre-Implementation Verification
 
 - Run this checklist after the Director resolves all review questions.
 - Confirm each settled decision landed verbatim in the AC.
-- Confirm Objective Fit uses the current form (Outcome / Priority / Dependencies).
-- Confirm Director Review is `None` with resolutions attributed inline.
 - Confirm ATs match settled wording.
 - Confirm every new or rewritten instruction in AGENTS.md follows Instruction Style.
 - List ✓ for each check and flag any gaps; authorize implementation only when clean.
