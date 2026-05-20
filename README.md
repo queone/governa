@@ -64,7 +64,7 @@ Run `governa deps` from an adopted CODE consumer repo root, or from the governa 
 
 ### Self-service updates
 
-To adopt future governa improvements, run `governa drift-scan` from the consumer repo root. The command compares the consumer repo against canon embedded in the installed binary and emits an AC stub (under `docs/`) plus a sister diffs file. The consumer Operator iterates on the emitted stub under normal AC discipline. See [`docs/drift-scan.md`](docs/drift-scan.md) for the full flow. Manual cherry-picking from governa's `AGENTS.md`, role files, and `CHANGELOG.md` remains a fallback.
+To adopt future governa improvements, run `governa drift-scan` from the consumer repo root. The command compares the consumer repo against canon embedded in the installed binary and emits an AC stub under `docs/`. The consumer Operator iterates on the emitted stub under normal AC discipline; per-file diffs are inspected via `governa render-canon` + standard `diff -ru` (see [`AGENTS.md`](AGENTS.md) `### Drift-Scan Adoption`). See [`docs/drift-scan.md`](docs/drift-scan.md) for the full flow. Manual cherry-picking from governa's `AGENTS.md`, role files, and `CHANGELOG.md` remains a fallback.
 
 ## Design
 The target repo stays self-contained. The template repo is read-only at bootstrap time and is not imported as a submodule, package, or runtime dependency. The bootstrap tool is Go-based so the template works across macOS, Linux, and Windows without requiring a specific shell.
@@ -99,6 +99,6 @@ governa is shifting from a single one-off-applied template to a layered model: c
 
 ## Rendered Examples
 
-Run `governa examples` to render both CODE and DOC overlays to `/tmp/governa-examples/` for inspection or testing.
+Run `governa render-canon --flavor code <dir>` (and `--flavor doc <dir>`) to render flavor-specific canon into a target directory for inspection or testing. See `governa render-canon -h` for full usage.
 
 See [`docs/governance-model.md`](docs/governance-model.md).

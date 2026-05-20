@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/queone/governa-color"
 	"github.com/queone/governa/internal/depscheck"
@@ -15,7 +17,7 @@ import (
 	"github.com/queone/governa/internal/updatecheck"
 )
 
-const programVersion = "0.130.0"
+const programVersion = "0.131.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -38,21 +40,8 @@ func run() int {
 	case "version", "ver":
 		fmt.Printf("governa v%s (template %s)\nsource: %s\n", programVersion, templates.TemplateVersion, sourceRepo)
 		return 0
-	case "examples":
-		if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "-?") {
-			fmt.Fprint(os.Stderr, color.FormatUsage("governa examples", []color.UsageLine{
-				{Flag: "--smoke-doc", Desc: "render DOC overlay only, no go.mod, to /tmp/governa-doc-smoke/ (build.sh adoption smoke test)"},
-			}, "Render both CODE and DOC overlays to /tmp/governa-examples/ for inspection or testing."))
-			return 0
-		}
-		if len(args) > 0 && args[0] == "--smoke-doc" {
-			if err := runDocSmoke(); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return 1
-			}
-			return 0
-		}
-		if err := runExamples(); err != nil {
+	case "render-canon":
+		if err := runRenderCanon(args); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -133,93 +122,128 @@ func printUsage() {
 		{Flag: "drift-scan", Desc: "scan an adopted repo against governa canon"},
 		{Flag: "rm", Desc: "emit cleanup AC for removing Governa canon"},
 		{Flag: "deps", Desc: "report direct dependency freshness for adopted CODE repos or governa source"},
-		{Flag: "examples", Desc: "render example repos to /tmp/governa-examples/"},
+		{Flag: "render-canon", Desc: "render flavor-specific canon files into a target directory"},
 		{Flag: "version, ver", Desc: "print version and source info"},
 		{Flag: "help, h", Desc: "show this help"},
 	}, "Run 'governa <command> -h' for command-specific flags."))
 }
 
-const examplesOutputDir = "/tmp/governa-examples"
-
-// runExamples renders both CODE and DOC overlays to /tmp/governa-examples/.
-func runExamples() error {
-	if err := os.RemoveAll(examplesOutputDir); err != nil {
-		return fmt.Errorf("clean output dir: %w", err)
-	}
-
-	type target struct {
-		subdir string
-		cfg    governance.Config
-		module string
-	}
-	targets := []target{
-		{
-			subdir: "code",
-			cfg: governance.Config{
-				Mode:     governance.ModeApply,
-				RepoName: "example-code",
-				Type:     governance.RepoTypeCode,
-				Stack:    "Go",
-			},
-			module: "github.com/queone/governa/examples/code",
-		},
-		{
-			subdir: "doc",
-			cfg: governance.Config{
-				Mode:     governance.ModeApply,
-				RepoName: "example-doc",
-				Type:     governance.RepoTypeDoc,
-			},
-			module: "github.com/queone/governa/examples/doc",
-		},
-	}
-
-	var tfs fs.FS = templates.EmbeddedFS
-	for _, t := range targets {
-		dir := filepath.Join(examplesOutputDir, t.subdir)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("create %s: %w", dir, err)
-		}
-
-		gomod := fmt.Sprintf("module %s\n\ngo 1.23\n", t.module)
-		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
-			return fmt.Errorf("seed go.mod in %s: %w", dir, err)
-		}
-
-		t.cfg.Target = dir
-		if err := governance.RunWithFS(tfs, t.cfg); err != nil {
-			return fmt.Errorf("render %s overlay: %w", t.subdir, err)
+// runRenderCanon renders flavor-specific canon files into <target>/, with
+// flat repo-relative layout (e.g. <target>/AGENTS.md, <target>/docs/ac-template.md).
+// Canon files only — no adoption record, no go.mod seed, no symlinks. Smoke
+// harnesses (cmd/build) seed go.mod and create symlinks separately as needed.
+// Flavor defaults to driftscan.DetectFlavor on cwd; --flavor flag overrides.
+// For CODE flavor, {{MODULE_PATH}} substitution reads the module path from
+// the cwd's go.mod (the consumer's actual repo), or from the --module-path
+// flag when set. For DOC flavor, no Go module path is needed.
+func runRenderCanon(args []string) error {
+	flavor := ""
+	target := ""
+	modulePath := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-h", "--help", "-?":
+			fmt.Fprint(os.Stderr, color.FormatUsage("governa render-canon [--flavor code|doc] [--module-path <path>] <target>", []color.UsageLine{
+				{Flag: "-f, --flavor code|doc", Desc: "select consumer flavor (default: inferred from cwd via driftscan.DetectFlavor)"},
+				{Flag: "-m, --module-path <path>", Desc: "module path for CODE-flavor {{MODULE_PATH}} substitution (default: read from cwd's go.mod)"},
+			}, "Render canon files into <target>/ in flat repo-relative layout. Canon files only — no adoption record. Target is not pre-cleaned; remove or empty it beforehand if you need a fresh tree."))
+			return nil
+		case "-f", "--flavor":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--flavor requires a value")
+			}
+			flavor = args[i+1]
+			i++
+		case "-m", "--module-path":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--module-path requires a value")
+			}
+			modulePath = args[i+1]
+			i++
+		default:
+			if target != "" {
+				return fmt.Errorf("unexpected argument: %s (target already set to %q)", args[i], target)
+			}
+			target = args[i]
 		}
 	}
-
-	fmt.Println(examplesOutputDir)
-	return nil
-}
-
-// docSmokeOutputDir is the smoke target: render DOC overlay to a fresh
-// dir WITHOUT seeding a go.mod so build.sh's smoke step can exercise the
-// no-go.mod adoption scenario that masked the no-go.mod-adoption bug.
-const docSmokeOutputDir = "/tmp/governa-doc-smoke"
-
-// runDocSmoke renders only the DOC overlay to docSmokeOutputDir, with no
-// go.mod seed. Validates that DOC overlay's rel.sh works in a fresh
-// content-repo adoption scenario (no module-mode prerequisites).
-func runDocSmoke() error {
-	if err := os.RemoveAll(docSmokeOutputDir); err != nil {
-		return fmt.Errorf("clean smoke output dir: %w", err)
+	if target == "" {
+		return fmt.Errorf("render-canon requires a positional <target> argument")
 	}
-	if err := os.MkdirAll(docSmokeOutputDir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", docSmokeOutputDir, err)
+	if flavor != "" && flavor != "code" && flavor != "doc" {
+		return fmt.Errorf("invalid --flavor: %q (must be 'code' or 'doc')", flavor)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get cwd: %w", err)
+	}
+	if flavor == "" {
+		inferred, err := driftscan.DetectFlavor(cwd)
+		if err != nil {
+			return fmt.Errorf("infer flavor from cwd: %w (use --flavor to override)", err)
+		}
+		flavor = inferred
+	}
+	if flavor == "code" && modulePath == "" {
+		modulePath = governance.ReadModulePath(cwd)
+		if modulePath == "" {
+			return fmt.Errorf("could not read module path from cwd's go.mod (cwd=%s); pass --module-path to override", cwd)
+		}
+	}
+
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return fmt.Errorf("resolve target: %w", err)
+	}
+	if err := os.MkdirAll(absTarget, 0o755); err != nil {
+		return fmt.Errorf("create target %s: %w", absTarget, err)
+	}
+
+	// RepoName tracks the consumer's repo identity per docs/development-
+	// guidelines.md Template Placeholder Guidance: for CODE flavor, the
+	// module path's final component (e.g., module `example.com/consumer` →
+	// `consumer`); for DOC flavor, the cwd's basename (the consumer's
+	// actual repo dir). Never the scratch target's basename — that would
+	// leak the scratch dir name into the rendered AGENTS.md / README.
+	repoName := ""
+	if modulePath != "" {
+		repoName = path.Base(modulePath)
+	} else {
+		repoName = filepath.Base(cwd)
 	}
 	cfg := governance.Config{
-		Mode:     governance.ModeApply,
-		RepoName: "smoke-doc",
-		Type:     governance.RepoTypeDoc,
-		Target:   docSmokeOutputDir,
+		Mode:       governance.ModeApply,
+		Target:     absTarget,
+		RepoName:   repoName,
+		ModulePath: modulePath,
 	}
-	if err := governance.RunWithFS(templates.EmbeddedFS, cfg); err != nil {
-		return fmt.Errorf("render DOC overlay (smoke): %w", err)
+	if flavor == "code" {
+		cfg.Type = governance.RepoTypeCode
+		cfg.Stack = "Go"
+	} else {
+		cfg.Type = governance.RepoTypeDoc
 	}
-	fmt.Println(docSmokeOutputDir)
+
+	canon, err := governance.RenderCanonicalFiles(templates.EmbeddedFS, cfg, absTarget)
+	if err != nil {
+		return fmt.Errorf("render canon: %w", err)
+	}
+
+	for rel, content := range canon {
+		dest := filepath.Join(absTarget, rel)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
+		}
+		mode := os.FileMode(0o644)
+		if strings.HasSuffix(rel, ".sh") {
+			mode = 0o755
+		}
+		if err := os.WriteFile(dest, []byte(content), mode); err != nil {
+			return fmt.Errorf("write %s: %w", dest, err)
+		}
+	}
+
+	fmt.Println(absTarget)
 	return nil
 }

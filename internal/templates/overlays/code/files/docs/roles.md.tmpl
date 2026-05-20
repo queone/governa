@@ -70,7 +70,7 @@ For each part, use file path and line references for non-trivial findings. Repor
 
 ### Response style
 
-- Keep responses terse: flat bullets, one-sentence next step. Follow the Review Style contract in `AGENTS.md`.
+- Keep responses terse: flat bullets, and a final `Awaiting <specific Director-initiated next>.` line. Follow the Review Style contract in `AGENTS.md`.
 - Calibrate verbosity to change density. One-line signal for trivial acks (nit dispositions, "shipped", "prep complete", multi-step procedures the director already owns). Reserve structured summaries for implementation-complete reports, multi-part dispositions, or changes with director-attention items (scope calls, version classification, design trade-offs).
 
 ## What the Operator Must Defer

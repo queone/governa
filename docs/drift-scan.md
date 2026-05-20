@@ -1,6 +1,6 @@
 # Drift Scan
 
-`governa drift-scan` walks the canon overlay, classifies each governed file against the consumer-repo's content, and emits a partially-filled AC stub plus a sister diffs file under the consumer repo's `docs/`. The consumer Operator iterates on the emitted stub under normal AC discipline (governed by the consumer's own `AGENTS.md` and `docs/ac-template.md`).
+`governa drift-scan` walks the canon overlay, classifies each governed file against the consumer-repo's content, and emits a partially-filled AC stub under the consumer repo's `docs/`. The consumer Operator iterates on the emitted stub under normal AC discipline (governed by the consumer's own `AGENTS.md` and `docs/ac-template.md`). Per-file diffs are not snapshotted; adopters use `governa render-canon` plus standard `diff -ru` to inspect changes (see `AGENTS.md` `### Drift-Scan Adoption`).
 
 The tool is consumer-run. Install the binary (`go install github.com/queone/governa/cmd/governa@latest`), then run `governa drift-scan` from the consumer repo root — no positional arguments, no governa source checkout needed.
 
@@ -9,27 +9,25 @@ The tool is consumer-run. Install the binary (`go install github.com/queone/gove
 - Invocation accepts no positional arguments. The tool runs against the current working directory only.
 - The cwd must be a governa-adopted repo: `AGENTS.md` must be present, plus at least one of `docs/ac-template.md`, `docs/release.md`, `docs/build-release.md`, or a `CHANGELOG.md` row referencing `governa apply`. The tool hard-errors with recovery guidance if the check fails.
 - The tool refuses to run against the governa source itself.
-- The tool walks canon, byte-compares each governed file against the cwd, classifies divergences, collects evidence (preserve markers, recent commits, diffs), and emits two files under `docs/`: the AC stub and the sister diffs file. Both share the same AC number `N` and slug stem `drift-scan-v<X.Y.Z>`.
+- The tool walks canon, byte-compares each governed file against the cwd, classifies divergences, collects evidence (preserve markers, recent commits), and emits one file under `docs/`: the AC stub with slug stem `drift-scan-v<X.Y.Z>`.
 - Before any canon→cwd walk, the tool runs the `## Canon-coherence precondition` check. If canon is internally incoherent on a registered cross-file rule, the tool refuses to emit and reports the incoherence on stdout. No file writes occur.
-- One repo per invocation. The tool makes no commits in the cwd and does not modify `plan.md`. Writes under `<cwd>/docs/` are limited to the AC stub and its sister diffs file.
+- One repo per invocation. The tool makes no commits in the cwd and does not modify `plan.md`. Writes under `<cwd>/docs/` are limited to the AC stub.
 
 ## What the tool emits
 
-Two files under the consumer repo's `docs/`, plus a single-line stdout summary.
+One file under the consumer repo's `docs/`, plus a single-line stdout summary.
 
 **`docs/ac<N>-drift-scan-v<X.Y.Z>.md`** — the emitted AC stub. Conforms to `docs/ac-template.md` shape minus the copy-instruction preamble:
 
 - H1 title: `# AC<N> Drift-Scan Adoption from governa v<X.Y.Z>`.
 - Opening one-sentence summary of the canon delta.
-- `## Summary` — concise paragraph describing the classifications surfaced and pointing at the sister diffs file; names the canon version being adopted (`governa @ v<X.Y.Z>`) and notes that the AC is part of the recurring drift-scan cycle. Code-flavor consumers also see the reachability gate sentence inside this section. Any `ambiguity` or `target-has-no-canon` items surface here under a `### Routing Decisions` subheading — one numbered item per file, phrased as the decision-surface question, awaiting the Director's chat-mode resolution before implementation.
-- `## In Scope` — `clear-sync` and non-empty `missing-in-target` entries, each citing the sister diffs file by H2 anchor.
+- `## Summary` — concise paragraph describing the classifications surfaced; names the canon version being adopted (`governa @ v<X.Y.Z>`) and notes that the AC is part of the recurring drift-scan cycle; points adopters at `governa render-canon` plus `diff -ru` for per-file inspection (see `AGENTS.md` `### Drift-Scan Adoption`). Code-flavor consumers also see the reachability gate sentence inside this section. Any `ambiguity` or `target-has-no-canon` items surface here under a `### Routing Decisions` subheading — one numbered item per file, phrased as the decision-surface question, awaiting the Director's chat-mode resolution before implementation.
+- `## In Scope` — `clear-sync` and non-empty `missing-in-target` entries listed with classification and any format-defining annotation.
 - `## Out Of Scope` — `preserve` (with marker citation) and `expected-divergence` entries.
-- `## Acceptance Tests` — one byte-equality AT per `clear-sync` item plus an AT for the canon-coherence precondition pass.
+- `## Acceptance Tests` — one byte-equality AT per `clear-sync` item, an AT for the canon-coherence precondition pass, and a final re-run verification AT confirming the next `governa drift-scan` emission omits the synced files from its `## In Scope` list.
 - `## Status` — `PENDING` on initial emission.
 
-**`docs/ac<N>-drift-scan-v<X.Y.Z>-diffs.md`** — the sister diffs file. Carries one `## \`<relpath>\`` H2 section per divergent file with the verbatim `diff -u` hunk, prefaced with a `Direction:` line (`target leads`, `canon leads`, or mutual line counts). Empty body when no divergent files.
-
-**Emission marker.** Each emitted file carries an HTML-comment marker on line 1:
+**Emission marker.** The emitted file carries an HTML-comment marker on line 1:
 
 ```
 <!-- drift-scan: emitted-by governa v<X.Y.Z>; emission-sha=<sha256> -->
@@ -37,7 +35,7 @@ Two files under the consumer repo's `docs/`, plus a single-line stdout summary.
 
 `emission-sha` is the SHA-256 of the file body (everything after the marker line). The marker is the tool's edit-detection signal on re-runs.
 
-**Stdout summary** — single line: `wrote docs/ac<N>-drift-scan-v<X.Y.Z>.md and docs/ac<N>-drift-scan-v<X.Y.Z>-diffs.md (<counts>)`. Paths are repo-root-relative. Suppressed when `--json` is set; in JSON mode the structured `Report` struct goes to stdout alongside the markdown emission.
+**Stdout summary** — single line: `wrote docs/ac<N>-drift-scan-v<X.Y.Z>.md (<counts>)`. The path is repo-root-relative. Suppressed when `--json` is set; in JSON mode the structured `Report` struct goes to stdout alongside the markdown emission.
 
 ## AC number allocation
 
@@ -48,7 +46,7 @@ The tool determines `N` per `docs/ac-template.md` line 3:
 
 ## Re-run behavior and edit-detection guard
 
-Re-running drift-scan against the same canon version is idempotent on **unedited** stubs — both the AC stub and sister diffs file overwrite in place using the existing `N`. The tool refuses to overwrite if either file has been edited since emission:
+Re-running drift-scan against the same canon version is idempotent on an **unedited** stub — the AC stub overwrites in place using the existing `N`. The tool refuses to overwrite if the stub has been edited since emission:
 
 - On re-run, the tool reads the existing file, parses the line-1 marker, recomputes the SHA-256 of the body, and compares.
 - Match → file unedited → overwrite.
@@ -64,7 +62,7 @@ The tool emits one of the classifications below for every file. The Operator can
 - **`expected-divergence`** — canon is a per-repo stub by design and the file's path is in the `ExpectedDivergencePaths` registry (see `## Expected-divergence registry`); the tool skips the byte-compare and lists the file under `## Out Of Scope`. Treated as no-action.
 - **`preserve`** — a verbatim preserve-marker phrase was found citing this file in `<cwd>/CHANGELOG.md` or `<cwd>/docs/ac*.md`. Routed to `## Out Of Scope` with the marker quoted verbatim.
 - **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. Routed to `### Routing Decisions` under `## Summary` as a numbered routing question. Format-defining files (see `## Format-defining files`) are an exception: they are hard-routed to sync regardless of classification.
-- **`clear-sync`** — divergent with neither local commits nor preserve marker. Routed to `## In Scope` as `sync to canon`, with the sister diffs file referenced by H2 anchor.
+- **`clear-sync`** — divergent with neither local commits nor preserve marker. Routed to `## In Scope` as `sync to canon`.
 - **`missing-in-target`** — canon ships the file; target does not. If canon is non-empty, routed to `## In Scope` as `create from canon`. If canon is empty, surfaced as an informational note only.
 - **`target-has-no-canon`** — file exists in cwd, NOT in canon for this flavor. Two branches surface a file under this classification:
   - **Cross-flavor branch:** the file exists in the OTHER flavor's canon. Possible flavor mismatch.
@@ -72,7 +70,7 @@ The tool emits one of the classifications below for every file. The Operator can
 
   Both branches surface the file in `### Routing Decisions` under `## Summary` with `keep / delete / migrate-to-canon` options. Migrating a file into canon is a separate governa-side workflow, not a drift-scan resolution; the consumer agent surfaces the file via `keep` and the Director coordinates with the governa maintainer if upstream migration is desired.
 
-For every divergent file, the AC stub references the sister diffs file by H2 anchor; the full `diff -u` hunk lives in `docs/ac<N>-drift-scan-v<X.Y.Z>-diffs.md`.
+Adopters render canon via `governa render-canon <scratch>` and inspect per-file changes with `diff -ru <scratch>/<path> <path>` (see `AGENTS.md` `### Drift-Scan Adoption` for the full workflow).
 
 ## Reachability of canon-only branches
 
@@ -126,7 +124,7 @@ Before any canon→cwd walk, the tool checks canon for internal coherence on a s
 - **Framing:** the report opens with one line stating this is a **governa-side** defect requiring canon reconciliation, not a consumer-side routing decision. Consumer Director's action is "ping governa maintainer," not "route a divergence."
 - **Enumerate, don't bail:** when multiple rules are simultaneously incoherent, the precondition surfaces all of them in one report. Failing at the first hit forces reconcile-rerun thrash.
 - **Fire early:** the precondition runs canon-only and does not need the cwd. It runs before the canon→cwd walk so canon-side defects surface in seconds, not after a full target enumeration.
-- **No cwd writes:** nothing under `<cwd>/docs/` is emitted, no IE inserted into `<cwd>/plan.md`, no sister diffs file. The precondition runs before any cwd write, so nothing to roll back.
+- **No cwd writes:** nothing under `<cwd>/docs/` is emitted, no IE inserted into `<cwd>/plan.md`. The precondition runs before any cwd write, so nothing to roll back.
 
 The check is registry-driven: cross-file rule definitions live next to `FormatDefiningCanonPaths` in the source, so adding future rules extends the check. The cross-file rules registry (`coherenceRules` in code) is currently empty; the precondition always passes until a new rule is registered. (This is distinct from `FormatDefiningCanonPaths`, which is non-empty.)
 
@@ -166,7 +164,7 @@ Note: drift-scan provides the diff payload; the consumer agent's review is the c
 The consumer-repo Operator handles drift-scan as a self-contained loop. The Director's role is to authorize the scan, review the summary, and resolve the routing decisions that the emission surfaces.
 
 - **Trigger phrase.** When the Director says "do a new drift-scan" or similar wording in a consumer repo, the Operator treats that as authorization to run `governa drift-scan` from the repo root. No additional authorization request is needed for the run itself.
-- **Post-emission review.** Immediately after the two files are emitted, the Operator performs a high-level review of both the AC stub and the sister diffs file, and reports a concise summary to the Director — without waiting for a separate "review the drift-scan report" request.
+- **Post-emission review.** Immediately after the AC stub is emitted, the Operator performs a high-level review of the stub and reports a concise summary to the Director — without waiting for a separate "review the drift-scan report" request.
 - **Summary content.** The summary names: main drift categories (counts of `clear-sync`, `ambiguity`, `preserve`, `expected-divergence`, etc.); routing decisions surfaced by the emission; obvious canon-owned issues that warrant upstream feedback rather than local sync; whether the emitted AC stub appears ready for critique and iteration.
 - **Scope discipline.** The summary is high-level; the emitted AC stub remains the source of truth. The Operator's role is to surface the report at a glance, not to recapitulate it.
 - **Not a governa-source handoff.** This is consumer-repo Operator behavior after a local scan. It does not require any action on the governa source side.

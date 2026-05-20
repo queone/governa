@@ -37,6 +37,11 @@ type Config struct {
 	RepoName string
 	Stack    string
 	InitGit  bool
+	// ModulePath, when non-empty, overrides the go.mod read from Target/go.mod
+	// for {{MODULE_PATH}} substitution. Used by render-canon so the rendered
+	// canon carries the consumer's actual module path (read from cwd) rather
+	// than the basename of the scratch render target.
+	ModulePath string
 }
 
 type Assessment struct {
@@ -590,7 +595,10 @@ func readModulePath(targetRoot string) string {
 }
 
 func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error) {
-	modulePath := readModulePath(targetRoot)
+	modulePath := cfg.ModulePath
+	if modulePath == "" {
+		modulePath = readModulePath(targetRoot)
+	}
 	if modulePath == "" {
 		// New repos don't have go.mod yet; use repo name as placeholder
 		modulePath = cfg.RepoName

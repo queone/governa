@@ -44,21 +44,47 @@ func main() {
 // example validation runs between build/install and the next-tag suggestion.
 // Specific to governa (governa is the template repo); other consumers of
 // governa-buildtool leave PostInstallHook nil.
+//
+// Per AC139, governa render-canon is canon-only: this hook seeds go.mod and
+// creates the CLAUDE.md → AGENTS.md symlink externally for each flavor.
 func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer) error {
 	return func(out, errOut io.Writer) error {
 		fmt.Fprintln(out, "\n"+color.Yel5("==> Render example repos and validate"))
 		exDir := "/tmp/governa-examples"
-		if err := runStreaming(out, errOut, "go", "run", "./cmd/governa", "examples"); err != nil {
-			return fmt.Errorf("governa examples: %w", err)
+		if err := os.RemoveAll(exDir); err != nil {
+			return fmt.Errorf("clean %s: %w", exDir, err)
 		}
 		exCodeDir := filepath.Join(exDir, "code")
-		for _, sub := range []string{"code", "doc"} {
-			subDir := filepath.Join(exDir, sub)
-			if _, err := os.Stat(subDir); err != nil {
-				return fmt.Errorf("example dir missing: %s", subDir)
+		exDocDir := filepath.Join(exDir, "doc")
+		for _, t := range []struct {
+			dir, flavor, module string
+		}{
+			{exCodeDir, "code", "github.com/queone/governa/examples/code"},
+			{exDocDir, "doc", "github.com/queone/governa/examples/doc"},
+		} {
+			// Smoke render: pass --module-path explicitly so {{MODULE_PATH}}
+			// substitution uses the example module path, not the governa
+			// source's cwd module (which is `github.com/queone/governa`).
+			args := []string{"run", "./cmd/governa", "render-canon", "--flavor", t.flavor}
+			if t.flavor == "code" {
+				args = append(args, "--module-path", t.module)
 			}
-			if err := runStreamingInDir(subDir, out, errOut, "go", "mod", "tidy"); err != nil {
-				return fmt.Errorf("go mod tidy in %s: %w", subDir, err)
+			args = append(args, t.dir)
+			if err := runStreaming(out, errOut, "go", args...); err != nil {
+				return fmt.Errorf("governa render-canon --flavor %s %s: %w", t.flavor, t.dir, err)
+			}
+			// Seed go.mod and CLAUDE.md symlink after render so `go mod tidy`
+			// and the smoke runs have what they need; render-canon emits
+			// canon files only.
+			gomod := fmt.Sprintf("module %s\n\ngo 1.23\n", t.module)
+			if err := os.WriteFile(filepath.Join(t.dir, "go.mod"), []byte(gomod), 0o644); err != nil {
+				return fmt.Errorf("seed go.mod in %s: %w", t.dir, err)
+			}
+			if err := os.Symlink("AGENTS.md", filepath.Join(t.dir, "CLAUDE.md")); err != nil && !os.IsExist(err) {
+				return fmt.Errorf("symlink CLAUDE.md in %s: %w", t.dir, err)
+			}
+			if err := runStreamingInDir(t.dir, out, errOut, "go", "mod", "tidy"); err != nil {
+				return fmt.Errorf("go mod tidy in %s: %w", t.dir, err)
 			}
 		}
 		if output, failed := runCapturedCheckInDir(exCodeDir, "go", "vet", "./..."); failed {
@@ -74,7 +100,6 @@ func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer)
 		if err := runStreamingInDir(exCodeDir, out, errOut, "go", exTestArgs...); err != nil {
 			return fmt.Errorf("go test failed on rendered code example: %w", err)
 		}
-		exDocDir := filepath.Join(exDir, "doc")
 		if output, failed := runCapturedCheckInDir(exDocDir, "go", "vet", "./..."); failed {
 			writeIndented(out, output)
 			return fmt.Errorf("go vet failed on rendered doc example")
@@ -92,16 +117,16 @@ func renderAndValidateExamples(cfg buildtool.Config) func(out, errOut io.Writer)
 		fmt.Fprintln(out, "    example validation passed; cleaned up "+exDir)
 
 		// smoke test DOC overlay's no-go.mod adoption path.
-		// `governa examples` always seeds a go.mod into the rendered dirs,
-		// which masks the no-go.mod-adoption bug (DOC overlay's rel.sh fails in fresh
-		// content repos with no go.mod). The smoke step renders DOC overlay
-		// to a separate dir without seeding go.mod, then exercises rel.sh
-		// (no args = print usage, exit 0). A future regression that re-
-		// introduces a module-mode dependency in the DOC rel surface fails
-		// here.
+		// render-canon is canon-only (no go.mod), so this dir exercises the
+		// fresh content-repo scenario where the consumer hasn't bootstrapped a
+		// Go module. A future regression that re-introduces a module-mode
+		// dependency in the DOC rel surface fails here.
 		fmt.Fprintln(out, "\n"+color.Yel5("==> Smoke test DOC overlay (no-go.mod adoption)"))
 		smokeDir := "/tmp/governa-doc-smoke"
-		if err := runStreaming(out, errOut, "go", "run", "./cmd/governa", "examples", "--smoke-doc"); err != nil {
+		if err := os.RemoveAll(smokeDir); err != nil {
+			return fmt.Errorf("clean %s: %w", smokeDir, err)
+		}
+		if err := runStreaming(out, errOut, "go", "run", "./cmd/governa", "render-canon", "--flavor", "doc", smokeDir); err != nil {
 			return fmt.Errorf("DOC smoke render: %w", err)
 		}
 		if _, err := os.Stat(filepath.Join(smokeDir, "go.mod")); err == nil {

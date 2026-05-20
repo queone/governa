@@ -92,6 +92,16 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Confirm every new or rewritten instruction in AGENTS.md follows Instruction Style.
 - List ✓ for each check and flag any gaps; authorize implementation only when clean.
 
+### Drift-Scan Adoption
+
+- Apply these rules whenever implementing a drift-scan-emitted AC.
+- Render canon into a scratch directory using `governa render-canon <scratch>`.
+- Inspect changes per `## In Scope` item by running `diff -ru <scratch>/<path> <path>`.
+- Ensure the parent directory exists for each `## In Scope` item: `mkdir -p "$(dirname <path>)"`.
+- Apply each `## In Scope` item by copying from canon: `cp <scratch>/<path> <path>`.
+- Re-run `governa drift-scan` after the sync; confirm each synced file no longer appears in the new emission's `## In Scope` list.
+- Run the repo's canonical validation (`./build.sh` or equivalent) before declaring the adoption complete.
+
 ## File-Change Discipline
 
 - Prefer targeted edits over broad rewrites.
@@ -114,7 +124,8 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Prioritize bugs, regressions, missing tests, and drift from documented behavior.
 - Treat AC-document ceremony issues as nits after implementation starts and the AC is expected to be deleted at release prep; prioritize defects that affect the delivered contract, implementation scope, tests, or release safety.
 - Report "no issues" directly when none are found; note any residual risk or verification gaps.
-- Keep completions terse — what changed, flat bullets, one-sentence next step — and skip "What's in it" / "Main conclusion" / "Next steps" headers unless asked.
+- Keep completions terse — what changed, flat bullets, and a final `Awaiting <specific Director-initiated next>.` line; skip "What's in it" / "Main conclusion" / "Next steps" headers unless asked.
+- Never prescribe commit, push, or release actions in the sign-off; the Director triggers those — the sign-off names what's pending, not what to do.
 - Skip settled repo mechanics in completions, including symlink behavior, mirror mechanics, governance structure, and contract conventions.
 - Default to plain text and simple bullets; reach for tables or richer structure only when content clearly benefits.
 - Note skipped checks only when the omission is unusual or affects confidence.

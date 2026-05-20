@@ -26,7 +26,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 - `cmd/governa`: installable CLI binary. One command: `apply`.
 - `cmd/build`, `cmd/prep`, and `cmd/rel`: Go entrypoints for local validation, release staging, and release orchestration
 - `internal/`: shared logic for governance, build, release, colorized CLI output, and template access
-- `governa examples`: on-demand command that renders sample repos to `/tmp/governa-examples/` for inspection and build validation
+- `governa render-canon`: on-demand command that renders flavor-specific canon files into a target directory; canon-only (no adoption record). Drives drift-scan adoption and CODE/DOC build-validation harnesses.
 
 ## Data And Control Flow
 

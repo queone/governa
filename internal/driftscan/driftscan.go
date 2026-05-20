@@ -4,13 +4,14 @@
 // after a positive governa-adoption check, walks the canon overlay embedded
 // in the binary, byte-compares each governed file against the cwd,
 // classifies divergences, collects evidence (preserve markers, git log),
-// allocates a monotonic AC number, and emits two files under
-// `<cwd>/docs/`: an AC stub (`ac<N>-drift-scan-v<X.Y.Z>.md`, conforming to
-// `docs/ac-template.md`) and a sister diffs file
-// (`ac<N>-drift-scan-v<X.Y.Z>-diffs.md`). Both files carry a line-1 HTML
-// emission marker (`drift-scan: emitted-by governa v<X.Y.Z>; emission-sha=...`)
-// so re-runs against the same canon version can refuse overwrite on a stub
-// that the Operator has already edited. The tool makes no commits and does
+// allocates a monotonic AC number, and emits one file under `<cwd>/docs/`:
+// the AC stub (`ac<N>-drift-scan-v<X.Y.Z>.md`, conforming to
+// `docs/ac-template.md`). The file carries a line-1 HTML emission marker
+// (`drift-scan: emitted-by governa v<X.Y.Z>; emission-sha=...`) so re-runs
+// against the same canon version can refuse overwrite on a stub the
+// Operator has already edited. Per-file diffs are not snapshotted — adopters
+// use `governa render-canon` + standard `diff -ru` to inspect changes (see
+// AGENTS.md `### Drift-Scan Adoption`). The tool makes no commits and does
 // not modify `plan.md`.
 //
 // The Go package itself has no consumer-overlay counterpart — its source
@@ -136,7 +137,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, `Usage: governa drift-scan [flags]
 
 Scan an adopted-governa repo against canon. Run from the consumer repo root
-(no positional arguments). Emits an AC stub and sister diffs file under docs/.
+(no positional arguments). Emits an AC stub under docs/.
 
 Flags:
   -f, --flavor code|doc      overlay flavor (default: auto-detect)
@@ -293,8 +294,8 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 			Classification: ClassTargetNoCanon,
 			CanonRef:       fmt.Sprintf("(no canon path for flavor %s)", flavor),
 		}
-		// emit unified diff against empty canon so the file
-		// surfaces in drift-report-<sha>-diffs.md with all target lines as `+`.
+		// emit unified diff against empty canon so the FileResult carries
+		// all target lines as `+` for JSON consumers and downstream tooling.
 		if targetBytes, rerr := os.ReadFile(filepath.Join(cfg.Target, rel)); rerr == nil {
 			fr.Diff = unifiedDiff("", string(targetBytes), rel, cfg.DiffLines)
 		}
@@ -339,30 +340,24 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	}
 
 	stubRel := fmt.Sprintf("docs/ac%d-drift-scan-%s.md", acNum, sha)
-	diffsRel := fmt.Sprintf("docs/ac%d-drift-scan-%s-diffs.md", acNum, sha)
 	stubPath := filepath.Join(cfg.Target, stubRel)
-	diffsPath := filepath.Join(cfg.Target, diffsRel)
 
 	// Edit-detection guard: if reused N (same-canon-version stub exists),
-	// refuse overwrite when either file has been edited since emission.
+	// refuse overwrite when the AC stub has been edited since emission.
 	if reused {
-		for _, p := range []string{stubPath, diffsPath} {
-			if _, statErr := os.Stat(p); statErr == nil {
-				unedited, vErr := emission.VerifyUnedited(p, driftScanMarkerPrefix)
-				if vErr != nil {
-					return ExitEnvError, fmt.Errorf("drift-scan: verify %s: %w", p, vErr)
-				}
-				if !unedited {
-					rel, _ := filepath.Rel(cfg.Target, p)
-					return ExitEnvError, fmt.Errorf("drift-scan: %s has been edited since last drift-scan emission — to re-run, commit edits and delete the stub to regenerate, or rename the stub off the drift-scan-%s slug", rel, sha)
-				}
+		if _, statErr := os.Stat(stubPath); statErr == nil {
+			unedited, vErr := emission.VerifyUnedited(stubPath, driftScanMarkerPrefix)
+			if vErr != nil {
+				return ExitEnvError, fmt.Errorf("drift-scan: verify %s: %w", stubPath, vErr)
+			}
+			if !unedited {
+				return ExitEnvError, fmt.Errorf("drift-scan: %s has been edited since last drift-scan emission — to re-run, commit edits and delete the stub to regenerate, or rename the stub off the drift-scan-%s slug", stubRel, sha)
 			}
 		}
 	}
 
-	// Build AC stub + sister diffs file bodies (without marker).
+	// Build AC stub body (without marker).
 	stubBody := buildACStub(report, acNum, sha)
-	diffsBody := buildACStubDiffs(report, acNum, sha)
 
 	// Ensure <target>/docs/ exists. Adoption check may pass on AGENTS.md +
 	// CHANGELOG row alone; docs/ is required for emission.
@@ -370,16 +365,13 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		return ExitEnvError, err
 	}
 
-	// Write with emission markers on line 1 (sha covers body only).
+	// Write with emission marker on line 1 (sha covers body only).
 	if err := emission.WriteWithMarker(stubPath, driftScanMarkerPrefix, sha, stubBody); err != nil {
 		return ExitEnvError, fmt.Errorf("drift-scan: write %s: %w", stubRel, err)
 	}
-	if err := emission.WriteWithMarker(diffsPath, driftScanMarkerPrefix, sha, diffsBody); err != nil {
-		return ExitEnvError, fmt.Errorf("drift-scan: write %s: %w", diffsRel, err)
-	}
 
-	// Attach emitted paths so JSON consumers can locate the markdown files.
-	report.Emitted = &EmittedPaths{ACStub: stubRel, Diffs: diffsRel}
+	// Attach emitted paths so JSON consumers can locate the AC stub.
+	report.Emitted = &EmittedPaths{ACStub: stubRel}
 
 	if cfg.JSON {
 		// JSON mode emits structured scan data alongside the markdown
@@ -388,9 +380,18 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(report)
 	} else {
-		fmt.Fprintf(out, "wrote %s and %s (%s)\n", stubRel, diffsRel, tallyClassifications(report.Files))
+		fmt.Fprintf(out, "wrote %s (%s)\n", stubRel, tallyClassifications(report.Files))
 	}
 	return ExitOK, nil
+}
+
+// DetectFlavor reports the consumer flavor inferred from target's repo
+// shape: "code" if go.mod present, "doc" if _config.yml present (or
+// neither), and an error when both are present (ambiguous).
+// Exported so cmd/governa's render-canon subcommand reuses the same
+// inference logic drift-scan uses.
+func DetectFlavor(target string) (string, error) {
+	return detectFlavor(target)
 }
 
 func detectFlavor(target string) (string, error) {
@@ -444,16 +445,15 @@ type ReportHeader struct {
 type Report struct {
 	Header ReportHeader `json:"header"`
 	Files  []FileResult `json:"files"`
-	// Emitted carries the repo-root-relative paths of the AC stub and
-	// sister diffs file written by this run. Populated only in JSON mode.
+	// Emitted carries the repo-root-relative path of the AC stub written
+	// by this run. Populated only in JSON mode.
 	Emitted *EmittedPaths `json:"emitted,omitempty"`
 }
 
-// EmittedPaths names the two files written under <target>/docs/ on a
-// successful run. Both paths are repo-root-relative.
+// EmittedPaths names the AC stub written under <target>/docs/ on a
+// successful run. The path is repo-root-relative.
 type EmittedPaths struct {
 	ACStub string `json:"ac_stub"`
-	Diffs  string `json:"diffs"`
 }
 
 // expectedDivergencePaths is the per-repo stub registry (see docs/drift-scan.md
@@ -626,8 +626,8 @@ func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 	targetBytes, err := os.ReadFile(targetPath)
 	if err != nil {
 		fr.Classification = ClassMissingTarget
-		// emit unified diff against empty target so the file
-		// surfaces in drift-report-<sha>-diffs.md with all canon lines as `-`.
+		// emit unified diff against empty target so the FileResult carries
+		// all canon lines as `-` for JSON consumers and downstream tooling.
 		fr.Diff = unifiedDiff(canon, "", relpath, cfg.DiffLines)
 		return fr
 	}
@@ -807,10 +807,10 @@ func previewCanonContent(s string, maxLines int) string {
 
 // (Removed under AC136: writeReport had a markdown branch for the
 // disposable drift-report-pair format and a JSON branch. The new emission
-// path writes the AC stub + sister diffs directly under <target>/docs/, and
-// JSON mode encodes the Report struct inline in Run. CleanupReminder and
+// path writes the AC stub directly under <target>/docs/, and JSON mode
+// encodes the Report struct inline in Run. CleanupReminder and
 // AdoptionReminder constants were tied to the markdown branch and removed
-// alongside it.)
+// alongside it. AC139 retired the sister-diffs file emission entirely.)
 
 const driftScanMarkerPrefix = "<!-- drift-scan: emitted-by governa "
 
@@ -825,10 +825,11 @@ func classCounts(files []FileResult) map[Classification]int {
 
 // buildACStub renders the emitted AC stub body (without the line-1 marker).
 // Conforms to docs/ac-template.md shape minus the copy-instruction preamble.
-// Diff hunks live in the sister diffs file referenced by H2 anchor.
+// Per-file diffs are not snapshotted — adopters re-render canon with
+// `governa render-canon` and use standard `diff -ru` to inspect changes
+// (see AGENTS.md `### Drift-Scan Adoption`).
 func buildACStub(r Report, acNum int, canonVersion string) string {
 	var b strings.Builder
-	diffsRel := fmt.Sprintf("docs/ac%d-drift-scan-%s-diffs.md", acNum, canonVersion)
 	counts := classCounts(r.Files)
 
 	// Route files to sections. Format-defining files override the raw
@@ -863,8 +864,8 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 
 	fmt.Fprintln(&b, "## Summary")
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "Sync this repo to governa @ %s canon as part of the recurring drift-scan cycle. Drift-scan surfaced %s. Per-file diff hunks live in `%s`.\n\n",
-		canonVersion, tallyClassifications(r.Files), diffsRel)
+	fmt.Fprintf(&b, "Sync this repo to governa @ %s canon as part of the recurring drift-scan cycle. Drift-scan surfaced %s. Use `governa render-canon` to render canon and standard `diff -ru` to inspect per-file changes (see AGENTS.md `### Drift-Scan Adoption`).\n\n",
+		canonVersion, tallyClassifications(r.Files))
 
 	if r.Header.Flavor == "code" {
 		fmt.Fprintln(&b, ReachabilityHeaderReminder)
@@ -903,14 +904,14 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	if len(syncEntries) == 0 {
 		fmt.Fprintln(&b, "No sync items.")
 	} else {
-		fmt.Fprintf(&b, "Sync to canon — see [`%s`](%s) for diff hunks:\n\n", diffsRel, diffsRel)
+		fmt.Fprintln(&b, "Sync to canon:")
+		fmt.Fprintln(&b)
 		for _, f := range syncEntries {
-			anchor := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(f.Relpath, "/", ""), ".", ""))
 			suffix := ""
 			if isFormatDefining(f.Relpath) {
 				suffix = " (format-defining)"
 			}
-			fmt.Fprintf(&b, "- `%s` — %s%s (see diffs: `%s#%s`)\n", f.Relpath, f.Classification, suffix, diffsRel, anchor)
+			fmt.Fprintf(&b, "- `%s` — %s%s\n", f.Relpath, f.Classification, suffix)
 		}
 	}
 	fmt.Fprintln(&b)
@@ -937,83 +938,12 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	for i, f := range syncEntries {
 		fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` matches canon byte-for-byte after sync.\n\n", i+2, f.Relpath)
 	}
+	fmt.Fprintf(&b, "**AT%d** [Automated] — Re-running `governa drift-scan` after this AC's sync produces a new AC stub whose `## In Scope` list does not name any file synced under this AC.\n\n", len(syncEntries)+2)
 
 	fmt.Fprintln(&b, "## Status")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "`PENDING` — drift-scan emission; awaiting Director review and implementation authorization.")
 	return b.String()
-}
-
-// buildACStubDiffs renders the sister diffs file body (without the line-1
-// marker). One H2 section per divergent file with the verbatim `diff -u`
-// hunk. AC stub's `## In Scope` items reference these sections by anchor.
-func buildACStubDiffs(r Report, acNum int, canonVersion string) string {
-	var b strings.Builder
-	stubRel := fmt.Sprintf("docs/ac%d-drift-scan-%s.md", acNum, canonVersion)
-	fmt.Fprintf(&b, "# AC%d Drift-Scan Diffs (governa @ %s)\n\n", acNum, canonVersion)
-	fmt.Fprintf(&b, "Sister file to [`%s`](%s). Per-file diff hunks for the sync items.\n\n", stubRel, stubRel)
-	fmt.Fprintln(&b, "Diff convention: `+` lines exist in TARGET; `-` lines exist in CANON. `+` is \"target has this; canon does not\"; `-` is \"canon has this; target does not\".")
-	fmt.Fprintln(&b)
-	var divergent []FileResult
-	for _, f := range r.Files {
-		if f.Diff != "" {
-			divergent = append(divergent, f)
-		}
-	}
-	sort.Slice(divergent, func(i, j int) bool {
-		return divergent[i].Relpath < divergent[j].Relpath
-	})
-	if len(divergent) == 0 {
-		fmt.Fprintln(&b, "No divergent files.")
-		return b.String()
-	}
-	for _, f := range divergent {
-		fmt.Fprintf(&b, "## `%s`\n\n", f.Relpath)
-		canonOnly, targetOnly := computeDirection(f.Diff)
-		fmt.Fprintln(&b, formatDirection(canonOnly, targetOnly))
-		fmt.Fprintln(&b)
-		fmt.Fprintln(&b, "```diff")
-		fmt.Fprintln(&b, f.Diff)
-		fmt.Fprintln(&b, "```")
-		fmt.Fprintln(&b)
-	}
-	return b.String()
-}
-
-// computeDirection counts target-only (`+`-prefixed) and canon-only
-// (`-`-prefixed) lines in a unified-diff string, excluding the `+++ ` and
-// `--- ` header lines and `@@ ` hunk headers. input to
-// formatDirection for the per-file Direction line in the diffs file.
-func computeDirection(diff string) (canonOnly, targetOnly int) {
-	for line := range strings.SplitSeq(diff, "\n") {
-		switch {
-		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
-			continue
-		case strings.HasPrefix(line, "@@"):
-			continue
-		case strings.HasPrefix(line, "+"):
-			targetOnly++
-		case strings.HasPrefix(line, "-"):
-			canonOnly++
-		}
-	}
-	return canonOnly, targetOnly
-}
-
-// formatDirection returns a one-line natural-language summary of which side
-// carries which content. Emitted above each per-file diff hunk in the diffs
-// file.
-func formatDirection(canonOnly, targetOnly int) string {
-	switch {
-	case targetOnly > 0 && canonOnly == 0:
-		return fmt.Sprintf("Direction: target leads — target carries %d lines absent in canon.", targetOnly)
-	case canonOnly > 0 && targetOnly == 0:
-		return fmt.Sprintf("Direction: canon leads — canon carries %d lines absent in target.", canonOnly)
-	case targetOnly > 0 && canonOnly > 0:
-		return fmt.Sprintf("Direction: target carries %d lines absent in canon; canon carries %d lines absent in target.", targetOnly, canonOnly)
-	default:
-		return "Direction: no line-level divergence detected."
-	}
 }
 
 // isDivergentClass reports whether c is one of the classifications that
@@ -1028,12 +958,12 @@ func isDivergentClass(c Classification) bool {
 // templates package elsewhere.
 var EmbeddedFS = templates.EmbeddedFS
 
-// buildSisterDiffs constructs the sister-file content carrying full per-file
-// diffs. The AC stays a clean decision document; this sister file holds the
-// verification material the target-repo Operator needs without re-running
-// the scan. Title points back at the parent AC; one `## <relpath>` section
-// per divergent file with the verbatim `diff -u` hunk.
-// straddling repo).
+// otherFlavorCanonPaths renders the OTHER-flavor canon (relative to the
+// scan's current flavor) and returns a set of repo-relative paths it covers.
+// Used by the `target-has-no-canon` cross-flavor branch to detect whether a
+// file present in the target only matches the canon of a different flavor
+// (e.g., a CODE file showing up in a DOC-flavor target — possible flavor
+// misclassification or genuine straddling repo).
 func otherFlavorCanonPaths(tfs fs.FS, otherFlavor, repoName, target string) (map[string]bool, error) {
 	gcfg := governance.Config{
 		Mode:     governance.ModeApply,
