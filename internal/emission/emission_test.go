@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -48,8 +47,58 @@ func TestRequireGovernaAdoptedAndPreserveMarkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	hits := PreserveMarkers(dir, "docs/foo.md")
-	if len(hits) != 1 || !strings.Contains(hits[0], "preserve docs/foo.md") {
+	if len(hits) != 1 || hits[0] != "preserve docs/foo.md customization" {
 		t.Fatalf("unexpected preserve markers: %v", hits)
+	}
+}
+
+// AC143 AT1 — multi-marker row, two paths, each PreserveMarkers call returns
+// exactly its own phrase-only citation (no cross-pollution from the other
+// path's marker).
+func TestPreserveMarkersMultiMarkerRow(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "CHANGELOG.md"),
+		"| Unreleased | preserve CHANGELOG.md release-history; preserve README.md skout-overview |\n")
+	got := PreserveMarkers(dir, "CHANGELOG.md")
+	want := []string{"preserve CHANGELOG.md release-history"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("PreserveMarkers(CHANGELOG.md): got %v, want %v", got, want)
+	}
+	got = PreserveMarkers(dir, "README.md")
+	want = []string{"preserve README.md skout-overview"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("PreserveMarkers(README.md): got %v, want %v", got, want)
+	}
+}
+
+// AC143 AT2 — single CHANGELOG row carrying two distinct markers for the
+// same path yields two distinct phrase-only citations.
+func TestPreserveMarkersMultipleMarkersSamePath(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "CHANGELOG.md"),
+		"| Unreleased | preserve foo.md customization; do not sync foo.md |\n")
+	got := PreserveMarkers(dir, "foo.md")
+	want := []string{"preserve foo.md customization", "do not sync foo.md"}
+	if len(got) != len(want) {
+		t.Fatalf("PreserveMarkers(foo.md): got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("PreserveMarkers(foo.md)[%d]: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// AC143 AT3 — CRLF line ending and trailing whitespace are stripped from the
+// extracted phrase.
+func TestPreserveMarkersTrailingCRLFAndWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "CHANGELOG.md"),
+		"| 0.1.0 | preserve docs/foo.md customization   |\r\n")
+	got := PreserveMarkers(dir, "docs/foo.md")
+	want := []string{"preserve docs/foo.md customization"}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("PreserveMarkers(docs/foo.md): got %v, want %v", got, want)
 	}
 }
 

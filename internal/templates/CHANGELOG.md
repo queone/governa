@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.134.0 | AC143: phrase-only marker capture + sync-resolution stub rule |
 | 0.133.0 | AC142: drift-scan mixed-content canon-zone classification |
 | 0.132.0 | AC141: mixed-content hunk-merge + preserve-marker durability |
 | 0.131.0 | AC139+AC140: drift-scan adoption ergonomics + sign-off discipline |

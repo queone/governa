@@ -103,7 +103,7 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Distinguish pure-canon from mixed-content per `## In Scope` item before applying. Pure-canon files take whole-file overwrite; mixed-content files (AGENTS.md, `docs/development-guidelines.md`, `docs/editing-guidelines.md`, and any other file with a documented repo-owned tail section) take hunk-merge. See `docs/canon-cycle.md` `## Consumer-side workflow` for the convention.
 - Apply pure-canon items by copying from canon: `cp <scratch>/<path> <path>`.
 - Apply mixed-content items by hunk-merge: replace canon-zone content above the boundary heading (`## Project Rules` for AGENTS.md; `## Project Practices` for `docs/development-guidelines.md` and `docs/editing-guidelines.md`); preserve the boundary heading and every line below it as repo-owned content untouched by sync.
-- Re-run `governa drift-scan` after the sync; confirm each synced file no longer appears in the new emission's `## In Scope` list.
+- Re-run `governa drift-scan` after the sync without editing the emitted stub; confirm each synced file no longer appears in the new emission's `## In Scope` list.
 - Run the repo's canonical validation (`./build.sh` or equivalent) before declaring the adoption complete.
 
 ## File-Change Discipline

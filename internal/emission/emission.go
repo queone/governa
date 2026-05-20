@@ -69,21 +69,38 @@ var preserveMarkerPatterns = []string{
 	`%s: keep local`,
 }
 
-// PreserveMarkers returns verbatim changelog/AC marker lines that preserve relpath.
+// PreserveMarkers returns verbatim changelog/AC marker phrases (phrase-only;
+// not the surrounding row) that preserve relpath. Each match captures from the
+// phrase start to the first of `;`, `|`, `\r`, or end-of-line — whichever comes
+// first — so a single row carrying multiple markers yields one clean citation
+// per marker rather than the whole row.
 func PreserveMarkers(targetRoot, relpath string) []string {
 	var hits []string
 	anchor := `(?:^|[|;])\s*(?:[-*]\s+|\*\*[^*]+\*\*\s+)?`
 	var patterns []*regexp.Regexp
 	for _, pattern := range preserveMarkerPatterns {
 		phrase := fmt.Sprintf(pattern, relpath)
-		patterns = append(patterns, regexp.MustCompile(anchor+regexp.QuoteMeta(phrase)))
+		// Capture group 1 isolates the phrase position so phrase-extent
+		// extraction can start at the phrase, not at the anchor prefix.
+		patterns = append(patterns, regexp.MustCompile(anchor+`(`+regexp.QuoteMeta(phrase)+`)`))
 	}
 	scan := func(content string) {
 		for line := range strings.SplitSeq(content, "\n") {
 			for _, pattern := range patterns {
-				if pattern.MatchString(line) {
-					hits = append(hits, strings.TrimSpace(line))
-					break
+				for _, idx := range pattern.FindAllStringSubmatchIndex(line, -1) {
+					phraseStart := idx[2]
+					end := len(line)
+					for i := phraseStart; i < len(line); i++ {
+						c := line[i]
+						if c == ';' || c == '|' || c == '\r' {
+							end = i
+							break
+						}
+					}
+					citation := strings.TrimSpace(line[phraseStart:end])
+					if citation != "" {
+						hits = append(hits, citation)
+					}
 				}
 			}
 		}

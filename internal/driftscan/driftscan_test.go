@@ -119,8 +119,8 @@ func TestPreserveMarker(t *testing.T) {
 	if len(hits) != 1 {
 		t.Errorf("expected 1 hit, got %d: %v", len(hits), hits)
 	}
-	if !strings.Contains(hits[0], "preserve docs/foo.md customization") {
-		t.Errorf("hit content unexpected: %q", hits[0])
+	if hits[0] != "preserve docs/foo.md customization" {
+		t.Errorf("hit content unexpected: %q (want exact phrase-only citation)", hits[0])
 	}
 }
 
@@ -958,5 +958,51 @@ func TestDriftScanDocAmendments(t *testing.T) {
 		if !strings.Contains(body, w) {
 			t.Errorf("docs/drift-scan.md missing required wording: %q", w)
 		}
+	}
+}
+
+// AC143 AT5 — buildACStub `## Out Of Scope` rendering with two paths that
+// each carry phrase-only marker citations produces non-tangled output: each
+// path's `(markers: …)` parenthetical contains only its own marker phrase.
+func TestBuildACStubOutOfScopeRenderingMultiMarker(t *testing.T) {
+	r := Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "v0.0.0-test"},
+		Files: []FileResult{
+			{Relpath: "CHANGELOG.md", Classification: ClassPreserve, Markers: []string{"preserve CHANGELOG.md release-history"}},
+			{Relpath: "README.md", Classification: ClassPreserve, Markers: []string{"preserve README.md skout-overview"}},
+		},
+	}
+	body := buildACStub(r, 1, "v0.0.0-test")
+
+	oosStart := strings.Index(body, "## Out Of Scope")
+	if oosStart < 0 {
+		t.Fatalf("stub missing ## Out Of Scope: %s", body)
+	}
+	oosEnd := strings.Index(body[oosStart:], "## Acceptance Tests")
+	if oosEnd < 0 {
+		t.Fatalf("stub missing ## Acceptance Tests after ## Out Of Scope: %s", body)
+	}
+	oos := body[oosStart : oosStart+oosEnd]
+
+	// Extract each path's line.
+	clogLine := ""
+	readmeLine := ""
+	for line := range strings.SplitSeq(oos, "\n") {
+		switch {
+		case strings.Contains(line, "`CHANGELOG.md`"):
+			clogLine = line
+		case strings.Contains(line, "`README.md`"):
+			readmeLine = line
+		}
+	}
+	if clogLine == "" || readmeLine == "" {
+		t.Fatalf("expected both CHANGELOG.md and README.md lines under ## Out Of Scope; got:\n%s", oos)
+	}
+	// CHANGELOG.md's line must NOT contain README.md and vice versa.
+	if strings.Contains(clogLine, "README.md") {
+		t.Errorf("CHANGELOG.md line leaks README.md marker: %q", clogLine)
+	}
+	if strings.Contains(readmeLine, "CHANGELOG.md") {
+		t.Errorf("README.md line leaks CHANGELOG.md marker: %q", readmeLine)
 	}
 }
