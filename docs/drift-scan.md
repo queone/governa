@@ -9,7 +9,7 @@ The tool is consumer-run. Install the binary (`go install github.com/queone/gove
 - Invocation accepts no positional arguments. The tool runs against the current working directory only.
 - The cwd must be a governa-adopted repo: `AGENTS.md` must be present, plus at least one of `docs/ac-template.md`, `docs/release.md`, `docs/build-release.md`, or a `CHANGELOG.md` row referencing `governa apply`. The tool hard-errors with recovery guidance if the check fails.
 - The tool refuses to run against the governa source itself.
-- The tool walks canon, byte-compares each governed file against the cwd, classifies divergences, collects evidence (preserve markers, recent commits), and emits one file under `docs/`: the AC stub with slug stem `drift-scan-v<X.Y.Z>`.
+- The tool walks canon, byte-compares each governed file against the cwd (canon-zone-only for paths registered in mixed-content; see `## Mixed-content classification`), classifies divergences, collects evidence (preserve markers, recent commits), and emits one file under `docs/`: the AC stub with slug stem `drift-scan-v<X.Y.Z>`.
 - Before any canon→cwd walk, the tool runs the `## Canon-coherence precondition` check. If canon is internally incoherent on a registered cross-file rule, the tool refuses to emit and reports the incoherence on stdout. No file writes occur.
 - One repo per invocation. The tool makes no commits in the cwd and does not modify `plan.md`. Writes under `<cwd>/docs/` are limited to the AC stub.
 
@@ -24,7 +24,7 @@ One file under the consumer repo's `docs/`, plus a single-line stdout summary.
 - `## Summary` — concise paragraph describing the classifications surfaced; names the canon version being adopted (`governa @ v<X.Y.Z>`) and notes that the AC is part of the recurring drift-scan cycle; points adopters at `governa render-canon` plus `diff -ru` for per-file inspection (see `AGENTS.md` `### Drift-Scan Adoption`). Code-flavor consumers also see the reachability gate sentence inside this section. Any `ambiguity` or `target-has-no-canon` items surface here under a `### Routing Decisions` subheading — one numbered item per file, phrased as the decision-surface question, awaiting the Director's chat-mode resolution before implementation.
 - `## In Scope` — `clear-sync` and non-empty `missing-in-target` entries listed with classification and any format-defining annotation.
 - `## Out Of Scope` — `preserve` (with marker citation) and `expected-divergence` entries.
-- `## Acceptance Tests` — one byte-equality AT per `clear-sync` item, an AT for the canon-coherence precondition pass, and a final re-run verification AT confirming the next `governa drift-scan` emission omits the synced files from its `## In Scope` list.
+- `## Acceptance Tests` — one byte-equality AT per `clear-sync` item (canon-zone byte-equality for mixed-content sync items; see `## Mixed-content classification`), an AT for the canon-coherence precondition pass, and a final re-run verification AT confirming the next `governa drift-scan` emission omits the synced files from its `## In Scope` list.
 - `## Status` — `PENDING` on initial emission.
 
 **Emission marker.** The emitted file carries an HTML-comment marker on line 1:
@@ -58,7 +58,7 @@ This protects in-progress consumer Operator critique edits from accidental clobb
 
 The tool emits one of the classifications below for every file. The Operator can override by editing the emitted AC stub before commit, routing the file in `## In Scope` / `## Out Of Scope` accordingly.
 
-- **`match`** — canon and target byte-equal. Not listed in the AC stub by default.
+- **`match`** — canon and target byte-equal (or canon-zone-equal for mixed-content paths; see `## Mixed-content classification`). Not listed in the AC stub by default.
 - **`expected-divergence`** — canon is a per-repo stub by design and the file's path is in the `ExpectedDivergencePaths` registry (see `## Expected-divergence registry`); the tool skips the byte-compare and lists the file under `## Out Of Scope`. Treated as no-action.
 - **`preserve`** — a verbatim preserve-marker phrase was found citing this file in `<cwd>/CHANGELOG.md` or `<cwd>/docs/ac*.md`. Routed to `## Out Of Scope` with the marker quoted verbatim.
 - **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. Routed to `### Routing Decisions` under `## Summary` as a numbered routing question. Format-defining files (see `## Format-defining files`) are an exception: they are hard-routed to sync regardless of classification.
@@ -100,6 +100,24 @@ The `formatDefiningCanonPaths` registry lists canon files whose content defines 
 - `AGENTS.md` (AC-template section shape, AT-label convention)
 
 **Inclusion criterion:** a canon file belongs in this registry iff syncing it is the only way to keep the consumer Operator's AC consistent with canon's section shape. Importance, frequency-of-edit, or being-a-template are not sufficient on their own.
+
+## Mixed-content classification
+
+The `mixedContentBoundary` registry lists canon paths whose target files carry a designed repo-owned tail below a boundary heading. For these paths, drift-scan compares canon-zone bytes only — everything strictly above the first line-start match of the boundary heading — rather than whole-file bytes. Without this branch, registered files would always whole-file-diverge from canon (target carries a repo-owned tail; canon does not), classify as `ambiguity` or `clear-sync`, and — because `AGENTS.md` is also in the format-defining registry (see `## Format-defining files`) — be force-routed into `## In Scope` on every cycle, producing a recurring no-op sync ceremony.
+
+**Initial registry:**
+
+| Path | Boundary heading |
+|---|---|
+| `AGENTS.md` | `## Project Rules` |
+| `docs/development-guidelines.md` | `## Project Practices` |
+| `docs/editing-guidelines.md` | `## Project Practices` |
+
+**Comparison rule.** When both canon and target carry the boundary heading, drift-scan extracts the canon zone from each (everything strictly above the first line-start match) and byte-compares the zones. If equal, the file classifies as `match` and records `canon-zone byte-equal above <boundary>` evidence. If the zones differ, the file falls through to the divergent path (`preserve` / `ambiguity` / `clear-sync` per existing rules), but the `Boundary` field on the per-file result is populated so the emitted AC stub's AT for that file reads `canon zone of <path> (above <boundary>) matches canon byte-for-byte after sync` rather than the whole-file form. The hunk-merge procedure in `AGENTS.md` `### Drift-Scan Adoption` already replaces canon-zone content only and leaves the boundary heading and tail untouched, so the canon-zone AT is the accurate post-sync check.
+
+**Fallback behavior.** If the target file lacks the boundary heading (line-start match fails), drift-scan falls through to whole-file comparison and leaves the `Boundary` field empty. The fallback is the safe default for partially-adopted or freshly-onboarded targets that have not yet introduced the boundary structure.
+
+**Extension.** Adding a future canon path to this registry is paired with: (a) the path's canon body carrying the canon-zone content above the boundary heading (canon-side discipline); (b) the path's documented hunk-merge convention named in `AGENTS.md` `### Drift-Scan Adoption`.
 
 ## Expected-divergence registry
 
@@ -143,7 +161,7 @@ When shipping an AC that locks a local form against canon, include one of these 
 
 ## Match evidence
 
-For every `match`-classified file, the canon walk records `byte-equal (canon @ v<version> vs <relpath>)` internally; the AC stub does not enumerate match files by default. Files whose canon is a per-repo stub appear in `## Out Of Scope` under the `expected-divergence` classification.
+For every `match`-classified file, the canon walk records `byte-equal (canon @ v<version> vs <relpath>)` internally; mixed-content matches instead record `canon-zone byte-equal above <boundary> (canon @ v<version> vs <relpath>)` (see `## Mixed-content classification`). The AC stub does not enumerate match files by default. Files whose canon is a per-repo stub appear in `## Out Of Scope` under the `expected-divergence` classification.
 
 ## Ownership and consumer response
 

@@ -430,6 +430,13 @@ type FileResult struct {
 	// file's routing decision. Populated only for divergent classifications
 	// (preserve, ambiguity, clear-sync).
 	CoupledLocalOnly []string `json:"coupled_local_only,omitempty"`
+	// Boundary is the canon-zone boundary heading for mixed-content files
+	// (see docs/drift-scan.md `## Mixed-content classification`). Non-empty
+	// only when classifyFile's mixed-content branch actually applied — i.e.,
+	// both canon and target carried the registered boundary heading and the
+	// comparison ran canon-zone-only. buildACStub uses Boundary != "" as
+	// the trigger to emit canon-zone-anchored AT wording for the file.
+	Boundary string `json:"boundary,omitempty"`
 }
 
 // ReportHeader is the report's self-identifying header.
@@ -502,6 +509,38 @@ var formatDefiningCanonPaths = map[string]bool{
 // isFormatDefining reports whether relpath is in the format-defining registry.
 func isFormatDefining(relpath string) bool {
 	return formatDefiningCanonPaths[relpath]
+}
+
+// mixedContentBoundary maps canon paths whose target files carry a designed
+// repo-owned tail below a boundary heading to that boundary heading. For
+// these paths, drift-scan compares canon-zone bytes (everything strictly
+// above the first line-start match of the boundary heading) rather than
+// whole-file bytes, so a registered file with byte-identical canon zone
+// classifies as ClassMatch instead of always-diverging on the whole-file
+// compare and being force-routed to `## In Scope` by the format-defining
+// override. See docs/drift-scan.md `## Mixed-content classification` and
+// AGENTS.md `### Drift-Scan Adoption` hunk-merge instructions.
+var mixedContentBoundary = map[string]string{
+	"AGENTS.md":                      "## Project Rules",
+	"docs/development-guidelines.md": "## Project Practices",
+	"docs/editing-guidelines.md":     "## Project Practices",
+}
+
+// extractCanonZone splits content on the first line-start match of boundary
+// and returns everything strictly above it. The boundary heading and every
+// line below it are dropped. ok is false if the boundary line is not found.
+func extractCanonZone(content, boundary string) (zone string, ok bool) {
+	// Match a line whose entire content is exactly the boundary heading
+	// (possibly followed by trailing whitespace). Using a line-start search
+	// avoids substring matches inside paragraphs.
+	lines := strings.SplitAfter(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimRight(line, " \t\r\n")
+		if trimmed == boundary {
+			return strings.Join(lines[:i], ""), true
+		}
+	}
+	return "", false
 }
 
 // CoherenceFailure records a single canon-coherence violation.
@@ -636,6 +675,28 @@ func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 		fr.Classification = ClassMatch
 		fr.CompareCommand = fmt.Sprintf("byte-equal (canon @ %s vs %s)", sha, relpath)
 		return fr
+	}
+	// Mixed-content branch: registered files carry a designed repo-owned
+	// tail below a boundary heading, so whole-file bytes never equal canon
+	// bytes. Compare canon-zone bytes only. If both canon and target carry
+	// the boundary and their canon zones are byte-equal, classify as match
+	// and stamp Boundary so any later AT generation can anchor on the
+	// canon zone. If canon zones differ, fall through to the divergent path
+	// but still stamp Boundary so buildACStub emits canon-zone-anchored AT
+	// wording for the resulting sync entry. If target lacks the boundary
+	// heading, fall through to the divergent path with Boundary empty
+	// (safe default: whole-file AT wording applies).
+	if boundary, ok := mixedContentBoundary[relpath]; ok {
+		canonZone, canonOK := extractCanonZone(canon, boundary)
+		targetZone, targetOK := extractCanonZone(target, boundary)
+		if canonOK && targetOK {
+			fr.Boundary = boundary
+			if canonZone == targetZone {
+				fr.Classification = ClassMatch
+				fr.CompareCommand = fmt.Sprintf("canon-zone byte-equal above %s (canon @ %s vs %s)", boundary, sha, relpath)
+				return fr
+			}
+		}
 	}
 	// H2: per-repo content files always diverge from the canon stub. Use
 	// ClassExpectedDivergence (not ClassMatch) so the AC stub renders them
@@ -936,7 +997,11 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	fmt.Fprintln(&b, "**AT1** [Automated] — Canon-coherence precondition passed (emission was not blocked).")
 	fmt.Fprintln(&b)
 	for i, f := range syncEntries {
-		fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` matches canon byte-for-byte after sync.\n\n", i+2, f.Relpath)
+		if f.Boundary != "" {
+			fmt.Fprintf(&b, "**AT%d** [Automated] — canon zone of `%s` (above `%s`) matches canon byte-for-byte after sync.\n\n", i+2, f.Relpath, f.Boundary)
+		} else {
+			fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` matches canon byte-for-byte after sync.\n\n", i+2, f.Relpath)
+		}
 	}
 	fmt.Fprintf(&b, "**AT%d** [Automated] — Re-running `governa drift-scan` after this AC's sync produces a new AC stub whose `## In Scope` list does not name any file synced under this AC.\n\n", len(syncEntries)+2)
 

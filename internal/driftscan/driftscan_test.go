@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/queone/governa/internal/emission"
+	"github.com/queone/governa/internal/governance"
 )
 
 // gitInit initializes a git repo at dir with one commit so `git log` works.
@@ -758,3 +759,204 @@ func TestNoCleanupLineInStdoutSummary(t *testing.T) {
 // reminder constants were tied to the old report-pair format. The new
 // AC stub carries adoption guidance through `## Summary` / the emitted
 // ATs themselves; the inline reminder constants are no longer emitted.)
+
+// AC142 AT1 — mixedContentBoundary registry contents are exactly the three
+// documented entries with the correct boundary headings. Asserts the map
+// directly rather than grepping source so the test is robust to formatting.
+func TestMixedContentBoundaryRegistry(t *testing.T) {
+	want := map[string]string{
+		"AGENTS.md":                      "## Project Rules",
+		"docs/development-guidelines.md": "## Project Practices",
+		"docs/editing-guidelines.md":     "## Project Practices",
+	}
+	if len(mixedContentBoundary) != len(want) {
+		t.Fatalf("registry size: got %d, want %d (registry=%v)", len(mixedContentBoundary), len(want), mixedContentBoundary)
+	}
+	for k, v := range want {
+		got, ok := mixedContentBoundary[k]
+		if !ok {
+			t.Errorf("registry missing entry %q", k)
+			continue
+		}
+		if got != v {
+			t.Errorf("registry[%q] = %q, want %q", k, got, v)
+		}
+	}
+}
+
+// AC142 AT2 — classifyFile on a mixed-content file with byte-identical
+// canon-zone bytes (and an arbitrary repo-owned tail) classifies as
+// ClassMatch with Boundary populated.
+func TestClassifyFileMixedContentMatchOnCanonZone(t *testing.T) {
+	dir := t.TempDir()
+	canon := "Header line A\nHeader line B\n## Project Rules\n\n- canon rule\n"
+	target := "Header line A\nHeader line B\n## Project Rules\n\n- arbitrary local rule\n"
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), target)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50}
+	fr := classifyFile(cfg, "AGENTS.md", canon, "v0.0.0-test")
+	if fr.Classification != ClassMatch {
+		t.Errorf("Classification: got %q, want %q", fr.Classification, ClassMatch)
+	}
+	if fr.Boundary != "## Project Rules" {
+		t.Errorf("Boundary: got %q, want %q", fr.Boundary, "## Project Rules")
+	}
+	if !strings.Contains(fr.CompareCommand, "canon-zone byte-equal above") {
+		t.Errorf("CompareCommand missing canon-zone evidence form: %q", fr.CompareCommand)
+	}
+}
+
+// AC142 AT3 — classifyFile on a mixed-content file whose canon zone
+// differs from canon by one byte falls through to the divergent path
+// (ClassClearSync absent git/markers) with Boundary populated so any
+// emitted AT can anchor on the canon zone.
+func TestClassifyFileMixedContentDriftInCanonZone(t *testing.T) {
+	dir := t.TempDir()
+	canon := "Header line A\nHeader line B\n## Project Rules\n\n- canon rule\n"
+	target := "Header line X\nHeader line B\n## Project Rules\n\n- arbitrary local rule\n"
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), target)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50}
+	fr := classifyFile(cfg, "AGENTS.md", canon, "v0.0.0-test")
+	if fr.Classification == ClassMatch {
+		t.Errorf("Classification: got ClassMatch on canon-zone drift; want divergent")
+	}
+	if fr.Boundary != "## Project Rules" {
+		t.Errorf("Boundary: got %q, want %q (must still be populated for canon-zone AT wording)", fr.Boundary, "## Project Rules")
+	}
+}
+
+// AC142 AT4 — classifyFile on a mixed-content file whose target lacks the
+// boundary heading falls through to whole-file comparison and leaves
+// Boundary empty (safe default: whole-file AT wording applies).
+func TestClassifyFileMixedContentMissingBoundary(t *testing.T) {
+	dir := t.TempDir()
+	canon := "Header line A\nHeader line B\n## Project Rules\n\n- canon rule\n"
+	target := "Header line A\nHeader line B\nno boundary heading anywhere in target\n"
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), target)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50}
+	fr := classifyFile(cfg, "AGENTS.md", canon, "v0.0.0-test")
+	if fr.Classification == ClassMatch {
+		t.Errorf("Classification: got ClassMatch on missing-boundary target; want divergent")
+	}
+	if fr.Boundary != "" {
+		t.Errorf("Boundary: got %q, want empty (target lacked boundary heading)", fr.Boundary)
+	}
+}
+
+// AC142 AT5 (skout regression) — end-to-end: Run on a fixture target whose
+// AGENTS.md has byte-identical canon-zone bytes plus a repo-owned
+// ## Project Rules tail must NOT emit AGENTS.md under `## In Scope`. This is
+// the recurring false-positive the format-defining override produced before
+// this AC's mixed-content branch.
+func TestRunMixedContentNotEmittedInScope(t *testing.T) {
+	dir := docFixture(t)
+	// Render canon to memory and extract AGENTS.md's canon zone for the
+	// fixture overwrite so the target's canon-zone bytes equal canon's.
+	gcfg := governance.Config{
+		Mode:     governance.ModeApply,
+		Target:   dir,
+		Type:     governance.RepoTypeDoc,
+		RepoName: "test-mixed-content",
+	}
+	canon, err := governance.RenderCanonicalFiles(EmbeddedFS, gcfg, dir)
+	if err != nil {
+		t.Fatalf("render canon: %v", err)
+	}
+	canonAgents, ok := canon["AGENTS.md"]
+	if !ok {
+		t.Fatalf("canon missing AGENTS.md")
+	}
+	canonZone, ok := extractCanonZone(canonAgents, "## Project Rules")
+	if !ok {
+		t.Fatalf("canon AGENTS.md missing `## Project Rules` boundary heading")
+	}
+	targetAgents := canonZone + "## Project Rules\n\n- Local project rule unique to this fixture.\n"
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), targetAgents)
+	gitAddCommit(t, dir, "overwrite AGENTS.md with canon-zone-equal fixture")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
+	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+
+	inScopeStart := strings.Index(stub, "## In Scope")
+	inScopeEnd := strings.Index(stub, "## Out Of Scope")
+	if inScopeStart < 0 || inScopeEnd < 0 {
+		t.Fatalf("stub missing required sections: %s", stub)
+	}
+	inScope := stub[inScopeStart:inScopeEnd]
+	if strings.Contains(inScope, "`AGENTS.md`") {
+		t.Errorf("AGENTS.md must not appear in `## In Scope` when canon zone is byte-equal (skout regression). Got:\n%s", inScope)
+	}
+}
+
+// AC142 AT6 — buildACStub renders canon-zone-anchored AT wording for any
+// sync entry whose FileResult.Boundary is non-empty, and whole-file AT
+// wording when Boundary is empty.
+func TestBuildACStubMixedContentATWording(t *testing.T) {
+	r := Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "v0.0.0-test"},
+		Files: []FileResult{
+			{Relpath: "AGENTS.md", Classification: ClassClearSync, Boundary: "## Project Rules"},
+		},
+	}
+	body := buildACStub(r, 1, "v0.0.0-test")
+	wantMixed := "canon zone of `AGENTS.md` (above `## Project Rules`) matches canon byte-for-byte after sync"
+	if !strings.Contains(body, wantMixed) {
+		t.Errorf("expected mixed-content AT wording %q in stub, got:\n%s", wantMixed, body)
+	}
+	// Negative: must NOT emit the whole-file wording for this entry.
+	whole := "`AGENTS.md` matches canon byte-for-byte after sync"
+	if strings.Contains(body, whole) {
+		t.Errorf("mixed-content entry must not emit whole-file AT wording %q; got:\n%s", whole, body)
+	}
+}
+
+// AC142 AT7 — non-mixed-content sync entries continue to receive
+// whole-file AT wording (Boundary stays empty for them).
+func TestNonMixedContentUnaffected(t *testing.T) {
+	dir := t.TempDir()
+	canon := "canon body\n"
+	target := "drift body\n"
+	relpath := "docs/release.md" // not in mixedContentBoundary
+	mustWrite(t, filepath.Join(dir, relpath), target)
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50}
+	fr := classifyFile(cfg, relpath, canon, "v0.0.0-test")
+	if fr.Boundary != "" {
+		t.Errorf("Boundary: got %q, want empty for non-mixed-content path %q", fr.Boundary, relpath)
+	}
+	if fr.Classification != ClassClearSync {
+		t.Errorf("Classification: got %q, want %q for non-mixed-content drift", fr.Classification, ClassClearSync)
+	}
+	// AT wording in buildACStub stays whole-file.
+	r := Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "v0.0.0-test"},
+		Files:  []FileResult{fr},
+	}
+	body := buildACStub(r, 1, "v0.0.0-test")
+	want := "`docs/release.md` matches canon byte-for-byte after sync"
+	if !strings.Contains(body, want) {
+		t.Errorf("expected whole-file AT wording %q in stub, got:\n%s", want, body)
+	}
+}
+
+// AC142 AT8 — docs/drift-scan.md contains the new subsection and the four
+// amendments to existing generic statements so the new behavior does not
+// coexist with stale generic wording. Run from inside the driftscan
+// package; resolves docs/drift-scan.md at the repo root.
+func TestDriftScanDocAmendments(t *testing.T) {
+	// Resolve the repo-root drift-scan.md from the package's location.
+	// The test runs with cwd = internal/driftscan/, so go up two levels.
+	docPath := filepath.Join("..", "..", "docs", "drift-scan.md")
+	body := mustRead(t, docPath)
+	wants := []string{
+		"## Mixed-content classification",
+		"canon-zone-only for paths registered in mixed-content",
+		"canon-zone byte-equality for mixed-content sync items",
+		"or canon-zone-equal for mixed-content paths",
+		"canon-zone byte-equal above",
+	}
+	for _, w := range wants {
+		if !strings.Contains(body, w) {
+			t.Errorf("docs/drift-scan.md missing required wording: %q", w)
+		}
+	}
+}
