@@ -97,8 +97,12 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Apply these rules whenever implementing a drift-scan-emitted AC.
 - Render canon into a scratch directory using `governa render-canon <scratch>`.
 - Inspect changes per `## In Scope` item by running `diff -ru <scratch>/<path> <path>`.
+- Record preserve decisions in the `| Unreleased | |` row's Summary column of `CHANGELOG.md` before re-running `governa drift-scan` — use one of the marker phrases from `docs/drift-scan.md` `## Preserve-marker phrase set`. Drift-scan recognizes markers in any `CHANGELOG.md` row, and the Unreleased row is the only durable home that takes effect on the very next re-run (the AC stub is not usable — drift-scan's edit-detection guard would block the required re-run after the stub is edited).
+- When the marker phrase plus the AC reference and summary fits the 80-character release-message limit, echo the marker verbatim into the release message so it lands in the new release row of `CHANGELOG.md` (immutable historical record). When the combined length exceeds 80 characters, leave the marker in the `| Unreleased | |` row — release prep does not modify that row, so the marker persists there and is recognized by future drift-scan re-runs from any CHANGELOG row. (For CODE consumers, `cmd/prep` inserts the row from the release message; for DOC consumers, the agent manually inserts the row per the Pre-Release Checklist in `docs/release.md`.)
 - Ensure the parent directory exists for each `## In Scope` item: `mkdir -p "$(dirname <path>)"`.
-- Apply each `## In Scope` item by copying from canon: `cp <scratch>/<path> <path>`.
+- Distinguish pure-canon from mixed-content per `## In Scope` item before applying. Pure-canon files take whole-file overwrite; mixed-content files (AGENTS.md, `docs/development-guidelines.md`, `docs/editing-guidelines.md`, and any other file with a documented repo-owned tail section) take hunk-merge. See `docs/canon-cycle.md` `## Consumer-side workflow` for the convention.
+- Apply pure-canon items by copying from canon: `cp <scratch>/<path> <path>`.
+- Apply mixed-content items by hunk-merge: replace canon-zone content above the boundary heading (`## Project Rules` for AGENTS.md; `## Project Practices` for `docs/development-guidelines.md` and `docs/editing-guidelines.md`); preserve the boundary heading and every line below it as repo-owned content untouched by sync.
 - Re-run `governa drift-scan` after the sync; confirm each synced file no longer appears in the new emission's `## In Scope` list.
 - Run the repo's canonical validation (`./build.sh` or equivalent) before declaring the adoption complete.
 

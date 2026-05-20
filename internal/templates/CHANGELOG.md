@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.132.0 | AC141: mixed-content hunk-merge + preserve-marker durability |
 | 0.131.0 | AC139+AC140: drift-scan adoption ergonomics + sign-off discipline |
 | 0.130.0 | AC138: scope-card AC methodology + Instruction Style + drift-scan realign |
 | 0.129.0 | deps: allow source repo + align columns; retire docs/advisories/ |
