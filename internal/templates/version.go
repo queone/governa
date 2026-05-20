@@ -2,4 +2,4 @@ package templates
 
 // TemplateVersion is the embedded template version, kept in sync with
 // the root TEMPLATE_VERSION file. Both are updated during release prep.
-const TemplateVersion = "0.134.0"
+const TemplateVersion = "0.135.0"
