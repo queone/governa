@@ -382,10 +382,10 @@ func runApply(tfs fs.FS, cfg Config) error {
 	}
 
 	// Write adoption AC
-	applyACPath := filepath.Join(targetAbs, "docs", "ac1-governa-apply.md")
+	applyACPath := filepath.Join(targetAbs, "governa", "ac1-governa-apply.md")
 	applyACContent := renderApplyAC(templates.TemplateVersion, cfg, canonical, targetAbs)
 	if err := os.MkdirAll(filepath.Dir(applyACPath), 0o755); err != nil {
-		return fmt.Errorf("create docs/: %w", err)
+		return fmt.Errorf("create governa/: %w", err)
 	}
 	if err := os.WriteFile(applyACPath, []byte(applyACContent), 0o644); err != nil {
 		return fmt.Errorf("write adoption AC: %w", err)
@@ -542,10 +542,10 @@ func expectedArtifactPaths(repoType RepoType) []string {
 			"arch.md",
 			"plan.md",
 			"CHANGELOG.md",
-			filepath.Join("docs", "README.md"),
-			filepath.Join("docs", "development-cycle.md"),
-			filepath.Join("docs", "ac-template.md"),
-			filepath.Join("docs", "build-release.md"),
+			filepath.Join("governa", "README.md"),
+			filepath.Join("governa", "development-cycle.md"),
+			filepath.Join("governa", "ac-template.md"),
+			filepath.Join("governa", "build-release.md"),
 		)
 	case RepoTypeDoc:
 		return append(base, "plan.md")
@@ -849,7 +849,7 @@ func joinOrNone(items []string) string {
 	return strings.Join(items, ", ")
 }
 
-// renderApplyAC produces the docs/ac1-governa-apply.md adoption record.
+// renderApplyAC produces the governa/ac1-governa-apply.md adoption record.
 // targetAbs is the absolute path of the apply target; it is used to render
 // each op's path as a repo-relative slash path in the In Scope list.
 func renderApplyAC(templateVersion string, cfg Config, ops []operation, targetAbs string) string {
@@ -887,7 +887,7 @@ func renderApplyAC(templateVersion string, cfg Config, ops []operation, targetAb
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "**AT1** [Manual] — Verify AGENTS.md exists and sections match repo needs.")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "**AT2** [Manual] — Verify docs/roles.md reflects the repo's delivery model (Operator + Director).")
+	fmt.Fprintln(&b, "**AT2** [Manual] — Verify governa/roles.md reflects the repo's delivery model (Operator + Director).")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "**AT3** [Manual] — Verify CLAUDE.md is a symlink to AGENTS.md.")
 	fmt.Fprintln(&b)

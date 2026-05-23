@@ -107,9 +107,9 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		base := filepath.Base(rel)
 		switch {
 		// Historical AC docs (archival; retain prose references to retired
-		// conventions as record). Skip anything under docs/ matching
+		// conventions as record). Skip anything under governa/ matching
 		// ac<N>-*.md.
-		case strings.HasPrefix(rel, "docs/ac") && strings.HasSuffix(rel, ".md"):
+		case strings.HasPrefix(rel, "governa/ac") && strings.HasSuffix(rel, ".md"):
 			return true
 		// CHANGELOGs at both locations are history.
 		case base == "CHANGELOG.md":
@@ -130,7 +130,7 @@ func TestRetiredSymbolsNotPresent(t *testing.T) {
 		}
 		// Extension-less files at known text paths.
 		switch name {
-		case ".gitignore", "TEMPLATE_VERSION", "CHANGELOG.md":
+		case ".gitignore", "CHANGELOG.md":
 			return true
 		}
 		return false
@@ -245,7 +245,7 @@ func TestRetiredProseNotPresent(t *testing.T) {
 		base := filepath.Base(rel)
 		switch {
 		// Historical AC docs: archival; retain prose for the record.
-		case strings.HasPrefix(rel, "docs/ac") && strings.HasSuffix(rel, ".md"):
+		case strings.HasPrefix(rel, "governa/ac") && strings.HasSuffix(rel, ".md"):
 			return true
 		// CHANGELOGs at both locations are history.
 		case base == "CHANGELOG.md":
@@ -264,7 +264,7 @@ func TestRetiredProseNotPresent(t *testing.T) {
 			return true
 		}
 		switch name {
-		case ".gitignore", "TEMPLATE_VERSION", "CHANGELOG.md":
+		case ".gitignore", "CHANGELOG.md":
 			return true
 		}
 		return false

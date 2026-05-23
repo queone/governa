@@ -52,7 +52,7 @@ Governa is intentionally constrained at the canon layer. The base `AGENTS.md` co
 Inside that constraint, adopted repos retain meaningful room:
 
 - **Project Rules** (the last section of `AGENTS.md`) are owned by the consumer repo. Governa ships an empty section in the base; consumers add repo-specific rules that do not contradict base canon.
-- **Local docs under `docs/`** are consumer-owned beyond the Governa-shipped set. Consumers add, replace, or remove docs as the repo's workflow evolves.
+- **Local docs under `governa/`** are consumer-owned beyond the Governa-shipped set. Consumers add, replace, or remove docs as the repo's workflow evolves.
 - **Tooling, build scripts, and CI** are consumer-owned. Governa offers helper libraries but does not prescribe a build pipeline.
 
 The boundary is sharp: **canon is constrained; local is open**. An adopted agent must follow the canon contract; it can also follow whatever local rules the consumer has added, in the order specified by the conflict-resolution rule (user-in-scope > `AGENTS.md` > referenced docs > model defaults).

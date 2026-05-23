@@ -28,7 +28,7 @@ func rmFixture(t *testing.T) string {
 	writeRMFile(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| 0.1.0 | preserve README.md customization |\n")
 	writeRMFile(t, filepath.Join(dir, "plan.md"), "# Plan\n")
 	writeRMFile(t, filepath.Join(dir, "notes", "local.md"), "# local\n")
-	writeRMFile(t, filepath.Join(dir, "docs", "ac-template.md"), "# AC\n")
+	writeRMFile(t, filepath.Join(dir, "governa", "ac-template.md"), "# AC\n")
 	if err := os.Symlink("AGENTS.md", filepath.Join(dir, "CLAUDE.md")); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestRunEmitsStubAndDiffs(t *testing.T) {
 	if err != nil || exit != ExitOK {
 		t.Fatalf("exit=%d err=%v", exit, err)
 	}
-	stem := "docs/ac1-governa-rm-v" + templates.TemplateVersion
+	stem := "governa/ac1-governa-rm-v" + templates.TemplateVersion
 	for _, rel := range []string{stem + ".md", stem + "-diffs.md"} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Fatalf("expected %s: %v", rel, err)
@@ -94,7 +94,7 @@ func TestRunRefusesEditedEmission(t *testing.T) {
 	if exit, err := Run(dir, templates.EmbeddedFS, os.Stdout); exit != ExitOK || err != nil {
 		t.Fatalf("first run exit=%d err=%v", exit, err)
 	}
-	stub := filepath.Join(dir, "docs/ac1-governa-rm-v"+templates.TemplateVersion+".md")
+	stub := filepath.Join(dir, "governa/ac1-governa-rm-v"+templates.TemplateVersion+".md")
 	if err := os.WriteFile(stub, []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

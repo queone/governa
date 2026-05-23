@@ -70,7 +70,7 @@ func TestNoArgsSucceedsInAdoptedRepo(t *testing.T) {
 	mustWrite(filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: x\n")
 	mustWrite(filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| 0.1.0 | initial |\n")
-	mustWrite(filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	mustWrite(filepath.Join(dir, "governa/ac-template.md"), "# AC template\n")
 	for _, args := range [][]string{
 		{"git", "init", "-q"},
 		{"git", "config", "user.email", "test@example.com"},
@@ -93,12 +93,12 @@ func TestNoArgsSucceedsInAdoptedRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drift-scan no-arg from adopted cwd failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "wrote docs/ac1-drift-scan-v") {
+	if !strings.Contains(string(out), "wrote governa/ac1-drift-scan-v") {
 		t.Errorf("expected stdout summary referencing emitted paths, got:\n%s", out)
 	}
-	matches, _ := filepath.Glob(filepath.Join(dir, "docs/ac1-drift-scan-v*.md"))
+	matches, _ := filepath.Glob(filepath.Join(dir, "governa/ac1-drift-scan-v*.md"))
 	if len(matches) == 0 {
-		t.Errorf("expected at least one ac1-drift-scan-v*.md file emitted under docs/, found none")
+		t.Errorf("expected at least one ac1-drift-scan-v*.md file emitted under governa/, found none")
 	}
 }
 

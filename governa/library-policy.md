@@ -36,7 +36,7 @@ Each library README contains the following sections in order:
 3. `## Why` — short explanation of why this library exists in the governa family: the problem it solves, who uses it, why it lives in a separate repo rather than embedded in each consumer. Mirrors governa's own README pattern. Two short paragraphs is plenty.
 4. `## Install` — one-line `go get github.com/queone/governa-<x>` snippet.
 5. `## Usage` — minimum-viable example showing the most common entry point.
-6. `## Versioning` — the back-reference clause: "This library follows the policy in [governa/docs/library-policy.md](https://github.com/queone/governa/blob/main/docs/library-policy.md). See `CHANGELOG.md` for version history and deprecations."
+6. `## Versioning` — the back-reference clause: "This library follows the policy in [governa/governa/library-policy.md](https://github.com/queone/governa/blob/main/governa/library-policy.md). See `CHANGELOG.md` for version history and deprecations."
 
 Boilerplate template (copy-paste starting point):
 
@@ -59,12 +59,12 @@ go get github.com/queone/governa-<x>
 
 ## Versioning
 
-This library follows the policy in [governa/docs/library-policy.md](https://github.com/queone/governa/blob/main/docs/library-policy.md). See `CHANGELOG.md` for version history and deprecations.
+This library follows the policy in [governa/governa/library-policy.md](https://github.com/queone/governa/blob/main/governa/library-policy.md). See `CHANGELOG.md` for version history and deprecations.
 ```
 
 ## CHANGELOG Format
 
-Per-library CHANGELOG follows the same shape as governa's CHANGELOG. Canonical spec lives in [`docs/build-release.md`](build-release.md#pre-release-checklist) under "CHANGELOG row shape." Summary:
+Per-library CHANGELOG follows the same shape as governa's CHANGELOG. Canonical spec lives in [`governa/build-release.md`](build-release.md#pre-release-checklist) under "CHANGELOG row shape." Summary:
 
 - `# Changelog` heading.
 - 2-column markdown table: `| Version | Summary |` with a `|---|---|` separator.
@@ -95,7 +95,7 @@ The gating check applied during each extraction AC's drafting. It determines whe
 
 **Question:** would the proposed library API need to know any of the following governance touch-points by name or shape?
 
-- `docs/`
+- `governa/`
 - `CHANGELOG.md`
 - `AGENTS.md` / `CLAUDE.md`
 - `ac<N>-<slug>.md` file shape
@@ -128,7 +128,7 @@ Each extraction AC MUST include an **automated** acceptance test that re-applies
 
 ```bash
 src=$(go list -m -json github.com/queone/governa-<x> | jq -r .Dir)
-! rg -i 'AGENTS|CLAUDE|CHANGELOG|governed|governance|ac[0-9]+|docs/' "$src"/<src files>
+! rg -i 'AGENTS|CLAUDE|CHANGELOG|governed|governance|ac[0-9]+|governa/' "$src"/<src files>
 ```
 
 Returns clean if no governance terms slipped through extraction. A match (e.g., a stray AC reference in a code comment that came along with a verbatim copy) is a finding — clean it up and bump the library to a patch version. The recheck must remain automated; it is not a Director-eyeball task. The `rg` term list is the policy's enumerated governance touch-points (kept in sync with the Convention-Coupling Test section above).

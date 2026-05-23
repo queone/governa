@@ -41,13 +41,13 @@ var (
 	programVersionRe = regexp.MustCompile(`(programVersion\s*(?:string\s*)?=\s*)"([^"]*)"`)
 	templateConstRe  = regexp.MustCompile(`(const\s+TemplateVersion\s*=\s*)"([^"]+)"`)
 	acRefRe          = regexp.MustCompile(`AC[0-9]+`)
-	// acFileRe matches docs/ac<N>-<slug>.md and any companion suffix; we split
+	// acFileRe matches governa/ac<N>-<slug>.md and any companion suffix; we split
 	// the canonical AC file from companions by checking the suffix separately.
 	acFileRe = regexp.MustCompile(`^ac([0-9]+)-[^/]+\.md$`)
 	// iePointerRe matches an AC-pointer in a plan.md IE line. Per the plan.md
-	// convention, an AC-pointer ends in `→ docs/ac<N>-<slug>.md`. The trailing
+	// convention, an AC-pointer ends in `→ governa/ac<N>-<slug>.md`. The trailing
 	// `-` after the digits disambiguates ac1 from ac10/ac11/etc.
-	iePointerRe = regexp.MustCompile(`→\s+docs/ac([0-9]+)-`)
+	iePointerRe = regexp.MustCompile(`→\s+governa/ac([0-9]+)-`)
 )
 
 const maxMessageLen = 80
@@ -334,7 +334,7 @@ func workingTreeDirty(repoRoot string) (bool, error) {
 
 type versionTarget struct {
 	path string
-	kind string // "programVersion", "TemplateVersion", "TEMPLATE_VERSION"
+	kind string // "programVersion", "TemplateVersion"
 }
 
 // parseModuleBasename returns the basename of the module path declared in
@@ -449,14 +449,10 @@ func detectVersionTargets(repoRoot string) ([]versionTarget, string, error) {
 			len(pvTargets), primaryHint, strings.Join(paths, ", "))
 	}
 
-	// Template-version targets (TEMPLATE_VERSION + internal/templates/version.go)
-	// are gated on internal/templates/base/ presence. That directory exists only
-	// in governa itself; consumer repos do not have this file.
+	// Template-version target (internal/templates/version.go) is gated on
+	// internal/templates/base/ presence. That directory exists only in
+	// governa itself; consumer repos do not have it.
 	if info, err := os.Stat(filepath.Join(repoRoot, "internal", "templates", "base")); err == nil && info.IsDir() {
-		tvPath := filepath.Join(repoRoot, "TEMPLATE_VERSION")
-		if _, err := os.Stat(tvPath); err == nil {
-			targets = append(targets, versionTarget{path: tvPath, kind: "TEMPLATE_VERSION"})
-		}
 		tvGoPath := filepath.Join(repoRoot, "internal", "templates", "version.go")
 		if content, err := os.ReadFile(tvGoPath); err == nil {
 			if templateConstRe.Match(content) {
@@ -524,7 +520,7 @@ func parseACRefs(message string) []int {
 	return out
 }
 
-// findACFiles locates the main per-AC files to delete: docs/ac<N>-<slug>.md
+// findACFiles locates the main per-AC files to delete: governa/ac<N>-<slug>.md
 // for each AC number named in the release message. AC files are deleted
 // whole; there are no separate companion files to enumerate.
 // ac-template.md is always skipped.
@@ -532,7 +528,7 @@ func findACFiles(repoRoot string, acNums []int) ([]string, error) {
 	if len(acNums) == 0 {
 		return nil, nil
 	}
-	docsDir := filepath.Join(repoRoot, "docs")
+	docsDir := filepath.Join(repoRoot, "governa")
 	entries, readErr := os.ReadDir(docsDir)
 	if readErr != nil {
 		if os.IsNotExist(readErr) {
@@ -639,16 +635,6 @@ func removeACPointerIELines(repoRoot string, lines []string) error {
 
 func applyVersionBump(t versionTarget, versionStripped string) error {
 	switch t.kind {
-	case "TEMPLATE_VERSION":
-		content, err := os.ReadFile(t.path)
-		if err != nil {
-			return err
-		}
-		current := strings.TrimSpace(string(content))
-		if current == versionStripped {
-			return nil // no-op idempotent
-		}
-		return os.WriteFile(t.path, []byte(versionStripped+"\n"), 0o644)
 	case "programVersion":
 		return replaceVersionConstant(t.path, programVersionRe, versionStripped)
 	case "TemplateVersion":

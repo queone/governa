@@ -35,7 +35,7 @@ func adoptedDepsFixture(t *testing.T, goMod bool) string {
 	t.Helper()
 	dir := t.TempDir()
 	writeDepsFile(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
-	writeDepsFile(t, filepath.Join(dir, "docs", "ac-template.md"), "# AC\n")
+	writeDepsFile(t, filepath.Join(dir, "governa", "ac-template.md"), "# AC\n")
 	if goMod {
 		writeDepsFile(t, filepath.Join(dir, "go.mod"), "module example.com/test\n\ngo 1.25\n")
 	}

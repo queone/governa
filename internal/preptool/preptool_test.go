@@ -97,7 +97,7 @@ func TestPrepErrorsWhenNothingToRelease(t *testing.T) {
 	}
 
 	// Dirty the tree and re-run — should proceed past phase 2.
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "1.0.0\n")
+	mustWrite(t, filepath.Join(dir, "dirty.txt"), "x\n")
 	// Still no CHANGELOG — should fail at a later phase, not phase 2.
 	err = Run(cfg)
 	if err != nil && strings.Contains(err.Error(), "nothing to release") {
@@ -237,8 +237,8 @@ func TestPrepDetectsProgramVersionConstants(t *testing.T) {
 	})
 }
 
-// AT6: TEMPLATE_VERSION + TemplateVersion detection is presence-gated.
-func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
+// TemplateVersion detection is presence-gated on internal/templates/base/.
+func TestPrepDetectsTemplateVersionConst(t *testing.T) {
 	dir := t.TempDir()
 	targets, _, err := detectVersionTargets(dir)
 	if err != nil {
@@ -248,7 +248,6 @@ func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 		t.Fatalf("empty repo: expected no targets, got %v", targets)
 	}
 
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
 		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
 	// template-version detection is gated on internal/templates/base/ presence.
@@ -263,20 +262,16 @@ func TestPrepDetectsTemplateVersionFiles(t *testing.T) {
 	for _, t := range targets {
 		kinds[t.kind] = true
 	}
-	if !kinds["TEMPLATE_VERSION"] {
-		t.Errorf("TEMPLATE_VERSION not detected")
-	}
 	if !kinds["TemplateVersion"] {
 		t.Errorf("TemplateVersion not detected")
 	}
 }
 
-// consumer repo (no internal/templates/base/) — TEMPLATE_VERSION
-// and internal/templates/version.go must NOT be picked up as bump targets.
-// Simulates skout's v0.44.1 release-prep scenario.
+// consumer repo (no internal/templates/base/) — internal/templates/version.go
+// must NOT be picked up as a bump target. Simulates skout's v0.44.1 release-prep
+// scenario.
 func TestPrepSkipsTemplateVersionOnConsumerRepo(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.38.0\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
 		"package templates\n\nconst TemplateVersion = \"0.38.0\"\n")
 	// Consumer scenario: no internal/templates/base/ directory.
@@ -286,20 +281,16 @@ func TestPrepSkipsTemplateVersionOnConsumerRepo(t *testing.T) {
 		t.Fatalf("detectVersionTargets: %v", err)
 	}
 	for _, tgt := range targets {
-		if tgt.kind == "TEMPLATE_VERSION" {
-			t.Errorf("consumer repo: TEMPLATE_VERSION must not be detected, got %v", tgt)
-		}
 		if tgt.kind == "TemplateVersion" {
 			t.Errorf("consumer repo: TemplateVersion must not be detected, got %v", tgt)
 		}
 	}
 }
 
-// template repo (internal/templates/base/ present) — both
-// TEMPLATE_VERSION and TemplateVersion are detected. Governa-case regression guard.
+// template repo (internal/templates/base/ present) — TemplateVersion is
+// detected. Governa-case regression guard.
 func TestPrepDetectsTemplateVersionOnTemplateRepo(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
 		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
@@ -311,9 +302,6 @@ func TestPrepDetectsTemplateVersionOnTemplateRepo(t *testing.T) {
 	kinds := map[string]bool{}
 	for _, tgt := range targets {
 		kinds[tgt.kind] = true
-	}
-	if !kinds["TEMPLATE_VERSION"] {
-		t.Errorf("template repo: TEMPLATE_VERSION not detected")
 	}
 	if !kinds["TemplateVersion"] {
 		t.Errorf("template repo: TemplateVersion not detected")
@@ -356,11 +344,9 @@ func TestPrepDetectsProgramVersionBothRepoKinds(t *testing.T) {
 	})
 }
 
-// AT7: version bumps rewrite the constant; idempotent on already-matching.
+// version bumps rewrite the constant; idempotent on already-matching.
 func TestPrepBumpsVersionConstants(t *testing.T) {
 	dir := t.TempDir()
-	tvPath := filepath.Join(dir, "TEMPLATE_VERSION")
-	mustWrite(t, tvPath, "0.1.0\n")
 	mainPath := filepath.Join(dir, "cmd", "foo", "main.go")
 	mustWrite(t, mainPath,
 		"package main\n\nconst programVersion = \"0.1.0\"\n\nfunc main() {}\n")
@@ -376,13 +362,6 @@ func TestPrepBumpsVersionConstants(t *testing.T) {
 		}
 	}
 
-	readTrim := func(p string) string {
-		b, _ := os.ReadFile(p)
-		return strings.TrimSpace(string(b))
-	}
-	if got := readTrim(tvPath); got != "0.2.0" {
-		t.Errorf("TEMPLATE_VERSION after bump = %q, want 0.2.0", got)
-	}
 	if !strings.Contains(string(mustRead(t, mainPath)), `programVersion = "0.2.0"`) {
 		t.Errorf("programVersion not bumped in %s", mainPath)
 	}
@@ -426,9 +405,9 @@ func TestPrepInsertsChangelogRow(t *testing.T) {
 // AC numbers are untouched.
 func TestPrepDeletesNamedACFiles(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "docs", "ac60-prep-tool.md"), "# AC60\n")
-	mustWrite(t, filepath.Join(dir, "docs", "ac61-other.md"), "# AC61\n")
-	mustWrite(t, filepath.Join(dir, "docs", "ac-template.md"), "# template\n")
+	mustWrite(t, filepath.Join(dir, "governa", "ac60-prep-tool.md"), "# AC60\n")
+	mustWrite(t, filepath.Join(dir, "governa", "ac61-other.md"), "# AC61\n")
+	mustWrite(t, filepath.Join(dir, "governa", "ac-template.md"), "# template\n")
 
 	acNums := parseACRefs("AC60: prep tool")
 	acFiles, err := findACFiles(dir, acNums)
@@ -455,17 +434,17 @@ func TestPrepDeletesNamedACFiles(t *testing.T) {
 	}
 }
 
-// AT11: DryRun skips phases 3, 7, 8 and prints the intended writes.
+// DryRun skips phases 3, 7, 8 and prints the intended writes.
 func TestPrepDryRunWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	gitInitFixture(t, dir)
-	tvPath := filepath.Join(dir, "TEMPLATE_VERSION")
-	mustWrite(t, tvPath, "0.1.0\n")
-	// TEMPLATE_VERSION detection gated on internal/templates/base/ presence.
+	tvGo := filepath.Join(dir, "internal", "templates", "version.go")
+	mustWrite(t, tvGo, "package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
+	// TemplateVersion detection gated on internal/templates/base/ presence.
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 	chPath := filepath.Join(dir, "CHANGELOG.md")
 	mustWrite(t, chPath, "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
-	acPath := filepath.Join(dir, "docs", "ac60-x.md")
+	acPath := filepath.Join(dir, "governa", "ac60-x.md")
 	mustWrite(t, acPath, "# AC60\n")
 
 	buildCalls := stubNoopBuild(t)
@@ -479,15 +458,15 @@ func TestPrepDryRunWritesNothing(t *testing.T) {
 		t.Errorf("DryRun: buildFn should not be invoked, got %d calls", *buildCalls)
 	}
 	// Files untouched.
-	if got := strings.TrimSpace(string(mustRead(t, tvPath))); got != "0.1.0" {
-		t.Errorf("TEMPLATE_VERSION modified: %q", got)
+	if !strings.Contains(string(mustRead(t, tvGo)), `TemplateVersion = "0.1.0"`) {
+		t.Errorf("internal/templates/version.go modified by dry-run")
 	}
 	if _, err := os.Stat(acPath); err != nil {
 		t.Errorf("AC file should still exist: %v", err)
 	}
 	// Dry-run output lists intended writes.
 	out := buf.String()
-	for _, want := range []string{"dry run", "TEMPLATE_VERSION", "CHANGELOG", "delete", "release command"} {
+	for _, want := range []string{"dry run", "version.go", "CHANGELOG", "delete", "release command"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry-run output missing %q. got:\n%s", want, out)
 		}
@@ -515,13 +494,13 @@ func TestEmitReleaseCommandExactShape(t *testing.T) {
 	}
 }
 
-// AT13: --no-build skips phases 3 and 8.
+// --no-build skips phases 3 and 8.
 func TestPrepNoBuildFlagSkipsBuilds(t *testing.T) {
 	dir := t.TempDir()
 	gitInitFixture(t, dir)
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
 		"# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(dir, "dirty.txt"), "x\n")
 
 	buildCalls := stubNoopBuild(t)
 	cfg := Config{Version: "v0.2.0", Message: "m", RepoRoot: dir, NoBuild: true, Out: &bytes.Buffer{}}
@@ -533,14 +512,14 @@ func TestPrepNoBuildFlagSkipsBuilds(t *testing.T) {
 	}
 }
 
-// AT13b: buildFn is invoked twice on default flags, pre-check error skips phase 7.
+// buildFn is invoked twice on default flags, pre-check error skips phase 7.
 func TestPrepBuildFnInvokedAndErrorPropagates(t *testing.T) {
 	// Happy path: buildFn invoked in both phase 3 and phase 8.
 	dir := t.TempDir()
 	gitInitFixture(t, dir)
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"),
 		"# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(dir, "dirty.txt"), "x\n")
 	buildCalls := stubNoopBuild(t)
 	cfg := Config{Version: "v0.2.0", Message: "m", RepoRoot: dir, Out: &bytes.Buffer{}}
 	if err := Run(cfg); err != nil {
@@ -553,8 +532,9 @@ func TestPrepBuildFnInvokedAndErrorPropagates(t *testing.T) {
 	// Pre-check error: phase 7 writes must not happen.
 	dir2 := t.TempDir()
 	gitInitFixture(t, dir2)
-	tvPath := filepath.Join(dir2, "TEMPLATE_VERSION")
-	mustWrite(t, tvPath, "0.1.0\n")
+	tvGo := filepath.Join(dir2, "internal", "templates", "version.go")
+	mustWrite(t, tvGo, "package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
+	mustWrite(t, filepath.Join(dir2, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir2, "CHANGELOG.md"),
 		"# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
 
@@ -569,9 +549,9 @@ func TestPrepBuildFnInvokedAndErrorPropagates(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "pre-check") {
 		t.Fatalf("expected pre-check error wrapping, got: %v", err)
 	}
-	// TEMPLATE_VERSION untouched (phase 7a did not run).
-	if got := strings.TrimSpace(string(mustRead(t, tvPath))); got != "0.1.0" {
-		t.Errorf("phase 7a ran despite pre-check failure: TEMPLATE_VERSION = %q", got)
+	// TemplateVersion const untouched (phase 7a did not run).
+	if !strings.Contains(string(mustRead(t, tvGo)), `TemplateVersion = "0.1.0"`) {
+		t.Errorf("phase 7a ran despite pre-check failure: TemplateVersion bumped")
 	}
 }
 
@@ -579,12 +559,13 @@ type prepTestError struct{ msg string }
 
 func (e *prepTestError) Error() string { return e.msg }
 
-// AT13c: CHANGELOG idempotency guard fails fast with zero writes.
+// CHANGELOG idempotency guard fails fast with zero writes.
 func TestPrepIdempotencyGuardFailsFast(t *testing.T) {
 	dir := t.TempDir()
 	gitInitFixture(t, dir)
-	tvPath := filepath.Join(dir, "TEMPLATE_VERSION")
-	mustWrite(t, tvPath, "0.1.0\n")
+	tvGo := filepath.Join(dir, "internal", "templates", "version.go")
+	mustWrite(t, tvGo, "package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 	chPath := filepath.Join(dir, "CHANGELOG.md")
 	mustWrite(t, chPath,
 		"# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.2.0 | already here |\n| 0.1.0 | first |\n")
@@ -599,9 +580,9 @@ func TestPrepIdempotencyGuardFailsFast(t *testing.T) {
 	if !strings.Contains(err.Error(), "already has a row for 0.2.0") {
 		t.Errorf("error should name the existing row; got: %v", err)
 	}
-	// Disk untouched (TEMPLATE_VERSION still 0.1.0, CHANGELOG unchanged).
-	if got := strings.TrimSpace(string(mustRead(t, tvPath))); got != "0.1.0" {
-		t.Errorf("TEMPLATE_VERSION modified despite idempotency guard: %q", got)
+	// Disk untouched (TemplateVersion still 0.1.0, CHANGELOG unchanged).
+	if !strings.Contains(string(mustRead(t, tvGo)), `TemplateVersion = "0.1.0"`) {
+		t.Errorf("TemplateVersion modified despite idempotency guard")
 	}
 	chAfter := string(mustRead(t, chPath))
 	if strings.Count(chAfter, "| 0.2.0 |") != 1 {
@@ -698,7 +679,7 @@ func TestUsage(t *testing.T) {
 func TestSweepACPointerIE_SingleACMatch(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	mustWrite(t, planPath, "# Plan\n\n## Ideas To Explore\n\nIE14: prep IE sweep → docs/ac14-prep-ie-sweep.md\nIE15: keeper → docs/ac15-keeper.md\n")
+	mustWrite(t, planPath, "# Plan\n\n## Ideas To Explore\n\nIE14: prep IE sweep → governa/ac14-prep-ie-sweep.md\nIE15: keeper → governa/ac15-keeper.md\n")
 
 	acNums := parseACRefs("AC14: prep IE sweep")
 	matches, err := findACPointerIELines(dir, acNums)
@@ -728,7 +709,7 @@ func TestSweepACPointerIE_SingleACMatch(t *testing.T) {
 func TestSweepACPointerIE_CompositeRelease(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	mustWrite(t, planPath, "# Plan\n\nIE60: prep tool → docs/ac60-prep-tool.md\nIE61: another → docs/ac61-another.md\nIE99: untouched → docs/ac99-untouched.md\n")
+	mustWrite(t, planPath, "# Plan\n\nIE60: prep tool → governa/ac60-prep-tool.md\nIE61: another → governa/ac61-another.md\nIE99: untouched → governa/ac99-untouched.md\n")
 
 	acNums := parseACRefs("AC60+AC61: bundle")
 	matches, err := findACPointerIELines(dir, acNums)
@@ -761,7 +742,7 @@ func TestSweepACPointerIE_CompositeRelease(t *testing.T) {
 func TestSweepACPointerIE_NoMatchingIE(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	original := "# Plan\n\nIE10: future work → docs/ac10-future.md\n"
+	original := "# Plan\n\nIE10: future work → governa/ac10-future.md\n"
 	mustWrite(t, planPath, original)
 
 	acNums := parseACRefs("AC60: prep")
@@ -790,7 +771,7 @@ func TestSweepACPointerIE_NoMatchingIE(t *testing.T) {
 func TestSweepACPointerIE_UnrelatedIEUntouched(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	original := "# Plan\n\nIE1: short → docs/ac1-short.md\nIE10: longer → docs/ac10-longer.md\n"
+	original := "# Plan\n\nIE1: short → governa/ac1-short.md\nIE10: longer → governa/ac10-longer.md\n"
 	mustWrite(t, planPath, original)
 
 	// Prefix-collision guard: a short AC ID must NOT match a longer AC ID's IE line.
@@ -825,12 +806,13 @@ func TestSweepACPointerIE_UnrelatedIEUntouched(t *testing.T) {
 func TestPrepRunSweepsACPointerIE(t *testing.T) {
 	dir := t.TempDir()
 	gitInitFixture(t, dir)
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
+		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
-	mustWrite(t, filepath.Join(dir, "docs", "ac14-prep-ie-sweep.md"), "# AC14\n")
+	mustWrite(t, filepath.Join(dir, "governa", "ac14-prep-ie-sweep.md"), "# AC14\n")
 	planPath := filepath.Join(dir, "plan.md")
-	mustWrite(t, planPath, "# Plan\n\nIE14: prep IE sweep → docs/ac14-prep-ie-sweep.md\nIE99: keeper → docs/ac99-keeper.md\n")
+	mustWrite(t, planPath, "# Plan\n\nIE14: prep IE sweep → governa/ac14-prep-ie-sweep.md\nIE99: keeper → governa/ac99-keeper.md\n")
 
 	stubNoopBuild(t)
 
@@ -857,12 +839,13 @@ func TestPrepRunSweepsACPointerIE(t *testing.T) {
 func TestPrepDryRunReportsIESweep(t *testing.T) {
 	dir := t.TempDir()
 	gitInitFixture(t, dir)
-	mustWrite(t, filepath.Join(dir, "TEMPLATE_VERSION"), "0.1.0\n")
+	mustWrite(t, filepath.Join(dir, "internal", "templates", "version.go"),
+		"package templates\n\nconst TemplateVersion = \"0.1.0\"\n")
 	mustWrite(t, filepath.Join(dir, "internal", "templates", "base", "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | first |\n")
-	mustWrite(t, filepath.Join(dir, "docs", "ac14-prep-ie-sweep.md"), "# AC14\n")
+	mustWrite(t, filepath.Join(dir, "governa", "ac14-prep-ie-sweep.md"), "# AC14\n")
 	planPath := filepath.Join(dir, "plan.md")
-	original := "# Plan\n\nIE14: prep IE sweep → docs/ac14-prep-ie-sweep.md\n"
+	original := "# Plan\n\nIE14: prep IE sweep → governa/ac14-prep-ie-sweep.md\n"
 	mustWrite(t, planPath, original)
 
 	stubNoopBuild(t)
@@ -883,13 +866,13 @@ func TestPrepDryRunReportsIESweep(t *testing.T) {
 	}
 }
 
-// Phase 7d (regex): tab/multi-space whitespace between → and docs/ still
+// Phase 7d (regex): tab/multi-space whitespace between → and governa/ still
 // matches; reverse prefix-collision (longer ID must not match shorter ID)
 // holds; empty acNums short-circuits before any plan.md read.
 func TestSweepACPointerIE_RegexAndShortCircuit(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
-	mustWrite(t, planPath, "# Plan\n\nIE1: lo → docs/ac1-lo.md\nIE10: hi →\tdocs/ac10-hi.md\nIE11: spaced →   docs/ac11-spaced.md\n")
+	mustWrite(t, planPath, "# Plan\n\nIE1: lo → governa/ac1-lo.md\nIE10: hi →\tgoverna/ac10-hi.md\nIE11: spaced →   governa/ac11-spaced.md\n")
 
 	// Reverse prefix-collision: a longer AC ID matches only its own IE entry.
 	matches, err := findACPointerIELines(dir, parseACRefs("AC10: hi"))

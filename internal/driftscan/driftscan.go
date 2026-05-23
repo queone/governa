@@ -4,9 +4,9 @@
 // after a positive governa-adoption check, walks the canon overlay embedded
 // in the binary, byte-compares each governed file against the cwd,
 // classifies divergences, collects evidence (preserve markers, git log),
-// allocates a monotonic AC number, and emits one file under `<cwd>/docs/`:
+// allocates a monotonic AC number, and emits one file under `<cwd>/governa/`:
 // the AC stub (`ac<N>-drift-scan-v<X.Y.Z>.md`, conforming to
-// `docs/ac-template.md`). The file carries a line-1 HTML emission marker
+// `governa/ac-template.md`). The file carries a line-1 HTML emission marker
 // (`drift-scan: emitted-by governa v<X.Y.Z>; emission-sha=...`) so re-runs
 // against the same canon version can refuse overwrite on a stub the
 // Operator has already edited. Per-file diffs are not snapshotted — adopters
@@ -15,7 +15,7 @@
 // not modify `plan.md`.
 //
 // The Go package itself has no consumer-overlay counterpart — its source
-// lives only here. (The user-facing `docs/drift-scan.md` *does* have
+// lives only here. (The user-facing `governa/drift-scan.md` *does* have
 // consumer-overlay counterparts; the source-to-overlay propagation rule
 // applies to docs, not to internal/ Go code.) See AC136 for the
 // consumer-run reframing.
@@ -47,7 +47,7 @@ const (
 	ExitUsage    = 2
 )
 
-// Classification labels per docs/drift-scan.md.
+// Classification labels per governa/drift-scan.md.
 type Classification string
 
 const (
@@ -60,7 +60,7 @@ const (
 	ClassExpectedDivergence Classification = "expected-divergence" // per-repo content files (e.g., plan.md)
 )
 
-// ReachabilityHeaderReminder is shared verbatim with the "Reachability of canon-only branches" section in docs/drift-scan.md; tests reference this constant directly to enforce byte-equality between both surfaces.
+// ReachabilityHeaderReminder is shared verbatim with the "Reachability of canon-only branches" section in governa/drift-scan.md; tests reference this constant directly to enforce byte-equality between both surfaces.
 const ReachabilityHeaderReminder = "Reachability check: verify divergent canon-code branches reach this consumer's structure before treating as drift."
 
 // Config holds drift-scan invocation parameters.
@@ -137,7 +137,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, `Usage: governa drift-scan [flags]
 
 Scan an adopted-governa repo against canon. Run from the consumer repo root
-(no positional arguments). Emits an AC stub under docs/.
+(no positional arguments). Emits an AC stub under governa/.
 
 Flags:
   -f, --flavor code|doc      overlay flavor (default: auto-detect)
@@ -183,8 +183,8 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	}
 
 	// Positive adoption check: cwd must be a governa-adopted repo. AGENTS.md
-	// plus one secondary signal (docs/ac-template.md, docs/release.md,
-	// docs/build-release.md, or a CHANGELOG row referencing governa apply).
+	// plus one secondary signal (governa/ac-template.md, governa/release.md,
+	// governa/build-release.md, or a CHANGELOG row referencing governa apply).
 	if err := emission.RequireGovernaAdopted(cfg.Target, "drift-scan"); err != nil {
 		return ExitEnvError, err
 	}
@@ -249,7 +249,7 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		return ExitEnvError, fmt.Errorf("drift-scan: render canon: %w", err)
 	}
 
-	// Canon-coherence precondition (see docs/drift-scan.md
+	// Canon-coherence precondition (see governa/drift-scan.md
 	// `## Canon-coherence precondition`). Runs canon-only, before any
 	// target file system access. Hard-fails on any registered rule
 	// violation: writes a structured stdout report, exits non-zero, no
@@ -333,13 +333,13 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	}
 
 	// Determine AC number: reuse existing same-canon-version stub's N, else
-	// allocate next monotonic N from <target>/docs/ac*.md + git log AC refs.
+	// allocate next monotonic N from <target>/governa/ac*.md + git log AC refs.
 	acNum, reused, err := emission.AllocateACNumber(cfg.Target, "drift-scan", sha)
 	if err != nil {
 		return ExitEnvError, fmt.Errorf("drift-scan: allocate AC number: %w", err)
 	}
 
-	stubRel := fmt.Sprintf("docs/ac%d-drift-scan-%s.md", acNum, sha)
+	stubRel := fmt.Sprintf("governa/ac%d-drift-scan-%s.md", acNum, sha)
 	stubPath := filepath.Join(cfg.Target, stubRel)
 
 	// Edit-detection guard: if reused N (same-canon-version stub exists),
@@ -359,8 +359,8 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	// Build AC stub body (without marker).
 	stubBody := buildACStub(report, acNum, sha)
 
-	// Ensure <target>/docs/ exists. Adoption check may pass on AGENTS.md +
-	// CHANGELOG row alone; docs/ is required for emission.
+	// Ensure <target>/governa/ exists. Adoption check may pass on AGENTS.md +
+	// CHANGELOG row alone; governa/ is required for emission.
 	if err := emission.EnsureDocsDir(cfg.Target, "drift-scan"); err != nil {
 		return ExitEnvError, err
 	}
@@ -431,7 +431,7 @@ type FileResult struct {
 	// (preserve, ambiguity, clear-sync).
 	CoupledLocalOnly []string `json:"coupled_local_only,omitempty"`
 	// Boundary is the canon-zone boundary heading for mixed-content files
-	// (see docs/drift-scan.md `## Mixed-content classification`). Non-empty
+	// (see governa/drift-scan.md `## Mixed-content classification`). Non-empty
 	// only when classifyFile's mixed-content branch actually applied — i.e.,
 	// both canon and target carried the registered boundary heading and the
 	// comparison ran canon-zone-only. buildACStub uses Boundary != "" as
@@ -457,13 +457,13 @@ type Report struct {
 	Emitted *EmittedPaths `json:"emitted,omitempty"`
 }
 
-// EmittedPaths names the AC stub written under <target>/docs/ on a
+// EmittedPaths names the AC stub written under <target>/governa/ on a
 // successful run. The path is repo-root-relative.
 type EmittedPaths struct {
 	ACStub string `json:"ac_stub"`
 }
 
-// expectedDivergencePaths is the per-repo stub registry (see docs/drift-scan.md
+// expectedDivergencePaths is the per-repo stub registry (see governa/drift-scan.md
 // `## Expected-divergence registry`). Files in this registry are per-repo by
 // design — canon ships a stub, adopted repos fill it; byte-compare always
 // diverges. The tool skips the byte-compare and classifies these as
@@ -476,7 +476,7 @@ var expectedDivergencePaths = map[string]bool{
 }
 
 // formatDefiningCanonPaths is the format-defining-files registry (see
-// docs/drift-scan.md `## Format-defining files`).
+// governa/drift-scan.md `## Format-defining files`).
 //
 // A file belongs in this registry iff its content defines the form of a
 // section instantiated in the emitted AC stub — either the form a tool-
@@ -496,14 +496,14 @@ var expectedDivergencePaths = map[string]bool{
 // routing question for these files is suppressed; the routing is forced.
 //
 // Initial registry:
-//   - docs/ac-template.md (defines every AC's section shape)
+//   - governa/ac-template.md (defines every AC's section shape)
 //   - AGENTS.md (AC-template section shape, AT-label convention)
 //
 // Addition criterion: a future canon file is added to this registry when
 // (and only when) it passes the inclusion test above.
 var formatDefiningCanonPaths = map[string]bool{
-	"docs/ac-template.md": true,
-	"AGENTS.md":           true,
+	"governa/ac-template.md": true,
+	"AGENTS.md":              true,
 }
 
 // isFormatDefining reports whether relpath is in the format-defining registry.
@@ -518,12 +518,12 @@ func isFormatDefining(relpath string) bool {
 // whole-file bytes, so a registered file with byte-identical canon zone
 // classifies as ClassMatch instead of always-diverging on the whole-file
 // compare and being force-routed to `## In Scope` by the format-defining
-// override. See docs/drift-scan.md `## Mixed-content classification` and
+// override. See governa/drift-scan.md `## Mixed-content classification` and
 // AGENTS.md `### Drift-Scan Adoption` hunk-merge instructions.
 var mixedContentBoundary = map[string]string{
-	"AGENTS.md":                      "## Project Rules",
-	"docs/development-guidelines.md": "## Project Practices",
-	"docs/editing-guidelines.md":     "## Project Practices",
+	"AGENTS.md":                         "## Project Rules",
+	"governa/development-guidelines.md": "## Project Practices",
+	"governa/editing-guidelines.md":     "## Project Practices",
 }
 
 // extractCanonZone splits content on the first line-start match of boundary
@@ -571,7 +571,7 @@ type coherenceRule struct {
 }
 
 // coherenceRules is the registry of cross-file canon-coherence rules
-// checked by the Canon-coherence precondition (see docs/drift-scan.md
+// checked by the Canon-coherence precondition (see governa/drift-scan.md
 // `## Canon-coherence precondition`). Each rule names an authority and
 // the conformants that must instantiate it. Future rules are added here.
 //
@@ -618,7 +618,7 @@ func checkCanonCoherence(canon map[string]string) []CoherenceFailure {
 
 // writeCoherenceFailureReport writes the hard-fail report to out. Replaces
 // the normal emission stdout summary. H1 is a stable string consumer
-// agents can route on. Per docs/drift-scan.md `## Canon-coherence
+// agents can route on. Per governa/drift-scan.md `## Canon-coherence
 // precondition`: governa-side framing, enumerate-not-bail (all failures in
 // one report), no target writes occurred before this was called.
 func writeCoherenceFailureReport(out io.Writer, failures []CoherenceFailure) {
@@ -868,7 +868,7 @@ func previewCanonContent(s string, maxLines int) string {
 
 // (Removed under AC136: writeReport had a markdown branch for the
 // disposable drift-report-pair format and a JSON branch. The new emission
-// path writes the AC stub directly under <target>/docs/, and JSON mode
+// path writes the AC stub directly under <target>/governa/, and JSON mode
 // encodes the Report struct inline in Run. CleanupReminder and
 // AdoptionReminder constants were tied to the markdown branch and removed
 // alongside it. AC139 retired the sister-diffs file emission entirely.)
@@ -885,7 +885,7 @@ func classCounts(files []FileResult) map[Classification]int {
 }
 
 // buildACStub renders the emitted AC stub body (without the line-1 marker).
-// Conforms to docs/ac-template.md shape minus the copy-instruction preamble.
+// Conforms to governa/ac-template.md shape minus the copy-instruction preamble.
 // Per-file diffs are not snapshotted — adopters re-render canon with
 // `governa render-canon` and use standard `diff -ru` to inspect changes
 // (see AGENTS.md `### Drift-Scan Adoption`).
@@ -897,7 +897,7 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	// classification: any divergence (anything except match / expected-
 	// divergence) routes to In Scope as a sync item, regardless of whether
 	// the raw classification would have been preserve, ambiguity, etc.
-	// See docs/drift-scan.md `## Format-defining files`.
+	// See governa/drift-scan.md `## Format-defining files`.
 	var syncEntries, oosEntries, reviewEntries, formatDefiningForced []FileResult
 	for _, f := range r.Files {
 		if isFormatDefining(f.Relpath) && f.Classification != ClassMatch && f.Classification != ClassExpectedDivergence {
@@ -1055,16 +1055,18 @@ func otherFlavorCanonPaths(tfs fs.FS, otherFlavor, repoName, target string) (map
 	return out, nil
 }
 
-// targetGovernanceFilesNotInCanon walks target's docs/ and selected root files,
-// returning relpaths that exist in the target but NOT in our canon. If the
-// otherCanon map indicates the file IS in the other flavor's canon, the result
-// is more useful (suggests flavor mismatch); otherwise it's just a per-repo
-// addition the Operator can ignore. We surface only the otherCanon-overlapping
-// case to keep the warnings actionable.
+// targetGovernanceFilesNotInCanon walks target's governa/, legacy docs/, and
+// selected root files, returning relpaths that exist in the target but NOT in
+// our canon. For the governa/ and root walks: surface only the otherCanon-
+// overlapping case to keep flavor-mismatch warnings actionable. For the legacy
+// docs/ walk: surface every file whose renamed canon counterpart at
+// governa/<file> exists in ourCanon — these are pre-rename orphans the
+// consumer should `git rm` after adopting the renamed canon (see
+// governa/canon-cycle.md `## One-time path-rename cleanup`).
 func targetGovernanceFilesNotInCanon(target string, ourCanon map[string]string, otherCanon map[string]bool) []string {
 	var out []string
-	// Walk docs/.
-	docsDir := filepath.Join(target, "docs")
+	// Walk governa/.
+	docsDir := filepath.Join(target, "governa")
 	_ = filepath.WalkDir(docsDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -1082,6 +1084,29 @@ func targetGovernanceFilesNotInCanon(target string, ourCanon map[string]string, 
 			return nil
 		}
 		if otherCanon[rel] {
+			out = append(out, rel)
+		}
+		return nil
+	})
+	// Walk legacy docs/ for the one-time docs/ → governa/ migration: surface
+	// pre-rename governa-managed files whose new canon path under governa/
+	// exists in ourCanon. Consumer-owned files in docs/ (no matching governa/
+	// counterpart) and per-AC files stay untouched.
+	legacyDocsDir := filepath.Join(target, "docs")
+	_ = filepath.WalkDir(legacyDocsDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(target, p)
+		rel = filepath.ToSlash(rel)
+		base := filepath.Base(rel)
+		if strings.HasPrefix(base, "ac") && strings.HasSuffix(base, ".md") {
+			if matched, _ := regexp.MatchString(`^ac\d+-`, base); matched {
+				return nil
+			}
+		}
+		newCanonRel := "governa/" + strings.TrimPrefix(rel, "docs/")
+		if _, inCanon := ourCanon[newCanonRel]; inCanon {
 			out = append(out, rel)
 		}
 		return nil

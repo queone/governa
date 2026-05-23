@@ -110,8 +110,8 @@ func Run(target string, tfs fs.FS, out io.Writer) (int, error) {
 	if err != nil {
 		return ExitEnvError, fmt.Errorf("governa rm: allocate AC number: %w", err)
 	}
-	stubRel := fmt.Sprintf("docs/ac%d-governa-rm-%s.md", acNum, canonVersion)
-	diffsRel := fmt.Sprintf("docs/ac%d-governa-rm-%s-diffs.md", acNum, canonVersion)
+	stubRel := fmt.Sprintf("governa/ac%d-governa-rm-%s.md", acNum, canonVersion)
+	diffsRel := fmt.Sprintf("governa/ac%d-governa-rm-%s-diffs.md", acNum, canonVersion)
 	stubPath := filepath.Join(target, stubRel)
 	diffsPath := filepath.Join(target, diffsRel)
 	if reused {

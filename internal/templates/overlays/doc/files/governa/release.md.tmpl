@@ -29,7 +29,7 @@ Do not start this checklist unless the user explicitly asks to prep for release 
 2. **Determine the version.** Classify the change set using semver: PATCH (formatting, fixes, refactors invisible to users) or MINOR (structure, navigation, schema changes visible to users). Bump from the latest tag accordingly.
 3. **Derive the release message.** Summarize the change set in ≤ 80 characters. Lead with the AC reference if any (e.g., `AC1: adopt Governa v0.90.0 DOC overlay`).
 4. **Update CHANGELOG.md.** Insert a row for the new version under `| Unreleased | |`.
-5. **Delete completed AC files.** Remove `docs/ac<N>-*.md` files for ACs shipping in this release.
+5. **Delete completed AC files.** Remove `governa/ac<N>-*.md` files for ACs shipping in this release.
 6. **Present the release command.** Print the exact command for the director to run:
 
 ```
@@ -41,7 +41,7 @@ The agent never runs `./rel.sh` — only the director does. Do not add trailing 
 ## CHANGELOG Conventions
 
 - File shape: `# Changelog` heading, then a 2-column markdown table (`| Version | Summary |` with a `|---------|---------|` separator); first data row is `| Unreleased | |`, followed by one row per release (e.g., `| <version> | <AC-ref>: <one-line summary> |`).
-- During a drift-scan adoption cycle, the `| Unreleased | |` row's Summary column may carry preserve marker phrases (per `docs/drift-scan.md` `## Preserve-marker phrase set`). Release prep inserts the new release row beneath the Unreleased row without modifying it, so any markers there persist. When the marker phrase plus the AC reference and summary fits the 80-character release-message limit, echo the marker into the release message so it lands in the new release row for cleaner separation; when it does not fit, leave the marker in the Unreleased row, where it remains recognized by future drift-scan runs from any CHANGELOG row.
+- During a drift-scan adoption cycle, the `| Unreleased | |` row's Summary column may carry preserve marker phrases (per `governa/drift-scan.md` `## Preserve-marker phrase set`). Release prep inserts the new release row beneath the Unreleased row without modifying it, so any markers there persist. When the marker phrase plus the AC reference and summary fits the 80-character release-message limit, echo the marker into the release message so it lands in the new release row for cleaner separation; when it does not fit, leave the marker in the Unreleased row, where it remains recognized by future drift-scan runs from any CHANGELOG row.
 - Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
 - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
 - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).

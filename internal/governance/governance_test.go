@@ -167,7 +167,7 @@ func TestRetiredSymbolsAbsent(t *testing.T) {
 	t.Parallel()
 }
 
-// apply no longer writes TEMPLATE_VERSION or .governa/ to consumer repos.
+// apply no longer writes a .governa/ directory to consumer repos.
 func TestRunApplyStateless(t *testing.T) {
 	dir := t.TempDir()
 
@@ -182,15 +182,12 @@ func TestRunApplyStateless(t *testing.T) {
 		t.Fatalf("RunWithFS: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "TEMPLATE_VERSION")); err == nil {
-		t.Error("TEMPLATE_VERSION should not be written to consumer repos")
-	}
 	if _, err := os.Stat(filepath.Join(dir, ".governa")); err == nil {
 		t.Error(".governa/ directory should not be created in consumer repos")
 	}
 }
 
-// apply produces docs/ac1-governa-apply.md adoption record.
+// apply produces governa/ac1-governa-apply.md adoption record.
 func TestRunApplyProducesAdoptionAC(t *testing.T) {
 	dir := t.TempDir()
 
@@ -205,7 +202,7 @@ func TestRunApplyProducesAdoptionAC(t *testing.T) {
 		t.Fatalf("RunWithFS: %v", err)
 	}
 
-	acPath := filepath.Join(dir, "docs", "ac1-governa-apply.md")
+	acPath := filepath.Join(dir, "governa", "ac1-governa-apply.md")
 	content, err := os.ReadFile(acPath)
 	if err != nil {
 		t.Fatalf("read adoption AC: %v", err)
@@ -218,7 +215,7 @@ func TestRunApplyProducesAdoptionAC(t *testing.T) {
 	mustContain(t, text, "consumer-owned")
 	// AT2: nested files appear as repo-relative slash paths
 	// in the In Scope list, not as bare basenames.
-	mustContain(t, text, "- `docs/development-cycle.md`")
+	mustContain(t, text, "- `governa/development-cycle.md`")
 }
 
 // renderApplyAC lists files from operations and marks consumer ownership.
@@ -229,7 +226,7 @@ func TestRenderApplyACShape(t *testing.T) {
 	ops := []operation{
 		{kind: "write", path: filepath.Join(targetAbs, "AGENTS.md"), note: "governance contract"},
 		{kind: "symlink", path: filepath.Join(targetAbs, "CLAUDE.md"), linkTo: "AGENTS.md"},
-		{kind: "write", path: filepath.Join(targetAbs, "docs", "roles.md"), note: "overlay file"},
+		{kind: "write", path: filepath.Join(targetAbs, "governa", "roles.md"), note: "overlay file"},
 		{kind: "skip"},
 	}
 	out := renderApplyAC("0.60.0", Config{Type: RepoTypeCode, RepoName: "x"}, ops, targetAbs)
@@ -241,7 +238,7 @@ func TestRenderApplyACShape(t *testing.T) {
 	mustContain(t, out, "## Acceptance Tests")
 	// AT1: nested files render as repo-relative slash paths,
 	// never as basename-only.
-	mustContain(t, out, "- `docs/roles.md`")
+	mustContain(t, out, "- `governa/roles.md`")
 	for line := range strings.SplitSeq(out, "\n") {
 		if line == "- `roles.md`" || strings.HasPrefix(line, "- `roles.md` (") {
 			t.Errorf("nested entry should not render as basename-only; got line: %q", line)

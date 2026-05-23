@@ -18,7 +18,7 @@ governa ships a closed two-role model so agent sessions have a predictable start
 - **Operator** — LLM agent role. Owns implementation, tests, doc alignment, and mandatory self-review. Automatic and unannounced; it is the only agent role.
 - **Director** — human role. Owns intent, priorities, irreversible decisions (releases, architectural bets, scope), and the meta-loop. Not assignable to an agent.
 
-Full role definitions and the self-review contract live in [`docs/roles.md`](docs/roles.md). The shared `AGENTS.md` contract applies in every case. The reasoning behind the contract structure — particularly the session-entry rule — is in [`docs/operator-contract-rationale.md`](docs/operator-contract-rationale.md).
+Full role definitions and the self-review contract live in [`governa/roles.md`](governa/roles.md). The shared `AGENTS.md` contract applies in every case. The reasoning behind the contract structure — particularly the session-entry rule — is in [`governa/operator-contract-rationale.md`](governa/operator-contract-rationale.md).
 
 ## Usage
 
@@ -56,7 +56,7 @@ Run `governa help` for available commands, or `governa apply --help` for apply-s
 
 ### `rm`
 
-Run `governa rm` from an adopted consumer repo root to emit a cleanup AC stub plus a sister diffs file under `docs/`. The emitted AC lists whole-file removals, preserves repo-owned content, and routes hybrid files through Director Review before any deletion occurs.
+Run `governa rm` from an adopted consumer repo root to emit a cleanup AC stub plus a sister diffs file under `governa/`. The emitted AC lists whole-file removals, preserves repo-owned content, and routes hybrid files through Director Review before any deletion occurs.
 
 ### `deps`
 
@@ -64,7 +64,7 @@ Run `governa deps` from an adopted CODE consumer repo root, or from the governa 
 
 ### Self-service updates
 
-To adopt future governa improvements, run `governa drift-scan` from the consumer repo root. The command compares the consumer repo against canon embedded in the installed binary and emits an AC stub under `docs/`. The consumer Operator iterates on the emitted stub under normal AC discipline; per-file diffs are inspected via `governa render-canon` + standard `diff -ru` (see [`AGENTS.md`](AGENTS.md) `### Drift-Scan Adoption`). See [`docs/drift-scan.md`](docs/drift-scan.md) for the full flow. Manual cherry-picking from governa's `AGENTS.md`, role files, and `CHANGELOG.md` remains a fallback.
+To adopt future governa improvements, run `governa drift-scan` from the consumer repo root. The command compares the consumer repo against canon embedded in the installed binary and emits an AC stub under `governa/`. The consumer Operator iterates on the emitted stub under normal AC discipline; per-file diffs are inspected via `governa render-canon` + standard `diff -ru` (see [`AGENTS.md`](AGENTS.md) `### Drift-Scan Adoption`). See [`governa/drift-scan.md`](governa/drift-scan.md) for the full flow. Manual cherry-picking from governa's `AGENTS.md`, role files, and `CHANGELOG.md` remains a fallback.
 
 ## Design
 The target repo stays self-contained. The template repo is read-only at bootstrap time and is not imported as a submodule, package, or runtime dependency. The bootstrap tool is Go-based so the template works across macOS, Linux, and Windows without requiring a specific shell.
@@ -84,14 +84,14 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 - [`arch.md`](arch.md)
 - [`plan.md`](plan.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
-- [`docs/README.md`](docs/README.md)
-- [`docs/roles.md`](docs/roles.md)
+- [`governa/README.md`](governa/README.md)
+- [`governa/roles.md`](governa/roles.md)
 
 The `governa` CLI may print a quiet stderr notice when a newer governa release is available. Set `GOVERNA_NO_UPDATE_CHECK=1` to suppress that best-effort check.
 
 ## Library Family
 
-governa is shifting from a single one-off-applied template to a layered model: convention applied once + code distributed as separate-repo libraries (`governa-<x>`). Extractions are gated by [`docs/library-policy.md`](docs/library-policy.md).
+governa is shifting from a single one-off-applied template to a layered model: convention applied once + code distributed as separate-repo libraries (`governa-<x>`). Extractions are gated by [`governa/library-policy.md`](governa/library-policy.md).
 
 - [`governa-color`](https://github.com/queone/governa-color) — ANSI terminal color helpers for CLI output.
 - [`governa-reltool`](https://github.com/queone/governa-reltool) — Git tag, commit, and push orchestration for release flows.
@@ -101,4 +101,4 @@ governa is shifting from a single one-off-applied template to a layered model: c
 
 Run `governa render-canon --flavor code <dir>` (and `--flavor doc <dir>`) to render flavor-specific canon into a target directory for inspection or testing. See `governa render-canon -h` for full usage.
 
-See [`docs/governance-model.md`](docs/governance-model.md).
+See [`governa/governance-model.md`](governa/governance-model.md).

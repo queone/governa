@@ -1,8 +1,8 @@
-Copy this file to `docs/ac<N>-<slug>.md`, where `slug` is a kebab-case identifier and `N` follows the monotonic-numbering rule below. Set the file's heading to `# AC<N> Title`.
+Copy this file to `governa/ac<N>-<slug>.md`, where `slug` is a kebab-case identifier and `N` follows the monotonic-numbering rule below. Set the file's heading to `# AC<N> Title`.
 
-AC numbering is monotonic across release-prep deletions. Determine `N` by taking the maximum of (a) AC numbers currently in `docs/` and (b) AC numbers anywhere in `git log --all --pretty=%B` output (which covers commit subject + body — count every AC reference on every line, even when a single commit names multiple, e.g., `AC53+AC54`). Prior ACs removed during release prep still count. `N` is that maximum plus one.
+AC numbering is monotonic across release-prep deletions. Determine `N` by taking the maximum of (a) AC numbers currently in `governa/` and (b) AC numbers anywhere in `git log --all --pretty=%B` output (which covers commit subject + body — count every AC reference on every line, even when a single commit names multiple, e.g., `AC53+AC54`). Prior ACs removed during release prep still count. `N` is that maximum plus one.
 
-The AC is the implementation contract for one approved roadmap item. The full editing cycle that wraps around this template lives in `docs/editing-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
+The AC is the implementation contract for one approved roadmap item. The full development cycle that wraps around this template lives in `governa/development-cycle.md`. The enforceable rules around when to draft, review, and integrate an AC live in `AGENTS.md`.
 
 # AC<N> Title
 
@@ -17,7 +17,7 @@ List the concrete changes this AC will make. Use sub-headings for grouping (e.g.
 ### Files to create
 
 - `path/to/new_file` — what it contains
-- `docs/new-doc.md` — what it documents
+- `governa/new-doc.md` — what it documents
 
 ### Files to modify
 
@@ -53,4 +53,4 @@ Every AT carries a source axis and a timing axis.
 
 `PENDING` — awaiting user authorization to begin implementation.
 
-(Other valid states: `IN PROGRESS`, `DEFERRED` (with reason and tracking ref). For partial completion, list status by phase. Completed ACs are deleted at release time per the editing cycle — do not change status to DONE before deletion.)
+(Other valid states: `IN PROGRESS`, `DEFERRED` (with reason and tracking ref). For partial completion, list status by phase. Completed ACs are deleted at release time per the development cycle — do not change status to DONE before deletion.)

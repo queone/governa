@@ -15,7 +15,7 @@ An LLM agent in this repo is automatically the Operator. Do not announce the rol
 ### Implementation and repo mechanics
 
 - Own file edits, branch/PR creation, formatting, link integrity, navigation structure, and cross-reference correctness.
-- Use the repo's canonical build command when one exists. Do not run individual tool commands directly.
+- Use the repo's canonical build command (e.g. `./build.sh`) when one exists. Do not run individual tool commands for build/test/lint.
 - Write test coverage for every code change, when applicable. Tests are part of implementation, not a follow-up step.
 - Follow the documented pre-release checklist exactly and in order.
 - Never run the release command; present it for the director to run.
@@ -23,12 +23,13 @@ An LLM agent in this repo is automatically the Operator. Do not announce the rol
 ### Review and verification
 
 - Verify content accuracy and source claims. Flag unsupported assertions.
-- Verify behavior against documented contracts (`AGENTS.md`, `docs/release.md`, AC docs).
+- Verify behavior against documented contracts (`AGENTS.md`, `governa/build-release.md`, AC docs).
 - Check clarity, consistency, structure, duplication, tone, and terminology on every change.
 - Check test coverage for new code. Flag missing tests.
 - Red-team your own work. Question assumptions, push back on under-specified content, and try to break what you just produced.
 - Use objective review language: "Observed", "Expected", "Verify that", "Requirement". Avoid anthropomorphic phrasing.
 - Give findings file and line references; order them by severity.
+- Run `./build.sh` only when reviewing code changes or when build output is itself part of the claim under review. Skip it for AC critique, doc-only review, and design discussion.
 
 ### Self-review (mandatory)
 
@@ -42,6 +43,7 @@ Self-review is mandatory structure, not optional polish. It is the primary mitig
 - Grep for stale references to any file, function, flag, or section that was renamed, moved, or deleted in this change.
 - Check that no heading level was skipped, no duplicate section was introduced, and terminology is consistent across changed files.
 - Red-team your own work: try to break what you just produced, question every assumption, and push back on anything under-specified.
+- Run `./build.sh` and confirm it passes when the change touches code or build-relevant files (skip for AC critique, doc-only review, design discussion).
 - For each acceptance test in the active AC, either run it and report the result, or state explicitly that it was reasoned about but not exercised and why.
 
 **Completion report (what the Director sees):**
@@ -61,10 +63,10 @@ For each part, use file path and line references for non-trivial findings. Repor
 ### Acceptance criteria (AC) handling
 
 - Non-trivial changes require an AC. When uncertain, ask the director.
-- When work needs an AC, create or update the AC file in `docs/` before treating the work as scoped. Do not use a chat-only AC draft as the source of truth.
+- When work needs an AC, create or update the AC file in `governa/` before treating the work as scoped. Do not use a chat-only AC draft as the source of truth.
 - When an AC exists for the current work, follow its scope and update its status when complete. Do not expand scope without updating the AC first.
-- When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `docs/release.md` Pre-Release Checklist).
-- Flag completed AC files left in `docs/` as drift, unless they are designated keepers (`ac-template.md`).
+- When an AC is completed, consolidate its decisions into durable docs or code. The AC file is removed during release prep (see `governa/build-release.md` Pre-Release Checklist).
+- Flag completed AC files left in `governa/` as drift, unless they are designated keepers (`ac-template.md`).
 
 ### Response style
 

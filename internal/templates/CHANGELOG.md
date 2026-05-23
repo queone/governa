@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.136.0 | AC145+AC146: remove TEMPLATE_VERSION; rename docs/ to governa/ |
 | 0.135.0 | AC144: Instruction Style cleanup + product-name identifier rule |
 | 0.134.0 | AC143: phrase-only marker capture + sync-resolution stub rule |
 | 0.133.0 | AC142: drift-scan mixed-content canon-zone classification |

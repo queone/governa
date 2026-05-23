@@ -53,10 +53,10 @@ func docFixture(t *testing.T) string {
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n- IE2: another\n")
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | initial |\n")
-	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "governa"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	mustWrite(t, filepath.Join(dir, "governa/ac-template.md"), "# AC template\n")
 	gitInit(t, dir)
 	gitAddCommit(t, dir, "initial")
 	return dir
@@ -72,13 +72,13 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 }
 
-// findStagedACs returns the AC file paths under dir/docs/ matching the
+// findStagedACs returns the AC file paths under dir/governa/ matching the
 // drift-scan staging pattern. The `-diffs.md` suffix filter is retained as
 // defense-in-depth; AC139 retired the sister-diffs emission so no files
 // match the suffix in current runs.
 func findStagedACs(t *testing.T, dir string) []string {
 	t.Helper()
-	all, _ := filepath.Glob(filepath.Join(dir, "docs/ac*-drift-scan-from-*.md"))
+	all, _ := filepath.Glob(filepath.Join(dir, "governa/ac*-drift-scan-from-*.md"))
 	var acs []string
 	for _, m := range all {
 		if strings.HasSuffix(m, "-diffs.md") {
@@ -185,10 +185,10 @@ func TestNoGitWorktree(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: x\n")
-	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "governa"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	mustWrite(t, filepath.Join(dir, "governa/ac-template.md"), "# AC template\n")
 	// No gitInit — target has no .git/.
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
@@ -253,7 +253,7 @@ func TestPlanMdExpectedDivergence(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 	if !strings.Contains(stub, "`plan.md` — expected-divergence") {
 		t.Errorf("expected plan.md classified as expected-divergence in stub, got:\n%s", stub)
 	}
@@ -268,7 +268,7 @@ func TestArchMdExpectedDivergence(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 	if !strings.Contains(stub, "`arch.md` — expected-divergence") {
 		t.Errorf("expected arch.md classified as expected-divergence in stub, got:\n%s", stub)
 	}
@@ -383,10 +383,10 @@ func TestNameReferenceSurfacesTargetOnlyFile(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n")
-	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "governa"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	mustWrite(t, filepath.Join(dir, "governa/ac-template.md"), "# AC template\n")
 	// Divergent rel.sh referencing target-only color.go.
 	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/foo/main.go ./cmd/foo/color.go \"$@\"\n")
 	// Target-only files (no canon counterpart).
@@ -399,7 +399,7 @@ func TestNameReferenceSurfacesTargetOnlyFile(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	report := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 
 	// cmd/foo/color.go should appear under target-has-no-canon (via name-reference).
 	if !strings.Contains(report, "`cmd/foo/color.go`") {
@@ -407,6 +407,49 @@ func TestNameReferenceSurfacesTargetOnlyFile(t *testing.T) {
 	}
 	if !strings.Contains(report, "target-has-no-canon") {
 		t.Errorf("report must classify color.go as target-has-no-canon, got:\n%s", report)
+	}
+}
+
+// Pre-rename consumer migration: a docs/<file> orphan whose canon counterpart
+// is governa/<file> surfaces as target-has-no-canon so the consumer can
+// `git rm` it after adopting the renamed canon. Consumer-owned docs/ files
+// (no matching governa/ counterpart) and per-AC files stay untouched.
+func TestLegacyDocsOrphanSurfacesAsTargetNoCanon(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
+	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n")
+	// Pre-rename adoption signal at the legacy docs/ location.
+	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	// Pre-rename governa-managed files at docs/ — should surface as orphans.
+	mustWrite(t, filepath.Join(dir, "docs/roles.md"), "# stale roles\n")
+	mustWrite(t, filepath.Join(dir, "docs/canon-cycle.md"), "# stale canon-cycle\n")
+	// Consumer-owned file at docs/ — no matching governa/ canon, should stay untouched.
+	mustWrite(t, filepath.Join(dir, "docs/team-notes.md"), "# team notes\n")
+	// Per-AC file at docs/ — already excluded by the per-AC skip rule.
+	mustWrite(t, filepath.Join(dir, "docs/ac42-my-ac.md"), "# AC42\n")
+	gitInit(t, dir)
+	gitAddCommit(t, dir, "pre-rename layout")
+
+	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	report := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
+
+	for _, want := range []string{"docs/roles.md", "docs/canon-cycle.md"} {
+		if !strings.Contains(report, want) {
+			t.Errorf("pre-rename orphan %q must surface in drift report, got:\n%s", want, report)
+		}
+	}
+	if !strings.Contains(report, "target-has-no-canon") {
+		t.Errorf("orphans must classify as target-has-no-canon, got:\n%s", report)
+	}
+	if strings.Contains(report, "docs/team-notes.md") {
+		t.Errorf("consumer-owned docs/team-notes.md must NOT surface as orphan, got:\n%s", report)
+	}
+	if strings.Contains(report, "docs/ac42-my-ac.md") {
+		t.Errorf("per-AC docs/ac42-my-ac.md must NOT surface as orphan, got:\n%s", report)
 	}
 }
 
@@ -423,7 +466,7 @@ func TestNameReferenceNoFalsePositiveOnCanonResidentRef(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	report := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 
 	// main.go is in canon — must not appear under target-has-no-canon classification.
 	if strings.Contains(report, "### `cmd/rel/main.go` — target-has-no-canon") {
@@ -432,10 +475,10 @@ func TestNameReferenceNoFalsePositiveOnCanonResidentRef(t *testing.T) {
 }
 
 // =====================================================================
-// AC136: AC-stub + sister-diffs emission under <target>/docs/
+// AC136: AC-stub + sister-diffs emission under <target>/governa/
 // =====================================================================
 
-// AC139: drift-scan emits exactly the AC stub under <target>/docs/; the
+// AC139: drift-scan emits exactly the AC stub under <target>/governa/; the
 // retired *-diffs.md sibling file must NOT be emitted.
 func TestACStubEmittedNoDiffsSibling(t *testing.T) {
 	dir := docFixture(t)
@@ -445,7 +488,7 @@ func TestACStubEmittedNoDiffsSibling(t *testing.T) {
 			t.Errorf("expected ExitOK, got %d", exit)
 		}
 	})
-	stub := filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md")
+	stub := filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md")
 	info, err := os.Stat(stub)
 	if err != nil {
 		t.Fatalf("expected AC stub at %s, got: %v", stub, err)
@@ -454,7 +497,7 @@ func TestACStubEmittedNoDiffsSibling(t *testing.T) {
 		t.Errorf("AC stub is empty")
 	}
 	// AC139: no diffs sibling.
-	if _, err := os.Stat(filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test-diffs.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test-diffs.md")); err == nil {
 		t.Errorf("diffs sibling file must not be emitted under AC139 (retired)")
 	}
 	// Old root-level report-pair must NOT exist.
@@ -470,7 +513,7 @@ func TestACStubConformsToTemplate(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 	for _, want := range []string{
 		"# AC1 Drift-Scan Adoption from governa v0.0.0-test",
 		"## Summary",
@@ -507,13 +550,13 @@ func TestRescanOverwritesIdempotentlyOnUnedited(t *testing.T) {
 			t.Fatalf("first run: expected ExitOK, got %d", exit)
 		}
 	})
-	stub1 := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub1 := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 	captureOut(t, func(f *os.File) {
 		if exit, _ := Run(cfg, EmbeddedFS, f); exit != ExitOK {
 			t.Fatalf("second run: expected ExitOK, got %d", exit)
 		}
 	})
-	stub2 := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub2 := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 	if stub1 != stub2 {
 		t.Errorf("re-scan produced different stub (overwrite must be idempotent on unedited)")
 	}
@@ -529,7 +572,7 @@ func TestEditDetectionRefusesOverwrite(t *testing.T) {
 		}
 	})
 	// Edit the stub body without rewriting the marker.
-	stubPath := filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md")
+	stubPath := filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md")
 	original := mustRead(t, stubPath)
 	edited := original + "\n\nedited by hand\n"
 	if err := os.WriteFile(stubPath, []byte(edited), 0o644); err != nil {
@@ -562,7 +605,7 @@ func TestJSONIncludesEmittedPaths(t *testing.T) {
 	if r.Emitted == nil {
 		t.Fatalf("JSON output missing emitted-paths block: %s", out)
 	}
-	if want := "docs/ac1-drift-scan-v0.0.0-test.md"; r.Emitted.ACStub != want {
+	if want := "governa/ac1-drift-scan-v0.0.0-test.md"; r.Emitted.ACStub != want {
 		t.Errorf("emitted.ac_stub = %q, want %q", r.Emitted.ACStub, want)
 	}
 }
@@ -570,7 +613,7 @@ func TestJSONIncludesEmittedPaths(t *testing.T) {
 // Format-defining files override raw classification: any divergence on a
 // file in formatDefiningCanonPaths routes to ## In Scope as a sync item
 // regardless of whether the raw classification was preserve / ambiguity.
-// docFixture's docs/ac-template.md has minimal content (canon is the full
+// docFixture's governa/ac-template.md has minimal content (canon is the full
 // template); after the single fixture commit, it classifies as ambiguity
 // (1 commit, no marker) — without the override it would route to Routing
 // Decisions. With override, it must appear in ## In Scope with a
@@ -579,7 +622,7 @@ func TestFormatDefiningOverrideRoutesToInScope(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 
 	// In Scope section must list the format-defining file with annotation.
 	inScopeStart := strings.Index(stub, "## In Scope")
@@ -588,8 +631,8 @@ func TestFormatDefiningOverrideRoutesToInScope(t *testing.T) {
 		t.Fatalf("stub missing required sections: %s", stub)
 	}
 	inScope := stub[inScopeStart:inScopeEnd]
-	if !strings.Contains(inScope, "`docs/ac-template.md`") {
-		t.Errorf("expected docs/ac-template.md in ## In Scope (format-defining override), got:\n%s", inScope)
+	if !strings.Contains(inScope, "`governa/ac-template.md`") {
+		t.Errorf("expected governa/ac-template.md in ## In Scope (format-defining override), got:\n%s", inScope)
 	}
 	if !strings.Contains(inScope, "(format-defining)") {
 		t.Errorf("expected (format-defining) annotation in ## In Scope, got:\n%s", inScope)
@@ -603,13 +646,13 @@ func TestFormatDefiningOverrideRoutesToInScope(t *testing.T) {
 			routingEnd = len(stub) - routingStart
 		}
 		routing := stub[routingStart : routingStart+routingEnd]
-		if strings.Contains(routing, "`docs/ac-template.md`") {
-			t.Errorf("docs/ac-template.md must not appear in ### Routing Decisions (format-defining override failed), got:\n%s", routing)
+		if strings.Contains(routing, "`governa/ac-template.md`") {
+			t.Errorf("governa/ac-template.md must not appear in ### Routing Decisions (format-defining override failed), got:\n%s", routing)
 		}
 	}
 }
 
-// docs/ is created on emission if missing. Adoption check can pass on
+// governa/ is created on emission if missing. Adoption check can pass on
 // AGENTS.md + CHANGELOG row alone; emission must still succeed.
 func TestEmissionCreatesDocsDir(t *testing.T) {
 	dir := t.TempDir()
@@ -622,9 +665,9 @@ func TestEmissionCreatesDocsDir(t *testing.T) {
 	if exit != ExitOK {
 		t.Fatalf("expected ExitOK, got %d (err=%v)", exit, err)
 	}
-	// docs/ should now exist with the AC stub inside.
-	if _, err := os.Stat(filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md")); err != nil {
-		t.Errorf("expected AC stub at docs/ac1-drift-scan-v0.0.0-test.md after auto-MkdirAll, got: %v", err)
+	// governa/ should now exist with the AC stub inside.
+	if _, err := os.Stat(filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md")); err != nil {
+		t.Errorf("expected AC stub at governa/ac1-drift-scan-v0.0.0-test.md after auto-MkdirAll, got: %v", err)
 	}
 }
 
@@ -645,7 +688,7 @@ func TestAdoptionCheckFailsWithoutSignal(t *testing.T) {
 }
 
 // Plan.md must remain unmodified across drift-scan runs (only the AC stub
-// under docs/ is written).
+// under governa/ is written).
 func TestRunDoesNotModifyPlan(t *testing.T) {
 	dir := docFixture(t)
 	planBefore := mustRead(t, filepath.Join(dir, "plan.md"))
@@ -676,10 +719,10 @@ func codeFixture(t *testing.T) string {
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS.md\n")
 	mustWrite(t, filepath.Join(dir, "plan.md"), "# Plan\n\n## Ideas To Explore\n\n- IE1: existing\n")
 	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), "# Changelog\n\n| Version | Summary |\n|---|---|\n| Unreleased | |\n| 0.1.0 | initial |\n")
-	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "governa"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(dir, "docs/ac-template.md"), "# AC template\n")
+	mustWrite(t, filepath.Join(dir, "governa/ac-template.md"), "# AC template\n")
 	gitInit(t, dir)
 	gitAddCommit(t, dir, "initial")
 	return dir
@@ -695,7 +738,7 @@ func TestReachabilityReminderEmittedInCodeFlavorHeader(t *testing.T) {
 	captureOut(t, func(f *os.File) {
 		Run(cfg, EmbeddedFS, f)
 	})
-	report := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	report := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 	if !strings.Contains(report, ReachabilityHeaderReminder) {
 		t.Errorf("expected ReachabilityHeaderReminder in code-flavor report header, got:\n%s", report)
 	}
@@ -706,7 +749,7 @@ func TestNoReachabilityLineInDocFlavorStub(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 	if strings.Contains(stub, "Reachability check:") {
 		t.Errorf("doc-flavor AC stub must not contain `Reachability check:`. got:\n%s", stub)
 	}
@@ -765,9 +808,9 @@ func TestNoCleanupLineInStdoutSummary(t *testing.T) {
 // directly rather than grepping source so the test is robust to formatting.
 func TestMixedContentBoundaryRegistry(t *testing.T) {
 	want := map[string]string{
-		"AGENTS.md":                      "## Project Rules",
-		"docs/development-guidelines.md": "## Project Practices",
-		"docs/editing-guidelines.md":     "## Project Practices",
+		"AGENTS.md":                         "## Project Rules",
+		"governa/development-guidelines.md": "## Project Practices",
+		"governa/editing-guidelines.md":     "## Project Practices",
 	}
 	if len(mixedContentBoundary) != len(want) {
 		t.Fatalf("registry size: got %d, want %d (registry=%v)", len(mixedContentBoundary), len(want), mixedContentBoundary)
@@ -875,7 +918,7 @@ func TestRunMixedContentNotEmittedInScope(t *testing.T) {
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) { Run(cfg, EmbeddedFS, f) })
-	stub := mustRead(t, filepath.Join(dir, "docs/ac1-drift-scan-v0.0.0-test.md"))
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
 
 	inScopeStart := strings.Index(stub, "## In Scope")
 	inScopeEnd := strings.Index(stub, "## Out Of Scope")
@@ -916,7 +959,7 @@ func TestNonMixedContentUnaffected(t *testing.T) {
 	dir := t.TempDir()
 	canon := "canon body\n"
 	target := "drift body\n"
-	relpath := "docs/release.md" // not in mixedContentBoundary
+	relpath := "governa/release.md" // not in mixedContentBoundary
 	mustWrite(t, filepath.Join(dir, relpath), target)
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50}
 	fr := classifyFile(cfg, relpath, canon, "v0.0.0-test")
@@ -932,20 +975,20 @@ func TestNonMixedContentUnaffected(t *testing.T) {
 		Files:  []FileResult{fr},
 	}
 	body := buildACStub(r, 1, "v0.0.0-test")
-	want := "`docs/release.md` matches canon byte-for-byte after sync"
+	want := "`governa/release.md` matches canon byte-for-byte after sync"
 	if !strings.Contains(body, want) {
 		t.Errorf("expected whole-file AT wording %q in stub, got:\n%s", want, body)
 	}
 }
 
-// AC142 AT8 — docs/drift-scan.md contains the new subsection and the four
+// AC142 AT8 — governa/drift-scan.md contains the new subsection and the four
 // amendments to existing generic statements so the new behavior does not
 // coexist with stale generic wording. Run from inside the driftscan
-// package; resolves docs/drift-scan.md at the repo root.
+// package; resolves governa/drift-scan.md at the repo root.
 func TestDriftScanDocAmendments(t *testing.T) {
 	// Resolve the repo-root drift-scan.md from the package's location.
 	// The test runs with cwd = internal/driftscan/, so go up two levels.
-	docPath := filepath.Join("..", "..", "docs", "drift-scan.md")
+	docPath := filepath.Join("..", "..", "governa", "drift-scan.md")
 	body := mustRead(t, docPath)
 	wants := []string{
 		"## Mixed-content classification",
@@ -956,7 +999,7 @@ func TestDriftScanDocAmendments(t *testing.T) {
 	}
 	for _, w := range wants {
 		if !strings.Contains(body, w) {
-			t.Errorf("docs/drift-scan.md missing required wording: %q", w)
+			t.Errorf("governa/drift-scan.md missing required wording: %q", w)
 		}
 	}
 }

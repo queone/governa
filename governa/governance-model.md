@@ -19,7 +19,7 @@ The agent runs in the target repo, not in this template repo. This template repo
 3. governa detects whether this is a new repo or an existing one
 4. prompts for any missing parameters (or uses flags/inference)
 5. renders all files directly into the target repo — no collision negotiation
-6. writes `docs/ac1-governa-apply.md` as an adoption record
+6. writes `governa/ac1-governa-apply.md` as an adoption record
 
 ## Command: `apply`
 
@@ -34,7 +34,7 @@ Single entry point for both new and existing repos. Detection order:
 - all flags (`-n`, `-k`, `-s`) bypass individual prompts
 - copy base files, apply the selected overlay, fill placeholders
 - create `CLAUDE.md → AGENTS.md` symlink
-- write `docs/ac1-governa-apply.md` (adoption record)
+- write `governa/ac1-governa-apply.md` (adoption record)
 - optionally initialize git if the target is not already a repo
 
 ### Existing-repo behavior
@@ -43,7 +43,7 @@ Single entry point for both new and existing repos. Detection order:
 - resolve metadata via priority: (1) explicit flag, (2) inference from target directory, (3) interactive prompt
 - all template files are written directly
 - symlinks: if a regular file blocks a planned symlink, warn on stderr and skip; otherwise create if missing
-- write `docs/ac1-governa-apply.md` (adoption record)
+- write `governa/ac1-governa-apply.md` (adoption record)
 
 ## Implementation Constraints
 
@@ -82,7 +82,7 @@ During apply, if a regular file exists where a symlink is planned, governa warns
 
 ## Ownership Model
 
-After apply, all files are consumer-owned. The consumer repo can freely modify any file governa produced. Apply is stateless — no bookkeeping directory, no persistent metadata. Provenance is recorded in `docs/ac1-governa-apply.md`.
+After apply, all files are consumer-owned. The consumer repo can freely modify any file governa produced. Apply is stateless — no bookkeeping directory, no persistent metadata. Provenance is recorded in `governa/ac1-governa-apply.md`.
 
 ## Template Improvement
 

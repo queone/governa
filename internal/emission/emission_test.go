@@ -18,7 +18,7 @@ func writeTestFile(t *testing.T, path, body string) {
 }
 
 func TestMarkerRoundTripAndEditDetection(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "docs", "ac1-test.md")
+	path := filepath.Join(t.TempDir(), "governa", "ac1-test.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestMarkerRoundTripAndEditDetection(t *testing.T) {
 func TestRequireGovernaAdoptedAndPreserveMarkers(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS\n")
-	writeTestFile(t, filepath.Join(dir, "docs", "ac-template.md"), "# AC\n")
+	writeTestFile(t, filepath.Join(dir, "governa", "ac-template.md"), "# AC\n")
 	writeTestFile(t, filepath.Join(dir, "CHANGELOG.md"), "| 0.1.0 | preserve docs/foo.md customization |\n")
 	if err := RequireGovernaAdopted(dir, "tool"); err != nil {
 		t.Fatal(err)
@@ -49,6 +49,22 @@ func TestRequireGovernaAdoptedAndPreserveMarkers(t *testing.T) {
 	hits := PreserveMarkers(dir, "docs/foo.md")
 	if len(hits) != 1 || hits[0] != "preserve docs/foo.md customization" {
 		t.Fatalf("unexpected preserve markers: %v", hits)
+	}
+}
+
+// RequireGovernaAdopted accepts pre-rename adoption signals at docs/* so a
+// consumer using the legacy layout can still run drift-scan and pick up the
+// one-time docs/ → governa/ cleanup routing.
+func TestRequireGovernaAdoptedLegacyDocsSignal(t *testing.T) {
+	for _, sig := range []string{"docs/ac-template.md", "docs/release.md", "docs/build-release.md"} {
+		t.Run(sig, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTestFile(t, filepath.Join(dir, "AGENTS.md"), "# AGENTS\n")
+			writeTestFile(t, filepath.Join(dir, sig), "# legacy signal\n")
+			if err := RequireGovernaAdopted(dir, "tool"); err != nil {
+				t.Fatalf("legacy %s should be accepted: %v", sig, err)
+			}
+		})
 	}
 }
 
@@ -118,7 +134,7 @@ func TestIsGovernaCheckout(t *testing.T) {
 
 func TestAllocateACNumberHandlesEmptyGitHistory(t *testing.T) {
 	dir := t.TempDir()
-	writeTestFile(t, filepath.Join(dir, "docs", "ac3-existing.md"), "# AC3\n")
+	writeTestFile(t, filepath.Join(dir, "governa", "ac3-existing.md"), "# AC3\n")
 	cmd := exec.Command("git", "init", "-q")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// docs/drift-scan.md "Reachability of canon-only branches" section
+// governa/drift-scan.md "Reachability of canon-only branches" section
 // must (a) name host-shape examples, (b) contain exactly one line whose
 // stripped content equals ReachabilityHeaderReminder byte-for-byte (the
 // constant, not a hardcoded string), (c) carry the known-limit caveat
@@ -18,7 +18,7 @@ func TestReachabilitySectionInDriftScanDocs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
 	}
-	docPath := filepath.Join(repoRoot, "docs", "drift-scan.md")
+	docPath := filepath.Join(repoRoot, "governa", "drift-scan.md")
 	content, err := os.ReadFile(docPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", docPath, err)
@@ -76,9 +76,9 @@ func canonCycleSurfacePaths(t *testing.T) (root, codeOverlay, docOverlay string)
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
 	}
-	root = filepath.Join(repoRoot, "docs", "canon-cycle.md")
-	codeOverlay = filepath.Join(repoRoot, "internal", "templates", "overlays", "code", "files", "docs", "canon-cycle.md.tmpl")
-	docOverlay = filepath.Join(repoRoot, "internal", "templates", "overlays", "doc", "files", "docs", "canon-cycle.md.tmpl")
+	root = filepath.Join(repoRoot, "governa", "canon-cycle.md")
+	codeOverlay = filepath.Join(repoRoot, "internal", "templates", "overlays", "code", "files", "governa", "canon-cycle.md.tmpl")
+	docOverlay = filepath.Join(repoRoot, "internal", "templates", "overlays", "doc", "files", "governa", "canon-cycle.md.tmpl")
 	return
 }
 
@@ -111,7 +111,7 @@ func TestCanonCycleAllThreeSurfacesByteEqual(t *testing.T) {
 	}
 }
 
-// docs/canon-cycle.md must contain both audience-explicit headings:
+// governa/canon-cycle.md must contain both audience-explicit headings:
 // "## Governa-side commitments" and "## Consumer-side workflow".
 func TestCanonCycleAudienceHeadingsPresent(t *testing.T) {
 	root, _, _ := canonCycleSurfacePaths(t)
@@ -211,8 +211,8 @@ func guidelineOverlayPaths(t *testing.T) (codeDev, docEdit string) {
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
 	}
-	codeDev = filepath.Join(repoRoot, "internal", "templates", "overlays", "code", "files", "docs", "development-guidelines.md.tmpl")
-	docEdit = filepath.Join(repoRoot, "internal", "templates", "overlays", "doc", "files", "docs", "editing-guidelines.md.tmpl")
+	codeDev = filepath.Join(repoRoot, "internal", "templates", "overlays", "code", "files", "governa", "development-guidelines.md.tmpl")
+	docEdit = filepath.Join(repoRoot, "internal", "templates", "overlays", "doc", "files", "governa", "editing-guidelines.md.tmpl")
 	return
 }
 
@@ -279,7 +279,7 @@ func TestGuidelinesPreambleNamesCanonVsLocalBoundary(t *testing.T) {
 	}
 }
 
-// docs/canon-cycle.md carries the doctrine paragraph naming
+// governa/canon-cycle.md carries the doctrine paragraph naming
 // canon-above-local-below structure as a reusable pattern. The
 // three-surface byte-equality is enforced by
 // TestCanonCycleAllThreeSurfacesByteEqual; this test pins the doctrine

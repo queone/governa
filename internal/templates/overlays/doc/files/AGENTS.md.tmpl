@@ -4,7 +4,7 @@
 
 Edit only AGENTS.md; CLAUDE.md is a symlink that mirrors it.
 
-Detail and rationale live in `docs/editing-guidelines.md`, `docs/release.md`, `docs/editing-cycle.md`.
+Detail and rationale live in `governa/editing-guidelines.md`, `governa/release.md`, `governa/editing-cycle.md`.
 
 Sections (fixed set):
 
@@ -49,7 +49,7 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Create files and make repository edits only after explicit user authorization — including draft files, scratch scripts, scaffolding, and config tweaks.
 - Make the smallest change that satisfies the request once authorized.
 - Surface assumptions, ambiguities, and missing context before any direction-changing action.
-- Operate as the Operator on every interaction (per `docs/roles.md`); the role is fixed and unannounced.
+- Operate as the Operator on every interaction (per `governa/roles.md`); the role is fixed and unannounced.
 - Place each structured deliverable (AC, plan, doc draft, scope card) in its target file; never paste the full body in chat.
 - Report each written deliverable with a one-paragraph chat summary plus the file path.
 - Quote at most short, targeted snippets from a written file when discussing a specific change.
@@ -75,12 +75,12 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Wait for explicit user request before preparing, executing, publishing, deploying, or distributing — including drafting commit messages, commit commands, version bumps, or release notes.
 - **Leave every `git commit` for the user to execute. No EXCEPTION.**
 - Treat an explicit "prep for release" request as the trigger for release-prep bookkeeping (CHANGELOG row insertion, release-tag drafting, commit-command drafting, release-command presentation).
-- Follow the Pre-Release Checklist in `docs/release.md` when executing release-prep bookkeeping.
+- Follow the Pre-Release Checklist in `governa/release.md` when executing release-prep bookkeeping.
 
 ### AC-First Workflow
 
 - Treat every non-trivial change as AC-first work.
-- Draft `docs/ac<N>-<slug>.md` before implementation using `docs/ac-template.md`; define scope, out-of-scope, and acceptance tests.
+- Draft `governa/ac<N>-<slug>.md` before implementation using `governa/ac-template.md`; define scope, out-of-scope, and acceptance tests.
 - Wait for explicit user confirmation that the AC is implementation-ready before starting implementation.
 
 ### AC Critique Gate
@@ -101,21 +101,21 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Render canon into a scratch directory using `governa render-canon <scratch>`.
 - Inspect changes per `## In Scope` item by running `diff -ru <scratch>/<path> <path>`.
 - Record preserve decisions in the `| Unreleased | |` row's Summary column of `CHANGELOG.md` before re-running `governa drift-scan`.
-- Use one of the marker phrases from `docs/drift-scan.md` `## Preserve-marker phrase set` for each preserve decision.
+- Use one of the marker phrases from `governa/drift-scan.md` `## Preserve-marker phrase set` for each preserve decision.
 - Echo the preserve marker verbatim into the release message when the marker plus AC reference and summary fits the 80-character limit.
 - Leave the preserve marker in the `| Unreleased | |` row when the combined length exceeds 80 characters.
 - Ensure the parent directory exists for each `## In Scope` item: `mkdir -p "$(dirname <path>)"`.
 - Categorize each `## In Scope` item as pure-canon or mixed-content before applying.
 - Apply pure-canon items by copying from canon: `cp <scratch>/<path> <path>`.
 - Apply mixed-content items by hunk-merge.
-- Replace canon-zone content above the boundary heading (`## Project Rules` for AGENTS.md; `## Project Practices` for `docs/development-guidelines.md` and `docs/editing-guidelines.md`).
+- Replace canon-zone content above the boundary heading (`## Project Rules` for AGENTS.md; `## Project Practices` for `governa/development-guidelines.md` and `governa/editing-guidelines.md`).
 - Preserve the boundary heading and every line below it as repo-owned content.
 - Re-run `governa drift-scan` after the sync without editing the emitted stub; confirm each synced file no longer appears in the new emission's `## In Scope` list.
 - Run the repo's canonical validation (`./build.sh` or equivalent) before declaring the adoption complete.
 
 Note: preserve markers in the `| Unreleased | |` row persist across releases (release prep does not modify that row); markers echoed into release-message rows are also recognized by future drift-scan runs from any CHANGELOG row. The AC stub is not a durable home because drift-scan's edit-detection guard blocks the required re-run after stub edits.
 
-Note: mixed-content files (AGENTS.md, `docs/development-guidelines.md`, `docs/editing-guidelines.md`, and any other file with a documented repo-owned tail section) follow the hunk-merge convention in `docs/canon-cycle.md` `## Consumer-side workflow`.
+Note: mixed-content files (AGENTS.md, `governa/development-guidelines.md`, `governa/editing-guidelines.md`, and any other file with a documented repo-owned tail section) follow the hunk-merge convention in `governa/canon-cycle.md` `## Consumer-side workflow`.
 
 ## File-Change Discipline
 
@@ -145,13 +145,13 @@ Note: mixed-content files (AGENTS.md, `docs/development-guidelines.md`, `docs/ed
 - Note skipped checks only when the omission is unusual or affects confidence.
 - Run required validation gates, but report successful routine gates only when they materially affect confidence; always report failures and skipped required gates.
 - Present editorial decisions to the director as: a recommendation when one viable option exists; two bounded options plus a recommendation when two exist; the best two plus a one-line note on the rest when more than two exist.
-- Include the three-part self-review structure (Verified / Red-teamed / Not checked) defined in `docs/roles.md` in every substantial completion report, even when the default is terse.
+- Include the three-part self-review structure (Verified / Red-teamed / Not checked) defined in `governa/roles.md` in every substantial completion report, even when the default is terse.
 
 ## Base Rules
 
 - Follow semver: PATCH for invisible changes (fixes, refactors, formatting), MINOR for user-visible changes (structure, navigation, schema); batch PATCH-level changes.
 - Complete the repo's canonical validation before preparing any commit handoff.
-- Label each acceptance test with source axis (`[Automated]` / `[Manual]`) and timing axis (`[Pre-release gate]` default; `[Post-release verification]` explicit). See `docs/ac-template.md`.
+- Label each acceptance test with source axis (`[Automated]` / `[Manual]`) and timing axis (`[Pre-release gate]` default; `[Post-release verification]` explicit). See `governa/ac-template.md`.
 - Follow existing repo patterns unless an approved improvement says otherwise.
 - Avoid product or vendor names in identifiers.
 - Use product or vendor names only when an identifier names a real product-specific artifact or compatibility surface.

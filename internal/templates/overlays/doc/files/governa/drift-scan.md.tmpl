@@ -1,23 +1,23 @@
 # Drift Scan
 
-`governa drift-scan` walks the canon overlay, classifies each governed file against the consumer-repo's content, and emits a partially-filled AC stub under the consumer repo's `docs/`. The consumer Operator iterates on the emitted stub under normal AC discipline (governed by the consumer's own `AGENTS.md` and `docs/ac-template.md`). Per-file diffs are not snapshotted; adopters use `governa render-canon` plus standard `diff -ru` to inspect changes (see `AGENTS.md` `### Drift-Scan Adoption`).
+`governa drift-scan` walks the canon overlay, classifies each governed file against the consumer-repo's content, and emits a partially-filled AC stub under the consumer repo's `governa/`. The consumer Operator iterates on the emitted stub under normal AC discipline (governed by the consumer's own `AGENTS.md` and `governa/ac-template.md`). Per-file diffs are not snapshotted; adopters use `governa render-canon` plus standard `diff -ru` to inspect changes (see `AGENTS.md` `### Drift-Scan Adoption`).
 
 The tool is consumer-run. Install the binary (`go install github.com/queone/governa/cmd/governa@latest`), then run `governa drift-scan` from the consumer repo root — no positional arguments, no governa source checkout needed.
 
 ## Protocol
 
 - Invocation accepts no positional arguments. The tool runs against the current working directory only.
-- The cwd must be a governa-adopted repo: `AGENTS.md` must be present, plus at least one of `docs/ac-template.md`, `docs/release.md`, `docs/build-release.md`, or a `CHANGELOG.md` row referencing `governa apply`. The tool hard-errors with recovery guidance if the check fails.
+- The cwd must be a governa-adopted repo: `AGENTS.md` must be present, plus at least one of `governa/ac-template.md`, `governa/release.md`, `governa/build-release.md`, or a `CHANGELOG.md` row referencing `governa apply`. The tool hard-errors with recovery guidance if the check fails.
 - The tool refuses to run against the governa source itself.
-- The tool walks canon, byte-compares each governed file against the cwd (canon-zone-only for paths registered in mixed-content; see `## Mixed-content classification`), classifies divergences, collects evidence (preserve markers, recent commits), and emits one file under `docs/`: the AC stub with slug stem `drift-scan-v<X.Y.Z>`.
+- The tool walks canon, byte-compares each governed file against the cwd (canon-zone-only for paths registered in mixed-content; see `## Mixed-content classification`), classifies divergences, collects evidence (preserve markers, recent commits), and emits one file under `governa/`: the AC stub with slug stem `drift-scan-v<X.Y.Z>`.
 - Before any canon→cwd walk, the tool runs the `## Canon-coherence precondition` check. If canon is internally incoherent on a registered cross-file rule, the tool refuses to emit and reports the incoherence on stdout. No file writes occur.
-- One repo per invocation. The tool makes no commits in the cwd and does not modify `plan.md`. Writes under `<cwd>/docs/` are limited to the AC stub.
+- One repo per invocation. The tool makes no commits in the cwd and does not modify `plan.md`. Writes under `<cwd>/governa/` are limited to the AC stub.
 
 ## What the tool emits
 
-One file under the consumer repo's `docs/`, plus a single-line stdout summary.
+One file under the consumer repo's `governa/`, plus a single-line stdout summary.
 
-**`docs/ac<N>-drift-scan-v<X.Y.Z>.md`** — the emitted AC stub. Conforms to `docs/ac-template.md` shape minus the copy-instruction preamble:
+**`governa/ac<N>-drift-scan-v<X.Y.Z>.md`** — the emitted AC stub. Conforms to `governa/ac-template.md` shape minus the copy-instruction preamble:
 
 - H1 title: `# AC<N> Drift-Scan Adoption from governa v<X.Y.Z>`.
 - Opening one-sentence summary of the canon delta.
@@ -35,14 +35,14 @@ One file under the consumer repo's `docs/`, plus a single-line stdout summary.
 
 `emission-sha` is the SHA-256 of the file body (everything after the marker line). The marker is the tool's edit-detection signal on re-runs.
 
-**Stdout summary** — single line: `wrote docs/ac<N>-drift-scan-v<X.Y.Z>.md (<counts>)`. The path is repo-root-relative. Suppressed when `--json` is set; in JSON mode the structured `Report` struct goes to stdout alongside the markdown emission.
+**Stdout summary** — single line: `wrote governa/ac<N>-drift-scan-v<X.Y.Z>.md (<counts>)`. The path is repo-root-relative. Suppressed when `--json` is set; in JSON mode the structured `Report` struct goes to stdout alongside the markdown emission.
 
 ## AC number allocation
 
-The tool determines `N` per `docs/ac-template.md` line 3:
+The tool determines `N` per `governa/ac-template.md` line 3:
 
-- If a same-canon-version stub already exists at `docs/ac<M>-drift-scan-v<X.Y.Z>.md`, the tool reuses `M` (subject to the edit-detection guard, below). No bump on re-run against the same canon version.
-- Otherwise, `N = max((a) AC numbers in docs/ac*.md filenames, (b) AC references anywhere in 'git log --all --pretty=%B' output covering subject and body, counting composites like "AC53+AC54") + 1`.
+- If a same-canon-version stub already exists at `governa/ac<M>-drift-scan-v<X.Y.Z>.md`, the tool reuses `M` (subject to the edit-detection guard, below). No bump on re-run against the same canon version.
+- Otherwise, `N = max((a) AC numbers in governa/ac*.md filenames, (b) AC references anywhere in 'git log --all --pretty=%B' output covering subject and body, counting composites like "AC53+AC54") + 1`.
 
 ## Re-run behavior and edit-detection guard
 
@@ -60,7 +60,7 @@ The tool emits one of the classifications below for every file. The Operator can
 
 - **`match`** — canon and target byte-equal (or canon-zone-equal for mixed-content paths; see `## Mixed-content classification`). Not listed in the AC stub by default.
 - **`expected-divergence`** — canon is a per-repo stub by design and the file's path is in the `ExpectedDivergencePaths` registry (see `## Expected-divergence registry`); the tool skips the byte-compare and lists the file under `## Out Of Scope`. Treated as no-action.
-- **`preserve`** — a verbatim preserve-marker phrase was found citing this file in `<cwd>/CHANGELOG.md` or `<cwd>/docs/ac*.md`. Routed to `## Out Of Scope` with the marker quoted verbatim.
+- **`preserve`** — a verbatim preserve-marker phrase was found citing this file in `<cwd>/CHANGELOG.md` or `<cwd>/governa/ac*.md`. Routed to `## Out Of Scope` with the marker quoted verbatim.
 - **`ambiguity`** — local commits exist for this file (`git log -n 5 --follow` returned ≥ 1 commit) but no preserve marker was found. Routed to `### Routing Decisions` under `## Summary` as a numbered routing question. Format-defining files (see `## Format-defining files`) are an exception: they are hard-routed to sync regardless of classification.
 - **`clear-sync`** — divergent with neither local commits nor preserve marker. Routed to `## In Scope` as `sync to canon`.
 - **`missing-in-target`** — canon ships the file; target does not. If canon is non-empty, routed to `## In Scope` as `create from canon`. If canon is empty, surfaced as an informational note only.
@@ -96,7 +96,7 @@ The `formatDefiningCanonPaths` registry lists canon files whose content defines 
 
 **Initial registry:**
 
-- `docs/ac-template.md` (defines every AC's section shape)
+- `governa/ac-template.md` (defines every AC's section shape)
 - `AGENTS.md` (AC-template section shape, AT-label convention)
 
 **Inclusion criterion:** a canon file belongs in this registry iff syncing it is the only way to keep the consumer Operator's AC consistent with canon's section shape. Importance, frequency-of-edit, or being-a-template are not sufficient on their own.
@@ -110,8 +110,8 @@ The `mixedContentBoundary` registry lists canon paths whose target files carry a
 | Path | Boundary heading |
 |---|---|
 | `AGENTS.md` | `## Project Rules` |
-| `docs/development-guidelines.md` | `## Project Practices` |
-| `docs/editing-guidelines.md` | `## Project Practices` |
+| `governa/development-guidelines.md` | `## Project Practices` |
+| `governa/editing-guidelines.md` | `## Project Practices` |
 
 **Comparison rule.** When both canon and target carry the boundary heading, drift-scan extracts the canon zone from each (everything strictly above the first line-start match) and byte-compares the zones. If equal, the file classifies as `match` and records `canon-zone byte-equal above <boundary>` evidence. If the zones differ, the file falls through to the divergent path (`preserve` / `ambiguity` / `clear-sync` per existing rules), but the `Boundary` field on the per-file result is populated so the emitted AC stub's AT for that file reads `canon zone of <path> (above <boundary>) matches canon byte-for-byte after sync` rather than the whole-file form. The hunk-merge procedure in `AGENTS.md` `### Drift-Scan Adoption` already replaces canon-zone content only and leaves the boundary heading and tail untouched, so the canon-zone AT is the accurate post-sync check.
 
@@ -142,22 +142,22 @@ Before any canon→cwd walk, the tool checks canon for internal coherence on a s
 - **Framing:** the report opens with one line stating this is a **governa-side** defect requiring canon reconciliation, not a consumer-side routing decision. Consumer Director's action is "ping governa maintainer," not "route a divergence."
 - **Enumerate, don't bail:** when multiple rules are simultaneously incoherent, the precondition surfaces all of them in one report. Failing at the first hit forces reconcile-rerun thrash.
 - **Fire early:** the precondition runs canon-only and does not need the cwd. It runs before the canon→cwd walk so canon-side defects surface in seconds, not after a full target enumeration.
-- **No cwd writes:** nothing under `<cwd>/docs/` is emitted, no IE inserted into `<cwd>/plan.md`. The precondition runs before any cwd write, so nothing to roll back.
+- **No cwd writes:** nothing under `<cwd>/governa/` is emitted, no IE inserted into `<cwd>/plan.md`. The precondition runs before any cwd write, so nothing to roll back.
 
 The check is registry-driven: cross-file rule definitions live next to `FormatDefiningCanonPaths` in the source, so adding future rules extends the check. The cross-file rules registry (`coherenceRules` in code) is currently empty; the precondition always passes until a new rule is registered. (This is distinct from `FormatDefiningCanonPaths`, which is non-empty.)
 
 ## Preserve-marker phrase set
 
-The tool recognizes exactly the four phrases below in `<cwd>/CHANGELOG.md` table rows or `<cwd>/docs/ac*.md` content. Implicit AC references locking the local form (e.g., `migrate <x> to <path>`, `<path> from governa overlay`) **do not** count — the tool will misclassify those files as `ambiguity` until the row is backfilled with an explicit marker.
+The tool recognizes exactly the four phrases below in `<cwd>/CHANGELOG.md` table rows or `<cwd>/governa/ac*.md` content. Implicit AC references locking the local form (e.g., `migrate <x> to <path>`, `<path> from governa overlay`) **do not** count — the tool will misclassify those files as `ambiguity` until the row is backfilled with an explicit marker.
 
 | Phrase | Example |
 |---|---|
-| `preserve <path> <qualifier>` | `preserve docs/release.md customization` |
-| `do not sync <path>` | `do not sync docs/local-overrides.md` |
+| `preserve <path> <qualifier>` | `preserve governa/release.md customization` |
+| `do not sync <path>` | `do not sync governa/local-overrides.md` |
 | `intentional divergence: <path>` | `intentional divergence: rel.sh` |
 | `<path>: keep local` | `docs/team-rituals.md: keep local` |
 
-When shipping an AC that locks a local form against canon, include one of these phrases in the CHANGELOG row alongside whatever else the row says. See `docs/build-release.md` for the release-flow rule (DOC consumers see `docs/release.md`).
+When shipping an AC that locks a local form against canon, include one of these phrases in the CHANGELOG row alongside whatever else the row says. See `governa/build-release.md` for the release-flow rule (DOC consumers see `governa/release.md`).
 
 ## Match evidence
 

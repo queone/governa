@@ -41,7 +41,14 @@ func RequireGovernaAdopted(target, tool string) error {
 	if !fileExists(filepath.Join(target, "AGENTS.md")) {
 		return fmt.Errorf("%s: %s is not a governa-adopted repo (AGENTS.md not found); run from the consumer repo root after `governa apply`", tool, target)
 	}
-	for _, sig := range []string{"docs/ac-template.md", "docs/release.md", "docs/build-release.md"} {
+	// Adoption signals: current (governa/) and legacy (docs/) paths. Legacy
+	// paths are accepted so a pre-rename consumer can run drift-scan against
+	// the renamed canon and pick up the one-time docs/ → governa/ cleanup
+	// routing (see governa/canon-cycle.md `## One-time path-rename cleanup`).
+	for _, sig := range []string{
+		"governa/ac-template.md", "governa/release.md", "governa/build-release.md",
+		"docs/ac-template.md", "docs/release.md", "docs/build-release.md",
+	} {
 		if fileExists(filepath.Join(target, sig)) {
 			return nil
 		}
@@ -51,13 +58,13 @@ func RequireGovernaAdopted(target, tool string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s: %s has AGENTS.md but no governa adoption signal (expected one of: docs/ac-template.md, docs/release.md, docs/build-release.md, or CHANGELOG row referencing 'governa apply'); ensure you are running from a governa-adopted repo root", tool, target)
+	return fmt.Errorf("%s: %s has AGENTS.md but no governa adoption signal (expected one of: governa/ac-template.md, governa/release.md, governa/build-release.md, the legacy docs/ counterparts, or CHANGELOG row referencing 'governa apply'); ensure you are running from a governa-adopted repo root", tool, target)
 }
 
 // EnsureDocsDir creates the artifact directory used by emitted AC files.
 func EnsureDocsDir(target, tool string) error {
-	if err := os.MkdirAll(filepath.Join(target, "docs"), 0o755); err != nil {
-		return fmt.Errorf("%s: ensure docs/ exists: %w", tool, err)
+	if err := os.MkdirAll(filepath.Join(target, "governa"), 0o755); err != nil {
+		return fmt.Errorf("%s: ensure governa/ exists: %w", tool, err)
 	}
 	return nil
 }
@@ -108,13 +115,13 @@ func PreserveMarkers(targetRoot, relpath string) []string {
 	if changelog, err := os.ReadFile(filepath.Join(targetRoot, "CHANGELOG.md")); err == nil {
 		scan(string(changelog))
 	}
-	if entries, err := os.ReadDir(filepath.Join(targetRoot, "docs")); err == nil {
+	if entries, err := os.ReadDir(filepath.Join(targetRoot, "governa")); err == nil {
 		for _, entry := range entries {
 			name := entry.Name()
 			if !strings.HasPrefix(name, "ac") || !strings.HasSuffix(name, ".md") {
 				continue
 			}
-			content, err := os.ReadFile(filepath.Join(targetRoot, "docs", name))
+			content, err := os.ReadFile(filepath.Join(targetRoot, "governa", name))
 			if err == nil {
 				scan(string(content))
 			}
@@ -125,7 +132,7 @@ func PreserveMarkers(targetRoot, relpath string) []string {
 
 // AllocateACNumber reuses a same-version stub number or allocates the next AC number.
 func AllocateACNumber(target, slugStem, canonVersion string) (int, bool, error) {
-	docsDir := filepath.Join(target, "docs")
+	docsDir := filepath.Join(target, "governa")
 	pattern := filepath.Join(docsDir, "ac*-"+slugStem+"-"+canonVersion+".md")
 	matches, _ := filepath.Glob(pattern)
 	var stubs []string

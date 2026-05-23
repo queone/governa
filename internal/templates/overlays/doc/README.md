@@ -9,12 +9,12 @@ Current contents:
 - `.gitignore`
 - `AGENTS.md`
 - `cmd/rel/main.go`
-- `docs/ac-template.md`
-- `docs/editing-cycle.md`
-- `docs/editing-guidelines.md`
-- `docs/README.md`
-- `docs/release.md`
-- `docs/roles.md`
+- `governa/ac-template.md`
+- `governa/editing-cycle.md`
+- `governa/editing-guidelines.md`
+- `governa/README.md`
+- `governa/release.md`
+- `governa/roles.md`
 - `plan.md`
 - `rel.sh`
 
