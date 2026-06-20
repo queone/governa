@@ -1,0 +1,4 @@
+Usage: rel vX.Y.Z "release message"
+  -h, -?, --help                      show this help
+
+Release message must be 80 characters or fewer.

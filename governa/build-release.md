@@ -6,12 +6,7 @@
 - run formatting, static checks, tests, and packaging through that command or documented sequence
 - do not trigger release work during routine implementation
 
-This repo is Go-based and keeps the real implementation in:
-
-- `cmd/build/main.go`
-- `cmd/rel/main.go`
-
-The root `build.sh` script is a convenience wrapper for Unix, Linux, and Git-Bash environments.
+This repo uses a self-contained `build.sh` for all build, release-prep, and release work. No external Go tools (`governa-buildtool`, `governa-reltool`) are required; everything runs directly from `build.sh`.
 
 ## Minimum Validation
 
@@ -23,28 +18,16 @@ The root `build.sh` script is a convenience wrapper for Unix, Linux, and Git-Bas
 ## Canonical Build Commands
 
 ```bash
-go run ./cmd/build
-```
-
-Convenience wrapper:
-
-```bash
 ./build.sh
 ```
 
 To scope the run to selected commands:
 
 ```bash
-go run ./cmd/build build rel
+./build.sh driftscan
 ```
 
-or:
-
-```bash
-./build.sh build rel
-```
-
-If you pass `build` or `rel` as targets, the command will validate those entrypoints but will not install binaries for them.
+`staticcheck` is pinned to `v0.7.0` and installed to `$(go env GOPATH)/bin/staticcheck` on first run. The installed path is used directly (not any `staticcheck` on `PATH`), so the version is deterministic across environments.
 
 ## Sandboxed Execution
 
@@ -56,23 +39,23 @@ Do not start this checklist unless the user explicitly asks to prep for release 
 
 The operator flow is two steps:
 
-1. **Run `go run ./cmd/prep/ vX.Y.Z "message"`.** Stages version bumps, inserts the CHANGELOG row, deletes completed AC files, sweeps matching AC-pointer IE lines from `plan.md`, runs validation builds before and after, and prints the canonical release command. The agent determines the version (semver classification from the AC's scope) and drafts the release message (≤ 80 characters) before invoking prep.
-2. **Run the printed release command (`./build.sh vX.Y.Z "message"`).** `cmd/rel` shows `git status --short`, lists every git step it will execute, and prompts for interactive confirmation. On approval it orchestrates `git add → commit → tag → push tag → push branch`. Optional: run `git diff` between the two steps if you want to inspect the CHANGELOG row wording and version-string values before committing — `cmd/rel`'s own status preview is sufficient to catch wrong-file inclusions or deletions.
+1. **Run `./build.sh prep vX.Y.Z "message"`.** Stages version bumps, inserts the CHANGELOG row, deletes completed AC files, sweeps matching AC-pointer IE lines from `plan.md`, runs validation builds before and after, and prints the canonical release command. The agent determines the version (semver classification from the AC's scope) and drafts the release message (≤ 80 characters) before invoking prep. Flags: `--dry-run`/`-n` prints intended writes without touching the working tree; `--no-build`/`-B` skips the pre- and post-check builds.
+2. **Run the printed release command (`./build.sh vX.Y.Z "message"`).** Shows `git status --short`, lists every git step it will execute, and prompts for interactive confirmation. On approval it orchestrates `git add → commit → tag → push tag → push branch`.
 
 Present only the release command after prep; do not add trailing commentary about wrapper routing or prompts. The director already knows.
 
 ### Appendix: what prep does
 
-`go run ./cmd/prep/` runs nine phases internally so the operator flow above stays short. Each phase has a clear failure mode:
+`./build.sh prep` runs nine phases internally so the operator flow above stays short. Each phase has a clear failure mode:
 
 1. **Validate inputs.** Semver pattern (`vX.Y.Z`), message non-empty and ≤ 80 characters.
 2. **Validate git state.** Inside a git work tree, target tag does not exist yet, HEAD is not at the latest tag with a clean working tree.
-3. **Pre-check build.** `./build.sh` run before any writes; skipped with `--no-build` or `--dry-run`.
+3. **Pre-check build.** `./build.sh` run before any writes; skipped with `--no-build`/`-B` or `--dry-run`/`-n`.
 4. **Detect version targets.** Scans `cmd/*/main.go` for `programVersion` and `internal/templates/version.go` (each presence-gated). The `programVersion` regex matches both inline (`const programVersion = "..."`) and grouped (`const ( ... programVersion = "..." ... )`) forms. Safe auto-detect filter: 1 `programVersion` target → bump (single-utility repo, repo-tracked). >1 targets → drop all and log a multi-utility warning (per-utility-independent default; each utility owns its own version per its own AC). The skip prevents clobbering independent per-utility SemVers in multi-utility repos.
 5. **Detect CHANGELOG targets + fail-fast idempotency guard.** Root `CHANGELOG.md` and `internal/templates/CHANGELOG.md` (template-repo case). If any target already contains a row for the target version, prep exits with a fatal error before any writes.
 6. **Parse AC refs.** `AC[0-9]+` scan on the release message; composites like `AC60+AC61` yield multiple refs.
-7. **Apply writes.** Version bumps (per-file idempotent no-op when the file already has the target value); CHANGELOG row insertion under `| Unreleased | |`; AC file deletions (AC files are deleted whole; there are no separate companion files); AC-pointer IE-line sweep from `plan.md` (lines matching `→ governa/ac<N>-` for each released AC). Skipped when `--dry-run`. Idempotent re-runs leave already-swept lines alone.
-8. **Post-check build.** `./build.sh` run after writes; skipped with `--no-build` or `--dry-run`.
+7. **Apply writes.** Version bumps (per-file idempotent no-op when the file already has the target value); CHANGELOG row insertion under `| Unreleased | |`; AC file deletions (AC files are deleted whole; there are no separate companion files); AC-pointer IE-line sweep from `plan.md` (lines matching `→ governa/ac<N>-` for each released AC). Skipped when `--dry-run`/`-n`. Idempotent re-runs leave already-swept lines alone.
+8. **Post-check build.** `./build.sh` run after writes; skipped with `--no-build`/`-B` or `--dry-run`/`-n`.
 9. **Print release command.** Labeled block: `release command:` followed by the indented command `./build.sh vX.Y.Z "message"`.
 
 CHANGELOG row shape (enforced by prep's insertion code and by convention):
@@ -82,5 +65,3 @@ CHANGELOG row shape (enforced by prep's insertion code and by convention):
 - Summaries are single-line, ≤ 500 characters; lead with the AC reference if any.
 - Versions are unprefixed (`0.29.0`, not `v0.29.0`).
 - Do not backfill historical tags or invent alternative shapes (Keep-a-Changelog, sectioned `## vX.Y.Z`, etc.).
-
-Flags: `--dry-run` (or `-n`) prints intended writes without touching the working tree; `--no-build` skips phases 3 and 8. Both are for power users or tests — the common path is plain `go run ./cmd/prep/ vX.Y.Z "message"`.

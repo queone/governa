@@ -1,0 +1,7 @@
+fatal: push rejected
+git push branch failed: git push branch failed: exit status 1
+
+completed before failure: git add, git commit, git tag, git push tag
+
+recovery: tag v0.2.0 was pushed but the branch push failed
+  to retry: git push origin

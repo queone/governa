@@ -86,7 +86,7 @@ Reachability check: verify divergent canon-code branches reach this consumer's s
 
 **Known limit.** This rule assumes canon-shaped branches; sync-omitted branches that look dormant are real drift. Consumer agents distinguish case-by-case based on the gate condition.
 
-`internal/preptool/preptool.go` is the canonical example: `detectChangelogTargets` carries a second candidate (`internal/templates/CHANGELOG.md`) gated on the host's templates tree, and `detectVersionTargets` has a template-tree block gated on `internal/templates/base/` presence. Both branches are dormant on consumers.
+`build.sh`'s prep path is the canonical example: `_prep_detect_changelog_targets` carries a second candidate (`internal/templates/CHANGELOG.md`) gated on the host's templates tree, and `_prep_detect_version_targets` has a template-tree block gated on `internal/templates/base/` presence. Both branches are dormant on consumers.
 
 Structurally unreachable branches are not drift.
 

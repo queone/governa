@@ -1,0 +1,8 @@
+fatal: push rejected
+git push tag failed: git push tag failed: exit status 1
+
+completed before failure: git add, git commit, git tag
+
+recovery: tag v0.2.0 exists locally but was not pushed
+  to retry push: git push origin v0.2.0 && git push origin
+  to remove tag: git tag -d v0.2.0

@@ -1,0 +1,12 @@
+prep vX.Y.Z "release message" [--dry-run|-n] [--no-build|-B]
+
+Stages a release by bumping version constants, inserting a CHANGELOG row,
+deleting completed AC files, and running validation builds before and after.
+
+Flags:
+  -h, -?, --help   show this help
+  --dry-run, -n    print intended writes without modifying the working tree
+  --no-build, -B   skip the pre-check and post-check build invocations
+
+Prints the canonical release command on success. Does not run the release
+itself — present the printed command for the director to run.

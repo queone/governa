@@ -10,7 +10,7 @@ This repo has three main responsibilities:
 
 - define the base governance contract in `internal/templates/base/`
 - define repo-type overlays in `internal/templates/overlays/code/` and `internal/templates/overlays/doc/`
-- provide Go-based maintenance tools in `cmd/` and `internal/`
+- provide the Go CLI and shared logic in `cmd/` and `internal/`, plus shell-based build and release tooling
 
 The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.md`, `plan.md`, `arch.md`, `build.sh`, and supporting docs at the root.
 
@@ -24,8 +24,8 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 - `internal/templates/base/`: cross-repo governance artifacts such as `AGENTS.md`
 - `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`
 - `cmd/governa`: installable CLI binary. One command: `apply`.
-- `cmd/build`, `cmd/prep`, and `cmd/rel`: Go entrypoints for local validation, release staging, and release orchestration
-- `internal/`: shared logic for governance, build, release, colorized CLI output, and template access
+- `build.sh`: self-contained Bash script for local validation (`./build.sh`), release staging (`./build.sh prep …`), and release orchestration (`./build.sh vX.Y.Z "…"`)
+- `internal/`: shared logic for governance, colorized CLI output, and template access
 - `governa render-canon`: on-demand command that renders flavor-specific canon files into a target directory; canon-only (no adoption record). Drives drift-scan adoption and CODE/DOC build-validation harnesses.
 
 ## Data And Control Flow
@@ -38,10 +38,10 @@ Template improvements flow in the opposite direction through an out-of-band work
 
 - generated repos must remain self-contained and must not depend on this repo at runtime
 - this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `apply`
-- shell wrappers are conveniences only; the canonical implementation lives in Go
+- `build.sh` is the canonical build/release tool; implementation lives in shell, not Go
 - `governa/roles.md` defines the two-role model (Operator, Director) that supplements the shared governance contract
 - apply is stateless: no `.governa/` directory and no manifest in consumer repos. Provenance is recorded in `governa/ac1-governa-apply.md`.
-- pure stdlib; no external Go dependencies (verified via `go.mod`)
+- retain only `governa-color` as an external Go dependency (verified via `go.mod`)
 - templates use `{{PLACEHOLDER}}` substitution, not a templating engine (text/template intentionally not used)
 - overlays are additive; they must not conflict with the base governance contract
 

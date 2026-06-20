@@ -1,0 +1,15 @@
+
+--- dry run (no writes) ---
+version bumps:
+  cmd/widget/main.go → 0.2.0 (programVersion)
+CHANGELOG inserts:
+  CHANGELOG.md: | 0.2.0 | AC42: sample improvement |
+  internal/templates/CHANGELOG.md: | 0.2.0 | AC42: sample improvement |
+AC deletions:
+  delete governa/ac42-sample.md
+plan.md AC-pointer IE removals:
+  remove: - IE1: sample improvement → governa/ac42-sample.md
+--- end dry run ---
+
+release command:
+  ./build.sh v0.2.0 "AC42: sample improvement"

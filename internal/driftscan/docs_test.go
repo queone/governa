@@ -55,9 +55,9 @@ func TestReachabilitySectionInDriftScanDocs(t *testing.T) {
 		t.Error("missing known-limit caveat phrase `sync-omitted branches that look dormant are real drift`")
 	}
 
-	// (d) preptool example named.
-	if !strings.Contains(s, "internal/preptool/preptool.go") {
-		t.Error("missing canonical example `internal/preptool/preptool.go`")
+	// (d) Shell prep-path example named.
+	if !strings.Contains(s, "`build.sh`'s prep path") {
+		t.Error("missing canonical example `build.sh` prep path")
 	}
 
 	// (e) Closing line.
@@ -183,7 +183,7 @@ func TestCanonCycleConsumerSideRuleAndCarveOutPresent(t *testing.T) {
 }
 
 // Section must name at least one typical pure-canon example and at
-// least one typical mixed-content example. cmd/rel/main.go and
+// least one typical mixed-content example. governa/roles.md and
 // AGENTS.md are universal-subset paths (shipped in both code- and
 // doc-flavor overlays).
 func TestCanonCycleTypicalExamplesPresent(t *testing.T) {
@@ -193,7 +193,7 @@ func TestCanonCycleTypicalExamplesPresent(t *testing.T) {
 		t.Fatalf("read %s: %v", root, err)
 	}
 	s := string(content)
-	for _, sub := range []string{"cmd/rel/main.go", "AGENTS.md"} {
+	for _, sub := range []string{"governa/roles.md", "AGENTS.md"} {
 		if !strings.Contains(s, sub) {
 			t.Errorf("missing typical example: %q", sub)
 		}

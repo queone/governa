@@ -1,0 +1,6 @@
+Usage: build [target ...] [-v|--verbose]
+  -v, --verbose                       run go test in verbose mode
+  -h, -?, --help                      show this help
+
+When targets are specified, validation (vet, fmt, test, staticcheck) runs
+only against those cmd packages. To validate the full repo, run with no targets.

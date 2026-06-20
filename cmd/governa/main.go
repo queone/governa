@@ -17,7 +17,7 @@ import (
 	"github.com/queone/governa/internal/updatecheck"
 )
 
-const programVersion = "0.136.0"
+const programVersion = "0.137.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -131,7 +131,7 @@ func printUsage() {
 // runRenderCanon renders flavor-specific canon files into <target>/, with
 // flat repo-relative layout (e.g. <target>/AGENTS.md, <target>/governa/ac-template.md).
 // Canon files only — no adoption record, no go.mod seed, no symlinks. Smoke
-// harnesses (cmd/build) seed go.mod and create symlinks separately as needed.
+// harnesses (build.sh) seed go.mod and create symlinks separately as needed.
 // Flavor defaults to driftscan.DetectFlavor on cwd; --flavor flag overrides.
 // For CODE flavor, {{MODULE_PATH}} substitution reads the module path from
 // the cwd's go.mod (the consumer's actual repo), or from the --module-path

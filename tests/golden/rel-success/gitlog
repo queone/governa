@@ -1,0 +1,8 @@
+git rev-parse --is-inside-work-tree
+git status --short
+git add .
+git commit -m sample release
+git tag v0.2.0
+git push origin v0.2.0
+git push origin
+git rev-parse HEAD

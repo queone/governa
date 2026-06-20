@@ -6,7 +6,7 @@ This policy is intentionally minimum-viable. It refines via amendment as each ex
 
 ## Naming Convention
 
-Library repos are named `governa-<x>` (e.g. `governa-color`, `governa-reltool`). Module paths are `github.com/queone/governa-<x>`. Lineage is visible in the repo and module name; future readers and consumers see "this came from the governa family" without grepping commit history. The naming is consistent with governa's role as the convention archive for the family.
+Library repos are named `governa-<x>`; `governa-color` is the current example. Module paths are `github.com/queone/governa-<x>`. Lineage is visible in the repo and module name; future readers and consumers see "this came from the governa family" without grepping commit history. The naming is consistent with governa's role as the convention archive for the family.
 
 ## Repo Skeleton
 
@@ -112,7 +112,7 @@ This test is applied as a checklist during each extraction AC's drafting, not as
 
 ### Convention-coupled boilerplate stays in-tree
 
-The convention-coupling test identifies code that extracts cleanly. Its corollary: code that doesn't pass the test stays where it is. This includes thin Go cmd wrappers around extracted libraries when the wrapper is invoked via `go run ./cmd/<x>` from a project-local script (`build.sh`). Extracting such wrappers to the library's own `cmd/` works mechanically but trades inert ~20-line boilerplate for live version-pin propagation in non-Go scripts (`build.sh`, `build.sh.tmpl`), lacking compiler verification. When you find boilerplate that looks extractable, ask: is this a generic CLI anyone outside the family would invoke? If no, it stays in-tree; encode the reasoning at the call site (load-bearing comment) so the next pass doesn't re-litigate. The `cmd/rel` and `cmd/build` wrappers in this repo are the precedent.
+The convention-coupling test identifies code that extracts cleanly. Its corollary is that code that does not pass stays in-tree. Keep convention-specific adapters local when extracting them would move repo paths, governance names, or release behavior into a shared API. Ask whether anyone outside the governa family would invoke the proposed surface directly. If not, keep it local and record the load-bearing reason at the call site so a later pass does not re-litigate the split.
 
 ## First-Consumer Self-Test
 

@@ -23,31 +23,27 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 
 Overlay templates are shipped snapshots: the propagation discipline below ensures governa ships correct templates at adoption time. After `governa apply`, the consumer repo owns all files and evolves them independently — there is no ongoing sync.
 
-- Source-of-truth code lives in `internal/`; overlay templates under `internal/templates/overlays/` carry standalone copies of the same logic
-- Fixes to `internal/preptool` or `build.sh` must propagate to the overlay template copies. The other former template-owned packages (`buildtool`, `reltool`, `color`) now ship as separate-repo libraries (`governa-buildtool`, `governa-reltool`, `governa-color`) and are versioned independently per `governa/library-policy.md`; source-overlay propagation does not apply to them.
+- Keep source-of-truth code in `internal/`; keep standalone copies of duplicated logic under `internal/templates/overlays/`.
+- Propagate every `build.sh` fix to `internal/templates/overlays/code/files/build.sh.tmpl`.
+- Omit governa's example-render stage and source-only self-test from the consumer template.
+- Version `governa-color` independently per `governa/library-policy.md`; do not propagate its source through overlays.
 - Overlay copies of `roles.md` are consumer-facing. When root governance docs evolve, propagate to overlay copies with targeted edits that filter governa-specific content. The DOC overlay `roles.md` references `governa/release.md` where the CODE overlay references `governa/build-release.md`.
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
-- Exported functions in `internal/preptool` carry godoc single-line comments to keep the public surface self-documenting. Library packages (`governa-buildtool`, `governa-reltool`, `governa-color`) follow the same convention in their own repos.
-- When propagating an `internal/preptool` source change, the only edit between source and template copy is the import-path rewrite `github.com/queone/governa/internal/preptool` → `{{MODULE_PATH}}/internal/preptool`
+- Add single-line godoc comments to exported functions in shared Go packages.
 
 ### Common Propagation Paths
 
 | Source | Template Copy |
 |--------|--------------|
-| `internal/preptool/preptool.go`, `*_test.go` | `internal/templates/overlays/code/files/internal/preptool/preptool.go.tmpl`, `*_test.go.tmpl` |
-| `cmd/build/main.go` | `internal/templates/overlays/code/files/cmd/build/main.go.tmpl` |
-| `cmd/prep/main.go` | `internal/templates/overlays/code/files/cmd/prep/main.go.tmpl` |
-| `cmd/rel/main.go` | `internal/templates/overlays/code/files/cmd/rel/main.go.tmpl`; same under `overlays/doc/` |
 | `build.sh` | `internal/templates/overlays/code/files/build.sh.tmpl` |
 
-`cmd/build/main.go` carries governa-specific behavior (rendering and validating overlay examples via `buildtool.Config.PostInstallHook`) that the consumer-facing overlay does not need; the overlay template is a thin caller of `governa-buildtool` only.
+The source `build.sh` renders and validates overlay examples and runs `tests/run.sh`. The consumer template omits both governa-source-only paths while retaining the same build, prep, and release functions.
 
 ## Program Version Declaration
 
 - Every installable `cmd/<name>/main.go` must declare a non-empty `const programVersion` string literal
-- Script-only helper entrypoints (`build`, `rel`) are exempt
-- The build tool validates this before compiling installable binaries; missing or empty declarations fail the build
+- Let `build.sh` validate declarations before compiling installable binaries; fail on missing or empty declarations.
 
 ## Error Handling And Validation
 
@@ -64,9 +60,9 @@ Overlay templates are shipped snapshots: the propagation discipline below ensure
 
 ## Dependency And Import Hygiene
 
-- Pure stdlib only — no external Go dependencies
+- Prefer the standard library; retain `governa-color` only for the internal CLI color surface.
 - After any module rename, grep all `.go` files and `.go.tmpl` files for stale import paths
-- Shell wrappers (`build.sh`) are convenience only; canonical implementation lives in Go under `cmd/`
+- Treat `build.sh` as the canonical build, release-prep, and release implementation.
 
 ## CLI Usage Formatting
 

@@ -1,0 +1,39 @@
+==> Check markdown for nested fence issues
+    No nested-fence issues found.
+
+==> Update go.mod to reflect actual dependencies
+    go mod tidy
+
+==> Format Go code according to standard rules
+    No formatting changes needed.
+
+==> Automatically fix code for API/language changes
+    No fixes applied.
+
+==> Check code for potential issues
+    No issues found by go vet.
+
+==> Run tests for all packages in the repository
+    go test -coverprofile=COVERFILE ./cmd/driftscan
+ok  	example.com/widget	(cached)
+    domain coverage: 83.3%  (total: 83.3%)
+
+==> Ensure staticcheck is available
+    installing: honnef.co/go/tools/cmd/staticcheck@v0.7.0
+    go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+
+==> Analyze Go code for potential issues
+    No issues found by staticcheck.
+
+==> Building specific utilities: driftscan
+
+==> Validate programVersion declarations
+    cmd/driftscan: programVersion = "0.5.0"
+
+==> Building and installing driftscan
+    go build -o GOPATH/bin/driftscan -ldflags -s -w ./cmd/driftscan
+    installed: GOPATH/bin/driftscan
+
+==> To release, run:
+
+    ./build.sh v0.1.1 "<release message>"

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# tests/shims/git — deterministic git shim for golden-output tests.
+#
+# Records every invocation to $GOVERNA_GIT_LOG (one "git ARGS" line per call).
+# Fails a chosen step when GOVERNA_GIT_SHIM_FAIL matches the step key:
+#   add | commit | tag | push-tag | push-branch | rev-parse-head | rev-parse-tag | status-porcelain
+# Canned output is embedded here; no external fixture files are needed.
+
+_log() { [ -n "${GOVERNA_GIT_LOG:-}" ] && printf 'git %s\n' "$*" >>"$GOVERNA_GIT_LOG"; }
+_fail_step() {
+  [ -z "${GOVERNA_GIT_SHIM_FAIL:-}" ] && return 1
+  [ "${GOVERNA_GIT_SHIM_FAIL}" = "$1" ] && return 0
+  return 1
+}
+
+_log "$@"
+
+case "$1" in
+
+rev-parse)
+  case "$*" in
+  "rev-parse --is-inside-work-tree")
+    printf 'true\n'; exit 0 ;;
+  "rev-parse HEAD")
+    _fail_step rev-parse-head && { printf 'fatal: not a git repository\n' >&2; exit 128; }
+    printf 'aabbccdd1122334455667788990011223344556677\n'; exit 0 ;;
+  "rev-parse -q --verify refs/tags/v0.2.0")
+    exit 1 ;;  # tag does not exist — good to proceed
+  "rev-parse v0.1.0"|"rev-parse refs/tags/v0.1.0")
+    _fail_step rev-parse-tag && { printf 'fatal: not a valid object\n' >&2; exit 128; }
+    printf 'aabbccdd1122334455667788990011223344556677\n'  # HEAD == tag (for clean-tree tests)
+    exit 0 ;;
+  *)
+    printf 'true\n'; exit 0 ;;
+  esac ;;
+
+describe)
+  # describe --tags --abbrev=0 → latest tag
+  printf 'v0.1.0\n'; exit 0 ;;
+
+status)
+  case "$*" in
+  "status --short"|"status --short "*)
+    printf 'M  cmd/widget/main.go\n'; exit 0 ;;
+  "status --porcelain")
+    _fail_step status-porcelain && { printf 'fatal: not a git repository\n' >&2; exit 128; }
+    printf 'M  cmd/widget/main.go\n'; exit 0 ;;
+  *) exit 0 ;;
+  esac ;;
+
+tag)
+  case "$*" in
+  "tag --list")
+    printf 'v0.1.0\n'; exit 0 ;;
+  "tag v"*)
+    _fail_step tag && { printf 'fatal: tag already exists\n' >&2; exit 1; }
+    exit 0 ;;
+  *) exit 0 ;;
+  esac ;;
+
+"ls-files")
+  # ls-files *.md — return a minimal fixed list for mdcheck
+  printf 'AGENTS.md\nCHANGELOG.md\nREADME.md\n'; exit 0 ;;
+
+add)
+  _fail_step add && { printf 'fatal: unable to index\n' >&2; exit 1; }
+  exit 0 ;;
+
+commit)
+  _fail_step commit && { printf 'fatal: commit failed\n' >&2; exit 1; }
+  exit 0 ;;
+
+push)
+  case "$*" in
+  "push origin v"*)
+    _fail_step push-tag && { printf 'fatal: push rejected\n' >&2; exit 1; }
+    exit 0 ;;
+  "push origin")
+    _fail_step push-branch && { printf 'fatal: push rejected\n' >&2; exit 1; }
+    exit 0 ;;
+  *) exit 0 ;;
+  esac ;;
+
+*) exit 0 ;;
+esac

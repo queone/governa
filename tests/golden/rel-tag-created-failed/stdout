@@ -1,0 +1,18 @@
+release tag: v0.2.0
+release message: "sample release"
+remote: origin
+
+Files that will be staged (git status):
+running: git status --short
+M  cmd/widget/main.go
+
+plan:
+- git add .
+- git commit -m "sample release"
+- git tag v0.2.0
+- git push origin v0.2.0
+- git push origin
+Review the file list above. Proceed with release? (y/N): running: git add .
+running: git commit -m sample release
+running: git tag v0.2.0
+running: git push origin v0.2.0

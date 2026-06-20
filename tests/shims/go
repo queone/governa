@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# tests/shims/go — deterministic go shim for golden-output tests.
+#
+# Canned responses per subcommand. tests/run.sh sets GOVERNA_SHIM_ROOT so
+# GOPATH-derived paths resolve to the shim tree. Tests that need the real Go
+# toolchain (none, by design) must not put this shim on PATH.
+#
+# GOPATH is always "$GOVERNA_SHIM_ROOT/gopath" so _staticcheck_path resolves
+# to "$GOVERNA_SHIM_ROOT/gopath/bin/staticcheck" (the staticcheck shim).
+#
+# The git HEAD SHA used by the vcs.revision response matches the git shim's
+# canned HEAD value: aabbccdd1122334455667788990011223344556677.
+#
+# Note: `local` is not used here — this is a top-level script, not a function.
+
+_gopath() { printf '%s\n' "${GOVERNA_SHIM_ROOT:-/tmp/governa-shim}/gopath"; }
+
+case "$1" in
+
+env)
+  case "$2" in
+  GOPATH) _gopath ;;
+  GOEXE)  printf '' ;;        # macOS: no .exe suffix
+  *)      printf '' ;;
+  esac ;;
+
+list)
+  # go list -m -f '{{.Path}}' → fixed module path
+  printf 'example.com/widget\n' ;;
+
+mod)
+  # go mod tidy → no-op
+  exit 0 ;;
+
+fmt)
+  # go fmt → already formatted; no output
+  exit 0 ;;
+
+fix)
+  # go fix → no fixes
+  exit 0 ;;
+
+vet)
+  # go vet → no issues
+  exit 0 ;;
+
+test)
+  # go test [-v] [-coverprofile=PATH] ./...
+  _verbose=0 _coverfile=''
+  for _a in "$@"; do
+    case "$_a" in
+    -v)              _verbose=1 ;;
+    -coverprofile=*) _coverfile="${_a#-coverprofile=}" ;;
+    esac
+  done
+  if [ -n "$_coverfile" ] && [ -n "${GOVERNA_SHIM_ROOT:-}" ]; then
+    cp "$GOVERNA_SHIM_ROOT/../fixtures/coverage/profile.out" "$_coverfile" 2>/dev/null || true
+  fi
+  if [ "$_verbose" = 1 ]; then
+    printf '=== RUN   TestExample\n'
+    printf '%s\n' '--- PASS: TestExample (0.00s)'
+    printf 'PASS\n'
+    printf 'ok  \texample.com/widget\t0.000s\n'
+  else
+    printf 'ok  \texample.com/widget\t(cached)\n'
+  fi ;;
+
+tool)
+  # go tool cover -func=PATH → fixed coverage summary
+  printf 'example.com/widget/internal/foo/foo.go:10:\tFoo\t100.0%%\n'
+  printf 'example.com/widget/internal/bar/bar.go:10:\tBar\t62.5%%\n'
+  printf 'total:\t\t\t\t\t\t\t(statements)\t83.3%%\n' ;;
+
+install)
+  case "$*" in
+  *staticcheck*)
+    # Ensure the staticcheck shim binary exists at the expected path.
+    _gp=$(_gopath)
+    mkdir -p "$_gp/bin"
+    _sc="$_gp/bin/staticcheck"
+    if [ ! -x "$_sc" ] && [ -n "${GOVERNA_SHIM_ROOT:-}" ]; then
+      cp "$GOVERNA_SHIM_ROOT/bin/staticcheck" "$_sc" 2>/dev/null || true
+      chmod +x "$_sc" 2>/dev/null || true
+    fi
+    exit 0 ;;
+  "./cmd/governa"|*"./cmd/governa")
+    # governa-source-only post-release install: succeed silently.
+    exit 0 ;;
+  *) exit 0 ;;
+  esac ;;
+
+version)
+  # go version -m PATH → return a fixed module version with matching vcs.revision
+  # The git shim's HEAD value: aabbccdd1122334455667788990011223344556677
+  printf '%s: go1.23\n' "${3:-binary}"
+  printf '\tpath\texample.com/widget\n'
+  printf '\tmod\texample.com/widget\tv0.2.0\t\n'
+  printf '\tbuild\tvcs.revision=aabbccdd1122334455667788990011223344556677\n' ;;
+
+build)
+  # go build -o PATH -ldflags ... ./cmd/NAME → succeed silently
+  exit 0 ;;
+
+run)
+  # go run ./cmd/governa render-canon ... → create a minimal output dir
+  # Args: run ./cmd/governa render-canon --flavor FLAVOR [--module-path MOD] DIR
+  _dir='' _flavor='' _skip_next=0
+  for _a in "$@"; do
+    [ "$_skip_next" = 1 ] && { _skip_next=0; continue; }
+    case "$_a" in
+    --flavor)       _skip_next=1 ;;
+    --flavor=*)     _flavor="${_a#--flavor=}" ;;
+    --module-path)  _skip_next=1 ;;
+    --module-path=*) ;;
+    render-canon|run|./cmd/governa) ;;
+    -*)             ;;
+    *)              _dir="$_a" ;;
+    esac
+  done
+  if [ -n "$_dir" ]; then
+    mkdir -p "$_dir"
+    printf '# AGENTS.md (shim)\n' >"$_dir/AGENTS.md"
+    [ "$_flavor" = doc ] && printf '#!/usr/bin/env bash\nexit 0\n' >"$_dir/rel.sh" && chmod +x "$_dir/rel.sh"
+  fi
+  exit 0 ;;
+
+*) exit 0 ;;
+esac
