@@ -1049,3 +1049,41 @@ func TestBuildACStubOutOfScopeRenderingMultiMarker(t *testing.T) {
 		t.Errorf("README.md line leaks CHANGELOG.md marker: %q", readmeLine)
 	}
 }
+
+// Part C: preserve marker on an absent target file suppresses the entry.
+// classifyFile must return ClassMatch (suppressed) when the target does not
+// exist but a preserve marker covers the path.
+func TestPreserveMarkerSuppressesAbsentTarget(t *testing.T) {
+	dir := codeFixture(t)
+	// Write a preserve marker for a canon file that is absent from the target.
+	changelog := mustRead(t, filepath.Join(dir, "CHANGELOG.md"))
+	changelog += "\n| Unreleased | preserve arch.md |\n"
+	mustWrite(t, filepath.Join(dir, "CHANGELOG.md"), changelog)
+	gitAddCommit(t, dir, "add preserve marker")
+
+	cfg := Config{Target: dir, Flavor: "code", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
+	// arch.md is absent from the fixture and has a preserve marker; it must
+	// not appear as missing-in-target in the emitted stub.
+	if strings.Contains(stub, "arch.md` — missing-in-target") {
+		t.Errorf("arch.md with preserve marker must not appear as missing-in-target; got:\n%s", stub)
+	}
+}
+
+// Part C: absent target with no preserve marker still emits missing-in-target.
+func TestAbsentTargetWithoutMarkerEmitsMissingInTarget(t *testing.T) {
+	dir := codeFixture(t)
+	cfg := Config{Target: dir, Flavor: "code", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
+	captureOut(t, func(f *os.File) {
+		Run(cfg, EmbeddedFS, f)
+	})
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
+	// arch.md is absent from the fixture and has no preserve marker; it must
+	// appear as missing-in-target.
+	if !strings.Contains(stub, "arch.md` — missing-in-target") {
+		t.Errorf("arch.md without preserve marker must appear as missing-in-target; got:\n%s", stub)
+	}
+}

@@ -139,6 +139,113 @@ func TestInferStackFromGoMod(t *testing.T) {
 	}
 }
 
+func TestInferStackFromTerraformLockFile(t *testing.T) {
+	t.Parallel()
+	dir := newFixtureTarget(t, map[string]string{
+		".terraform.lock.hcl": "# This file is maintained automatically\n",
+	})
+	if got := inferStack(dir); got != "Terraform" {
+		t.Errorf("inferStack = %q; want Terraform", got)
+	}
+}
+
+func TestInferStackFromDotTfGlob(t *testing.T) {
+	t.Parallel()
+	dir := newFixtureTarget(t, map[string]string{
+		"main.tf": "terraform {}\n",
+	})
+	if got := inferStack(dir); got != "Terraform" {
+		t.Errorf("inferStack = %q; want Terraform", got)
+	}
+}
+
+func TestInferStackEmptyDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if got := inferStack(dir); got != "" {
+		t.Errorf("inferStack on empty dir = %q; want empty string", got)
+	}
+}
+
+// Go stack emits a build.sh rendered from the Go-stack template.
+func TestGoStackEmitsBuildSh(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Go",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+	buildSh, err := os.ReadFile(filepath.Join(dir, "build.sh"))
+	if err != nil {
+		t.Fatalf("build.sh not emitted: %v", err)
+	}
+	if !strings.Contains(string(buildSh), "go mod tidy") {
+		t.Error("Go stack build.sh should contain 'go mod tidy'")
+	}
+}
+
+// Terraform stack emits a build.sh rendered from the Terraform-stack template.
+func TestTerraformStackEmitsBuildSh(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Terraform",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+	buildSh, err := os.ReadFile(filepath.Join(dir, "build.sh"))
+	if err != nil {
+		t.Fatalf("build.sh not emitted: %v", err)
+	}
+	content := string(buildSh)
+	if strings.Contains(content, "go mod tidy") {
+		t.Error("Terraform stack build.sh must not contain 'go mod tidy'")
+	}
+	if !strings.Contains(content, "terraform fmt") {
+		t.Error("Terraform stack build.sh should contain 'terraform fmt'")
+	}
+	if !strings.Contains(content, "terraform validate") {
+		t.Error("Terraform stack build.sh should contain 'terraform validate'")
+	}
+}
+
+// Terraform stack .gitignore includes Terraform-specific patterns.
+func TestTerraformStackGitignoreBlock(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Terraform",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+	gitignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf(".gitignore not emitted: %v", err)
+	}
+	content := string(gitignore)
+	for _, want := range []string{".terraform/", "*.tfstate", "*.tfvars"} {
+		if !strings.Contains(content, want) {
+			t.Errorf(".gitignore missing %q for Terraform stack", want)
+		}
+	}
+}
+
 func TestDetectApplyModeNewRepo(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

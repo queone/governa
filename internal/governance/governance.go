@@ -177,6 +177,7 @@ var stackManifests = []struct {
 	stack string
 }{
 	{"go.mod", "Go"},
+	{".terraform.lock.hcl", "Terraform"},
 	{"package.json", "Node"},
 	{"Cargo.toml", "Rust"},
 	{"pyproject.toml", "Python"},
@@ -189,6 +190,10 @@ func inferStack(targetDir string) string {
 		if _, err := os.Stat(filepath.Join(targetDir, sm.file)); err == nil {
 			return sm.stack
 		}
+	}
+	// Fall back to glob for stacks without a single canonical manifest.
+	if matches, _ := filepath.Glob(filepath.Join(targetDir, "*.tf")); len(matches) > 0 {
+		return "Terraform"
 	}
 	return ""
 }
@@ -569,6 +574,8 @@ func stackIgnoreBlock(tfs fs.FS, stack string) (string, bool) {
 	switch {
 	case stackSuggestsGo(stack):
 		file = "stack-ignores/go.txt"
+	case strings.EqualFold(stack, "terraform"):
+		file = "stack-ignores/terraform.txt"
 	default:
 		return "", false
 	}
@@ -638,11 +645,6 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 			return nil
 		}
 		rel := strings.TrimPrefix(path, overlayPrefix+"/")
-		if cfg.Type == RepoTypeCode && !stackSuggestsGo(cfg.Stack) &&
-			(rel == "cmd/rel/main.go.tmpl" ||
-				rel == "cmd/build/main.go.tmpl") {
-			return nil
-		}
 		targetRel := strings.TrimSuffix(rel, ".tmpl")
 		content, err := readAndRender(tfs, path, placeholders)
 		if err != nil {
@@ -667,6 +669,38 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 	})
 	if err != nil {
 		return nil, fmt.Errorf("walk overlay templates: %w", err)
+	}
+
+	// Walk per-stack overlay files; they override same-named common files.
+	if cfg.Type == RepoTypeCode && cfg.Stack != "" {
+		stackPrefix := "overlays/code/stacks/" + strings.ToLower(cfg.Stack)
+		if _, statErr := fs.Stat(tfs, stackPrefix); statErr == nil {
+			err = fs.WalkDir(tfs, stackPrefix, func(path string, d fs.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if d.IsDir() {
+					return nil
+				}
+				rel := strings.TrimPrefix(path, stackPrefix+"/")
+				targetRel := strings.TrimSuffix(rel, ".tmpl")
+				content, err := readAndRender(tfs, path, placeholders)
+				if err != nil {
+					return err
+				}
+				ops = append(ops, operation{
+					kind:    "write",
+					path:    filepath.Join(targetRoot, targetRel),
+					content: content,
+					note:    "stack overlay file",
+					source:  path,
+				})
+				return nil
+			})
+			if err != nil {
+				return nil, fmt.Errorf("walk stack overlay templates: %w", err)
+			}
+		}
 	}
 
 	return ops, nil

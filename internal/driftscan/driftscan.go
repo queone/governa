@@ -664,6 +664,14 @@ func classifyFile(cfg Config, relpath, canon, sha string) FileResult {
 	}
 	targetBytes, err := os.ReadFile(targetPath)
 	if err != nil {
+		// Suppress entries where the consumer registered a preserve marker for
+		// the absent path — the marker is their durable acknowledgement that the
+		// file was intentionally removed. Treat the same as ClassMatch (no entry).
+		if markers := emission.PreserveMarkers(cfg.Target, relpath); len(markers) > 0 {
+			fr.Classification = ClassMatch
+			fr.CompareCommand = fmt.Sprintf("absent from target; preserve marker found — suppressed (canon @ %s)", sha)
+			return fr
+		}
 		fr.Classification = ClassMissingTarget
 		// emit unified diff against empty target so the FileResult carries
 		// all canon lines as `-` for JSON consumers and downstream tooling.
