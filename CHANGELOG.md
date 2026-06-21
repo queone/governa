@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.137.1 | AC149: ban AT/AC numbers from test identifiers; lint gate in build.sh |
 | 0.137.0 | AC147: retire Go build/prep/rel tools; self-contained shell build.sh |
 | 0.136.0 | AC145+AC146: remove TEMPLATE_VERSION; rename docs/ to governa/ |
 | 0.135.0 | AC144: Instruction Style cleanup + product-name identifier rule |

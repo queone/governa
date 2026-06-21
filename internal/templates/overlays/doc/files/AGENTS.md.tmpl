@@ -158,7 +158,8 @@ Note: mixed-content files (AGENTS.md, `governa/development-guidelines.md`, `gove
 
 Note: `CLAUDE.md` is an example of an exempt identifier — it names the Claude Code-readable symlink that mirrors AGENTS.md.
 
-- Name tests, comments, and errors by the behavior they describe (`TestDirectionLineEmittedInDiffs`); reserve AC, AT, Class, Part, and Round numbers for CHANGELOG rows and commit messages.
+- Name test identifiers, output labels, comments, and errors by behavior.
+- Reserve AC, AT, Class, Part, and Round numbers for CHANGELOG rows, commit messages, and `Historical:` comments.
 - Use the `Historical:` prefix on a comment only when it references a shipped AC and the context aids the reader; delete the reference if no longer relevant.
 - Reach for `rg` (not `grep`/`ack`), `fd` (not `find`), `jq` (not `awk`/`python -c` on JSON), `sd` (not `sed -i`), and `pup` (not regex on HTML).
 - Send independent shell calls in a single message so they run in parallel.

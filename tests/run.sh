@@ -260,6 +260,27 @@ _scan_clean   "quad-backtick" "$_FIXT/mdcheck/quad-backtick.md"
 _scan_flagged "nested-tagged" "$_FIXT/mdcheck/nested-tagged.md" \
   "nested-tagged.md:5: 3-backtick fence opened at line 3 contains nested tagged fence; use 4+ backticks or ~~~ for the outer fence"
 
+# Repository-wide discovery excludes intentionally invalid Markdown fixtures.
+_md_list=$(_md_files "$_ROOT")
+if printf '%s\n' "$_md_list" | grep -Fq '/tests/fixtures/'; then
+  _fail "mdcheck: tracked fixture paths leaked into repository discovery"
+else
+  _ok "mdcheck: tracked fixture paths excluded from repository discovery"
+fi
+
+# The non-git filesystem fallback applies the same exclusion.
+_md_fallback_root="$_TMPD/mdcheck-fallback"
+mkdir -p "$_md_fallback_root/tests/fixtures"
+printf '# kept\n' >"$_md_fallback_root/kept.md"
+printf '# ignored\n' >"$_md_fallback_root/tests/fixtures/ignored.md"
+_md_fallback_list=$(_md_files "$_md_fallback_root")
+if printf '%s\n' "$_md_fallback_list" | grep -Fq 'kept.md' \
+  && ! printf '%s\n' "$_md_fallback_list" | grep -Fq 'ignored.md'; then
+  _ok "mdcheck: filesystem fallback excludes fixture paths"
+else
+  _fail "mdcheck: filesystem fallback fixture exclusion failed"
+fi
+
 # ── prep function unit tests ──────────────────────────────────────────────────
 _PREP_TMP="$(mktemp -d "${TMPDIR:-/tmp}/governa-prep-test.XXXXXX")"
 _PREP_TMP="$(cd "$_PREP_TMP" && pwd)"
@@ -540,6 +561,169 @@ rc=0
 printf '%d\n' "$rc" >"$_TMPD/rc"
 _cmp_golden "rel-golden: rel-tag-pushed-branch-failed" "$_GOLD/rel-tag-pushed-branch-failed" \
   "$_TMPD/out" "$_TMPD/err" "$_TMPD/rc"
+
+# ── test-naming lint ─────────────────────────────────────────────────────────
+# Forbidden fixture tokens assembled from fragments so this file does not
+# trigger _lint_test_naming when build.sh scans tests/run.sh.
+
+# lint-catches-at-numbered-identifier
+_lf="$_TMPD/lint-ident-at.sh"
+_lint_token="_at""1_foo=1"
+printf '%s\n' "$_lint_token" >"$_lf"
+_lint_rc=0; _lint_out=$(_lint_test_naming "$_lf" 2>&1) || _lint_rc=$?
+if [ "$_lint_rc" -ne 0 ] && printf '%s\n' "$_lint_out" | grep -Fq "$_lf:" \
+  && printf '%s\n' "$_lint_out" | grep -Fq "$_lint_token"; then
+  _ok "lint: at-numbered identifier diagnostic names path and line"
+else
+  _fail "lint: at-numbered identifier diagnostic incomplete: $_lint_out"
+fi
+
+# lint-catches-ac-numbered-identifier
+_lf="$_TMPD/lint-ident-ac.sh"
+printf '%s\n' "_ac""1_bar=1" >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -ne 0 ] && _ok "lint: ac-numbered identifier caught" \
+  || _fail "lint: ac-numbered identifier not caught"
+
+# lint-catches-shell-label-callsite (double-quoted AT)
+_lf="$_TMPD/lint-lbl-sh-at.sh"
+printf '%s\n' '_ok "'"AT""1: behavior"'"' >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -ne 0 ] && _ok "lint: shell at-label callsite caught" \
+  || _fail "lint: shell at-label callsite not caught"
+
+# lint-catches-single-quoted-shell-label (single-quoted AC)
+_lf="$_TMPD/lint-lbl-sh-sq.sh"
+_q="'"
+printf '%s\n' "_fail ${_q}""AC""1: behavior${_q}" >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -ne 0 ] && _ok "lint: single-quoted shell ac-label caught" \
+  || _fail "lint: single-quoted shell ac-label not caught"
+
+# lint-catches-ac-shell-label-callsite (double-quoted AC)
+_lf="$_TMPD/lint-lbl-sh-ac.sh"
+printf '%s\n' '_ok "'"AC""42: something"'"' >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -ne 0 ] && _ok "lint: shell ac-label callsite caught" \
+  || _fail "lint: shell ac-label callsite not caught"
+
+# lint-catches-go-label-callsite (double-quoted AT)
+_lf="$_TMPD/lint-lbl-go-at.go"
+printf '%s\n' 't.Run("'"AT""1: something"'",' >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -ne 0 ] && _ok "lint: go at-label callsite caught" \
+  || _fail "lint: go at-label callsite not caught"
+
+# lint-catches-raw-go-label-callsite (backtick AC)
+_lf="$_TMPD/lint-lbl-go-raw.go"
+_bq='`'
+printf '%s\n' "t.Run(${_bq}""AC""1: something${_bq}," >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -ne 0 ] && _ok "lint: go raw-string ac-label caught" \
+  || _fail "lint: go raw-string ac-label not caught"
+
+# lint-ignores-historical-comments
+_lf="$_TMPD/lint-historical.sh"
+{
+  printf '%s\n' '# _at'"1_foo old name"
+  printf '%s\n' '// _ac'"1_bar was used"
+  printf '%s\n' 'some_code # Historical: _ok "'"AT""1: old label\""
+  printf '%s\n' 'some_code // Historical: t.Run("'"AT""1:"'"'
+  printf '%s\n' 'some_code /* Historical: _ac'"1_bar"
+} >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -eq 0 ] && _ok "lint: historical comments ignored" \
+  || _fail "lint: historical comments incorrectly flagged"
+
+# lint-respects-callsite-boundaries
+_lf="$_TMPD/lint-boundary.sh"
+{
+  printf '%s\n' 'report_ok "'"AT""1: behavior"'"'
+  printf '%s\n' 'not.Run("'"AC""1: behavior"'",'
+} >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -eq 0 ] && _ok "lint: callsite boundaries respected" \
+  || _fail "lint: boundary false positive"
+
+# lint-handles-spaced-file-path through _collect_test_files
+_space_root="$_TMPD/lint root with spaces"
+_lf="$_space_root/sub dir/fixture_test.go"
+mkdir -p "$_space_root/sub dir"
+printf '%s\n' "_at""1_foo=1" >"$_lf"
+_lint_files_sp=()
+while IFS= read -r -d '' _lp; do _lint_files_sp+=("$_lp"); done \
+  < <(_collect_test_files "$_space_root")
+_lint_rc=0; _lint_out=$(_lint_test_naming "${_lint_files_sp[@]}" 2>&1) || _lint_rc=$?
+if [ "${#_lint_files_sp[@]}" -eq 1 ] && [ "${_lint_files_sp[0]}" = "$_lf" ] \
+  && [ "$_lint_rc" -ne 0 ] && printf '%s\n' "$_lint_out" | grep -Fq "$_lf:"; then
+  _ok "lint: spaced path collected and diagnosed intact"
+else
+  _fail "lint: spaced path collection/diagnostic failed"
+fi
+
+# lint-handles-newline-file-path
+_nl_dir="$_TMPD/lint-nl"
+mkdir -p "$_nl_dir"
+_nl_file="$_nl_dir/foo"$'\n'"bar_test.go"
+printf '%s\n' "_at""1_foo=1" >"$_nl_file"
+_lint_files_nl=()
+while IFS= read -r -d '' _lp; do _lint_files_nl+=("$_lp"); done \
+  < <(_collect_test_files "$_nl_dir")
+_lint_rc=0; _lint_test_naming "${_lint_files_nl[@]}" >/dev/null 2>&1 || _lint_rc=$?
+[ "${#_lint_files_nl[@]}" -eq 1 ] && [ "${_lint_files_nl[0]}" = "$_nl_file" ] \
+  && [ "$_lint_rc" -ne 0 ] && _ok "lint: newline-in-path collected as one argument" \
+  || _fail "lint: newline-in-path collection failed"
+
+# lint-fallback-discovers-go-tests
+_fb_dir="$_TMPD/lint-fb"
+mkdir -p "$_fb_dir/sub"
+printf '%s\n' 'package foo' >"$_fb_dir/sub/example_test.go"
+_fb_files=()
+_find_bin=$(command -v find)
+_fb_path="$_TMPD/find-only"
+mkdir -p "$_fb_path"
+ln -s "$_find_bin" "$_fb_path/find"
+while IFS= read -r -d '' _lp; do _fb_files+=("$_lp"); done \
+  < <(PATH="$_fb_path" _collect_test_files "$_fb_dir")
+[ "${#_fb_files[@]}" -eq 1 ] && [ "${_fb_files[0]}" = "$_fb_dir/sub/example_test.go" ] \
+  && _ok "lint: find fallback discovers go tests" \
+  || _fail "lint: find fallback failed"
+
+# The scanner also falls back to grep when rg is unavailable.
+for _fb_cmd in grep sed; do
+  _fb_bin=$(command -v "$_fb_cmd")
+  ln -s "$_fb_bin" "$_fb_path/$_fb_cmd"
+done
+_lf="$_TMPD/lint-grep-fallback.sh"
+printf '%s\n' "_ac""1_fallback=1" >"$_lf"
+_lint_rc=0
+PATH="$_fb_path" _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -ne 0 ] && _ok "lint: grep fallback detects violations" \
+  || _fail "lint: grep fallback missed violation"
+
+# lint-passes-legitimate-ac-fixture
+_lf="$_TMPD/lint-legit.sh"
+printf '%s\n' '_prep_parse_ac_refs "'"AC""42: do stuff"'"' >"$_lf"
+_lint_rc=0; _lint_test_naming "$_lf" >/dev/null 2>&1 || _lint_rc=$?
+[ "$_lint_rc" -eq 0 ] && _ok "lint: legitimate ac fixture passes" \
+  || _fail "lint: legitimate ac fixture incorrectly flagged"
+
+# rule-exact-wording-and-mirrors
+_rule_behavior='- Name test identifiers, output labels, comments, and errors by behavior.'
+_rule_reserve='- Reserve AC, AT, Class, Part, and Round numbers for CHANGELOG rows, commit messages, and `Historical:` comments.'
+_rules_ok=1
+for _rule_file in \
+  "$_ROOT/AGENTS.md" \
+  "$_ROOT/internal/templates/base/AGENTS.md" \
+  "$_ROOT/internal/templates/overlays/doc/files/AGENTS.md.tmpl"; do
+  grep -Fqx -- "$_rule_behavior" "$_rule_file" || _rules_ok=0
+  grep -Fqx -- "$_rule_reserve" "$_rule_file" || _rules_ok=0
+done
+[ "$_rules_ok" -eq 1 ] && _ok "rules: exact wording present in all mirrors" \
+  || _fail "rules: exact wording or mirror missing"
+
+# lint-passes-with-no-violations: exercised by the full build (tests/run.sh itself
+# is clean; build.sh scans it as part of the build step).
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf '\ntests/run.sh: pass=%d fail=%d\n' "$_pass" "$_fail"

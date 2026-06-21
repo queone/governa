@@ -219,6 +219,19 @@ build_run() {
   fi
   printf '    %s\n' 'No nested-fence issues found.'
 
+  # Test-naming lint — silent on pass; see _lint_test_naming and _collect_test_files.
+  local _lint_files=() _lint_path
+  [ -f tests/run.sh ] && _lint_files+=('tests/run.sh')
+  while IFS= read -r -d '' _lint_path; do
+    _lint_files+=("$_lint_path")
+  done < <(_collect_test_files '.')
+  if [ "${#_lint_files[@]}" -gt 0 ]; then
+    _lint_test_naming "${_lint_files[@]}" || {
+      printf 'test naming violations found (see above)\n' >&2
+      return 1
+    }
+  fi
+
   printf '\n%s\n' "$(yel7 '==> Update go.mod to reflect actual dependencies')"
   run_streaming grn3 go mod tidy
 
@@ -440,13 +453,16 @@ _md_files() { # $1=dir -> newline list of .md paths
         printf 'mdcheck: skipping tracked but missing file: %s\n' "$rel" >&2
         continue
       fi
+      # Markdown fixtures intentionally contain violations exercised by tests.
+      case "$rel" in tests/fixtures/*) continue ;; esac
       printf '%s\n' "$full"
     done <<EOF
 $out
 EOF
     return 0
   fi
-  find "$dir" \( -name .git -o -name node_modules -o -name vendor \) -prune -o \
+  find "$dir" \( -name .git -o -name node_modules -o -name vendor \
+    -o -path "$dir/tests/fixtures" \) -prune -o \
     -name '*.md' -type f -print
 }
 
@@ -479,6 +495,86 @@ _scan_nested_fences() { # $1=relpath $2=file
         delimchar=""; delimcount=0
       }
     }' "$file"
+}
+
+# ── test-naming lint (AT/AC-only subset) ─────────────────────────────────────
+# _collect_test_files <root> — emits absolute *_test.go paths NUL-delimited.
+# Primary: rg --files -0; fallback: find -print0.
+# find fallback is an intentional exception to the Tool Use rule: rg is preferred
+# but find provides Bash 3.2-portable discovery when rg is absent. The fallback
+# scans a conservative superset (ignores .gitignore) vs rg.
+_collect_test_files() {
+  local root="$1" abs_root
+  abs_root="$(cd "$root" && pwd)"
+  if command -v rg >/dev/null 2>&1; then
+    ( cd "$root" && rg --files -0 -g '*_test.go' 2>/dev/null ) | \
+      while IFS= read -r -d '' rel; do
+        printf '%s\0' "$abs_root/$rel"
+      done
+  else
+    find "$abs_root" \( -name .git -o -name node_modules -o -name vendor \) -prune -o \
+      -name '*_test.go' -type f -print0
+  fi
+}
+
+_lint_regex_hits() { # $1=ERE; input on stdin -> numbered matching lines
+  local pattern="$1"
+  if command -v rg >/dev/null 2>&1; then
+    rg -n "$pattern"
+  else
+    # Portability fallback: build validation must still work without ripgrep.
+    grep -nE "$pattern"
+  fi
+}
+
+# _lint_test_naming FILE... — AT/AC-only subset: flags _at/_ac identifier forms
+# and _ok/_fail/t.Run label call sites beginning with AT or AC numbers.
+# Class, Part, and Round numbers are not covered by this lint.
+# Identifier-shaped fixture strings are a known false-positive: assemble them
+# from string fragments so test source does not trigger this check.
+_lint_test_naming() {
+  local _found=0 _f
+  # Quote chars for portable ERE pattern construction (avoids nested quoting).
+  local _sq _dq _bq
+  _sq="'"
+  _dq='"'
+  _bq='`'
+  local _ident_pat='_[Aa][Tt][0-9]|_[Aa][Cc][0-9]'
+  local _shell_lbl_pat="(^|[;&|()[:space:]])(_ok|_fail)[[:space:]]+[${_dq}${_sq}]([Aa][Tt]|[Aa][Cc])[0-9]"
+  local _go_lbl_pat="(^|[({;[:space:]])t[.]Run[(][${_dq}${_bq}]([Aa][Tt]|[Aa][Cc])[0-9]"
+  for _f in "$@"; do
+    [ -f "$_f" ] || continue
+    # Preprocess: remove comment-only lines; strip inline Historical: tails.
+    local _pre
+    _pre=$(sed '
+      s/^[[:space:]]*#.*$//
+      s/^[[:space:]]*\/\/.*$//
+      s/^[[:space:]]*\/[*].*$//
+      s/^[[:space:]]*[*].*$//
+      s/[[:space:]]*#[[:space:]]*Historical:.*$//
+      s/[[:space:]]*\/\/[[:space:]]*Historical:.*$//
+      s/[[:space:]]*\/[*][[:space:]]*Historical:.*$//
+    ' "$_f")
+    local _hits
+    # Identifier scan: _at<N> or _ac<N> (underscore-prefix form).
+    _hits=$(printf '%s\n' "$_pre" | _lint_regex_hits "$_ident_pat" 2>/dev/null || true)
+    if [ -n "$_hits" ]; then
+      printf '%s\n' "$_hits" | while IFS= read -r _line; do
+        printf '%s:%s\n' "$_f" "$_line"
+      done
+      _found=1
+    fi
+    # Label call-site scan: _ok/_fail (shell) and t.Run (Go).
+    _hits=$(printf '%s\n' "$_pre" | \
+      _lint_regex_hits "${_shell_lbl_pat}|${_go_lbl_pat}" 2>/dev/null || true)
+    if [ -n "$_hits" ]; then
+      printf '%s\n' "$_hits" | while IFS= read -r _line; do
+        printf '%s:%s\n' "$_f" "$_line"
+      done
+      _found=1
+    fi
+  done
+  return "$_found"
 }
 
 # ════════════════════════════════════════════════════════════════════════════

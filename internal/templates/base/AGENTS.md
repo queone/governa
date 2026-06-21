@@ -168,7 +168,8 @@ Note: mixed-content files (AGENTS.md, `governa/development-guidelines.md`, `gove
 ### AC Mechanics
 
 - Label each acceptance test with source axis (`[Automated]` / `[Manual]`) and timing axis (`[Pre-release gate]` default; `[Post-release verification]` explicit). See `governa/ac-template.md`.
-- Name tests, comments, and errors by the behavior they describe (`TestDirectionLineEmittedInDiffs`); reserve AC, AT, Class, Part, and Round numbers for CHANGELOG rows and commit messages.
+- Name test identifiers, output labels, comments, and errors by behavior.
+- Reserve AC, AT, Class, Part, and Round numbers for CHANGELOG rows, commit messages, and `Historical:` comments.
 - Use the `Historical:` prefix on a comment only when it references a shipped AC and the context aids the reader; delete the reference if no longer relevant.
 
 ### Code Style and Conventions
