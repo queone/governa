@@ -387,13 +387,13 @@ func TestNameReferenceSurfacesTargetOnlyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(dir, "governa/ac-template.md"), "# AC template\n")
-	// Divergent rel.sh referencing target-only color.go.
-	mustWrite(t, filepath.Join(dir, "rel.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/foo/main.go ./cmd/foo/color.go \"$@\"\n")
+	// Divergent build.sh referencing target-only color.go.
+	mustWrite(t, filepath.Join(dir, "build.sh"), "#!/usr/bin/env bash\nexec go run ./cmd/foo/main.go ./cmd/foo/color.go \"$@\"\n")
 	// Target-only files (no canon counterpart).
 	mustWrite(t, filepath.Join(dir, "cmd/foo/main.go"), "package main\nfunc main() {}\n")
 	mustWrite(t, filepath.Join(dir, "cmd/foo/color.go"), "package main\nfunc col() {}\n")
 	gitInit(t, dir)
-	gitAddCommit(t, dir, "rel.sh + color.go")
+	gitAddCommit(t, dir, "build shell + color helper")
 
 	cfg := Config{Target: dir, Flavor: "doc", DiffLines: 50, OverrideCanonID: "v0.0.0-test"}
 	captureOut(t, func(f *os.File) {

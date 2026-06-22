@@ -2,6 +2,7 @@ package governance
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -358,6 +359,207 @@ func TestRenderApplyACShape(t *testing.T) {
 				t.Errorf("skip operations should not appear in the file list; got line: %s", l)
 			}
 		}
+	}
+}
+
+func renderDocRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeDoc,
+		RepoName: "docs-test",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("render DOC repo: %v", err)
+	}
+	return dir
+}
+
+func runRepoCommand(t *testing.T, dir, input, name string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(input)
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", "TERM=dumb")
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func mustRunRepoCommand(t *testing.T, dir, input, name string, args ...string) string {
+	t.Helper()
+	out, err := runRepoCommand(t, dir, input, name, args...)
+	if err != nil {
+		t.Fatalf("run %s %s: %v\n%s", name, strings.Join(args, " "), err, out)
+	}
+	return out
+}
+
+func writeRepoFile(t *testing.T, dir, rel, content string) {
+	t.Helper()
+	abs := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir for %s: %v", rel, err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
+	}
+}
+
+func initRepoForShellTests(t *testing.T, dir string) string {
+	t.Helper()
+	mustRunRepoCommand(t, dir, "", "git", "init", "-q")
+	mustRunRepoCommand(t, dir, "", "git", "config", "user.email", "docs-test@example.com")
+	mustRunRepoCommand(t, dir, "", "git", "config", "user.name", "DOC Test")
+	mustRunRepoCommand(t, dir, "", "git", "add", ".")
+	mustRunRepoCommand(t, dir, "", "git", "commit", "-q", "-m", "initial")
+	return strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "--abbrev-ref", "HEAD"))
+}
+
+func TestDocApplyEmitsShellTooling(t *testing.T) {
+	dir := renderDocRepo(t)
+	buildPath := filepath.Join(dir, "build.sh")
+	info, err := os.Stat(buildPath)
+	if err != nil {
+		t.Fatalf("build.sh not emitted: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Errorf("build.sh mode %v is not executable", info.Mode())
+	}
+	content, err := os.ReadFile(buildPath)
+	if err != nil {
+		t.Fatalf("read build.sh: %v", err)
+	}
+	for _, want := range []string{"prep_main", "rel_run"} {
+		mustContain(t, string(content), want)
+	}
+	if strings.Contains(string(content), "mdcheck") {
+		t.Error("DOC build.sh contains content-validation tooling")
+	}
+	agents, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	mustContain(t, string(agents), "Complete any repo-owned validation before preparing any commit handoff.")
+	usage := mustRunRepoCommand(t, dir, "", "./build.sh")
+	mustContain(t, usage, "build prep")
+	for _, rel := range []string{"rel.sh", "cmd/rel/main.go", "cmd/rel/color.go"} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
+			t.Errorf("retired DOC release path %s was emitted", rel)
+		}
+	}
+}
+
+func TestDocReleaseCancelsOrPushesAnnotatedTag(t *testing.T) {
+	dir := renderDocRepo(t)
+	branch := initRepoForShellTests(t, dir)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	mustRunRepoCommand(t, dir, "", "git", "init", "--bare", "-q", remote)
+	mustRunRepoCommand(t, dir, "", "git", "remote", "add", "origin", remote)
+	mustRunRepoCommand(t, dir, "", "git", "push", "-q", "-u", "origin", branch)
+
+	writeRepoFile(t, dir, "pending.md", "# Pending release\n")
+	before := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
+	out, err := runRepoCommand(t, dir, "n\n", "./build.sh", "v1.2.3", "DOC release")
+	if err == nil {
+		t.Fatalf("cancelled release exited successfully:\n%s", out)
+	}
+	afterCancel := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
+	if afterCancel != before {
+		t.Errorf("cancelled release changed HEAD: got %s, want %s", afterCancel, before)
+	}
+	if _, err := runRepoCommand(t, dir, "", "git", "rev-parse", "-q", "--verify", "refs/tags/v1.2.3"); err == nil {
+		t.Error("cancelled release created tag v1.2.3")
+	}
+
+	mustRunRepoCommand(t, dir, "y\n", "./build.sh", "v1.2.3", "DOC release")
+	if got := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "cat-file", "-t", "v1.2.3")); got != "tag" {
+		t.Errorf("tag object type = %q; want annotated tag object", got)
+	}
+	tagBody := mustRunRepoCommand(t, dir, "", "git", "for-each-ref", "--format=%(contents)", "refs/tags/v1.2.3")
+	if strings.TrimSpace(tagBody) != "DOC release" {
+		t.Errorf("annotated tag message = %q; want %q", strings.TrimSpace(tagBody), "DOC release")
+	}
+	localHead := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
+	remoteHead := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "--git-dir", remote, "rev-parse", "refs/heads/"+branch))
+	if remoteHead != localHead {
+		t.Errorf("remote branch head = %s; want %s", remoteHead, localHead)
+	}
+	remoteTag := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "--git-dir", remote, "rev-parse", "refs/tags/v1.2.3^{}"))
+	if remoteTag != localHead {
+		t.Errorf("remote tag target = %s; want %s", remoteTag, localHead)
+	}
+}
+
+func TestDocPrepStagesReleaseWithoutVersionBump(t *testing.T) {
+	dir := renderDocRepo(t)
+	initRepoForShellTests(t, dir)
+	writeRepoFile(t, dir, "governa/ac42-doc-update.md", "# Documentation update\n")
+	writeRepoFile(t, dir, "cmd/example/main.go", "package main\n\nconst programVersion = \"0.1.0\"\n")
+	planPath := filepath.Join(dir, "plan.md")
+	plan, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read plan.md: %v", err)
+	}
+	writeRepoFile(t, dir, "plan.md", string(plan)+"\n- IE9: ship docs → governa/ac42-doc-update.md\n")
+	mustRunRepoCommand(t, dir, "", "git", "add", ".")
+
+	changelogPath := filepath.Join(dir, "CHANGELOG.md")
+	beforeChangelog, err := os.ReadFile(changelogPath)
+	if err != nil {
+		t.Fatalf("read CHANGELOG.md: %v", err)
+	}
+	beforePlan, _ := os.ReadFile(planPath)
+	for _, flag := range []string{"--dry-run", "-n"} {
+		out := mustRunRepoCommand(t, dir, "", "./build.sh", "prep", flag, "v1.2.3", "AC42: docs")
+		mustContain(t, out, "release command:")
+		if got, _ := os.ReadFile(changelogPath); string(got) != string(beforeChangelog) {
+			t.Errorf("%s modified CHANGELOG.md", flag)
+		}
+		if got, _ := os.ReadFile(planPath); string(got) != string(beforePlan) {
+			t.Errorf("%s modified plan.md", flag)
+		}
+	}
+
+	for _, args := range [][]string{
+		{"prep", "bad", "message"},
+		{"prep", "v1.2.3", "   "},
+		{"prep", "v1.2.3", strings.Repeat("x", 81)},
+		{"prep", "--no-build", "v1.2.3", "message"},
+	} {
+		if out, err := runRepoCommand(t, dir, "", "./build.sh", args...); err == nil {
+			t.Errorf("invalid prep args succeeded: %v\n%s", args, out)
+		}
+	}
+
+	out := mustRunRepoCommand(t, dir, "", "./build.sh", "prep", "v1.2.3", "AC42: docs")
+	mustContain(t, out, "release command:")
+	if strings.Contains(out, "check build") || strings.Contains(out, "validation") {
+		t.Errorf("DOC prep ran or reported content validation:\n%s", out)
+	}
+	changelog, _ := os.ReadFile(changelogPath)
+	mustContain(t, string(changelog), "| Unreleased |")
+	mustContain(t, string(changelog), "| 1.2.3 | AC42: docs |")
+	if strings.Index(string(changelog), "| Unreleased |") > strings.Index(string(changelog), "| 1.2.3 | AC42: docs |") {
+		t.Error("release row was not inserted below the Unreleased row")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "governa/ac42-doc-update.md")); !os.IsNotExist(err) {
+		t.Error("prep did not delete the release-message AC file")
+	}
+	updatedPlan, _ := os.ReadFile(planPath)
+	if strings.Contains(string(updatedPlan), "governa/ac42-doc-update.md") {
+		t.Error("prep did not sweep the matching plan.md IE")
+	}
+	versionSource, _ := os.ReadFile(filepath.Join(dir, "cmd/example/main.go"))
+	mustContain(t, string(versionSource), `programVersion = "0.1.0"`)
+
+	stableChangelog := string(changelog)
+	if duplicateOut, err := runRepoCommand(t, dir, "", "./build.sh", "prep", "v1.2.3", "AC42: docs"); err == nil {
+		t.Errorf("duplicate CHANGELOG row succeeded:\n%s", duplicateOut)
+	}
+	if got, _ := os.ReadFile(changelogPath); string(got) != stableChangelog {
+		t.Error("duplicate-row failure modified CHANGELOG.md")
 	}
 }
 

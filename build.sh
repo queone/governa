@@ -344,7 +344,7 @@ EOF
     printf '    installed: %s\n' "$(cya4 "$output_path")"
   done
 
-  # governa-source-only post-install: render+validate example overlays, then
+  # governa-source-only post-install: render+validate CODE, smoke DOC, then
   # the DOC no-go.mod smoke. Omitted from the consumer overlay build.sh.tmpl.
   if [ -z "${GOVERNA_OVERLAY_BUILD:-}" ] && [ -d internal/templates/overlays ]; then
     _render_and_validate_examples "$verbose"
@@ -612,15 +612,15 @@ _render_and_validate_examples() { # $1=verbose
     if [ "$flavor" = code ]; then
       dir="$ex_code"; module='github.com/queone/governa/examples/code'
     else
-      dir="$ex_doc"; module='github.com/queone/governa/examples/doc'
+      dir="$ex_doc"
     fi
     local args=(run ./cmd/governa render-canon --flavor "$flavor")
     [ "$flavor" = code ] && args+=(--module-path "$module")
     args+=("$dir")
     run_streaming grn5 go "${args[@]}"
-    printf 'module %s\n\ngo 1.23\n' "$module" >"$dir/go.mod"
     ln -sf AGENTS.md "$dir/CLAUDE.md"
     if [ "$flavor" = code ]; then
+      printf 'module %s\n\ngo 1.23\n' "$module" >"$dir/go.mod"
       mkdir -p "$dir/cmd/example"
       printf '%s\n' \
         'package main' \
@@ -628,8 +628,8 @@ _render_and_validate_examples() { # $1=verbose
         'const programVersion = "0.1.0"' \
         '' \
         'func main() { _ = programVersion }' >"$dir/cmd/example/main.go"
+      ( cd "$dir" && run_streaming_in_dir "$dir" grn5 go mod tidy )
     fi
-    ( cd "$dir" && run_streaming_in_dir "$dir" grn5 go mod tidy )
   done
 
   local vet_out
@@ -649,14 +649,14 @@ _render_and_validate_examples() { # $1=verbose
     return 1
   fi
 
-  if ! vet_out=$( cd "$ex_doc" && go vet ./... 2>&1 ); then
-    printf '%s\n' "$vet_out" | write_indented
-    printf 'go vet failed on rendered doc example\n' >&2
+  local doc_out doc_rc=0
+  doc_out=$( cd "$ex_doc" && NO_COLOR=1 ./build.sh -h 2>&1 ) || doc_rc=$?
+  if [ "$doc_rc" -ne 0 ]; then
+    printf '%s\n' "$doc_out" | write_indented
+    printf 'rendered doc example build failed\n' >&2
     return 1
   fi
-  printf '    %s\n' 'go vet examples/doc: ok'
-  local tad=(test); [ "$verbose" = 1 ] && tad+=(-v); tad+=(./...)
-  ( cd "$ex_doc" && run_streaming_in_dir "$ex_doc" grn5 go "${tad[@]}" )
+  printf '    %s\n' 'build.sh examples/doc: ok'
   rm -rf "$ex_dir"
   printf '    %s\n' "example validation passed; cleaned up $ex_dir"
 
@@ -668,7 +668,7 @@ _render_and_validate_examples() { # $1=verbose
     printf 'DOC smoke: go.mod was seeded into %s\n' "$smoke" >&2
     return 1
   fi
-  ( cd "$smoke" && run_streaming_in_dir "$smoke" grn5 ./rel.sh )
+  ( cd "$smoke" && run_streaming_in_dir "$smoke" grn5 ./build.sh -h )
   rm -rf "$smoke"
   printf '    %s\n' "DOC smoke passed; cleaned up $smoke"
 }

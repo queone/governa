@@ -8,14 +8,20 @@ Current contents:
 
 - `.gitignore`
 - `AGENTS.md`
-- `cmd/rel/main.go`
+- `build.sh`
+- `CHANGELOG.md`
+- `README.md`
 - `governa/ac-template.md`
+- `governa/canon-cycle.md`
+- `governa/drift-scan.md`
 - `governa/editing-cycle.md`
 - `governa/editing-guidelines.md`
+- `governa/operator-contract-rationale.md`
 - `governa/README.md`
 - `governa/release.md`
 - `governa/roles.md`
 - `plan.md`
-- `rel.sh`
 
-Color helpers and release orchestration come from `github.com/queone/governa-color` and `github.com/queone/governa-reltool`, imported by the rendered `cmd/rel`.
+`build.sh` is a self-contained Bash 3.2+ script for release preparation and
+annotated-tag release orchestration. Generated DOC repos require no Go
+toolchain for those workflows and define no automated content validation.

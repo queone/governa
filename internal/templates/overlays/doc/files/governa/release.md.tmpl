@@ -4,9 +4,9 @@ Reference for this repo's release ceremony, pre-release checklist, and acceptanc
 
 ## Release Command
 
-This repo uses `./rel.sh vX.Y.Z "release message"` to cut releases. `rel.sh` is a thin Bash dispatcher that runs `go run ./cmd/rel/main.go ./cmd/rel/color.go "$@"` (file-list form, module-mode-independent — no `go.mod` required). The release tool shows `git status --short`, lists every git step it will execute, and prompts for interactive confirmation. On approval it orchestrates `git add → commit → tag → push tag → push branch`.
+This repo uses `./build.sh vX.Y.Z "release message"` to cut releases. The release path shows `git status --short`, lists every git step it will execute, and prompts for interactive confirmation. On approval it orchestrates `git add → commit → annotated tag → push tag → push branch`.
 
-**Stdlib-only inline tool.** The DOC-flavor `cmd/rel` remains stdlib-only with no external dependencies, so content repos do not need to become Go modules just to run a release script. DOC release tooling evolves separately from the CODE flavor's self-contained shell tooling.
+`build.sh` is self-contained Bash 3.2+ tooling. DOC repositories do not need a Go toolchain for release preparation or release orchestration and define no automated content-validation command.
 
 Release messages must be 80 characters or fewer.
 
@@ -28,15 +28,14 @@ Do not start this checklist unless the user explicitly asks to prep for release 
 1. **Verify all in-scope AC work is complete.** Every AT in the AC has been run and passes.
 2. **Determine the version.** Classify the change set using semver: PATCH (formatting, fixes, refactors invisible to users) or MINOR (structure, navigation, schema changes visible to users). Bump from the latest tag accordingly.
 3. **Derive the release message.** Summarize the change set in ≤ 80 characters. Lead with the AC reference if any (e.g., `AC1: adopt Governa v0.90.0 DOC overlay`).
-4. **Update CHANGELOG.md.** Insert a row for the new version under `| Unreleased | |`.
-5. **Delete completed AC files.** Remove `governa/ac<N>-*.md` files for ACs shipping in this release.
-6. **Present the release command.** Print the exact command for the director to run:
+4. **Run release prep.** Run `./build.sh prep vX.Y.Z "derived message"`. It inserts the CHANGELOG row, deletes completed AC files referenced by the release message, sweeps their `plan.md` IE entries, and prints the release command. Use `--dry-run`/`-n` to inspect without writes.
+5. **Present the release command.** Print the exact command emitted by prep for the director to run:
 
 ```
-./rel.sh vX.Y.Z "derived message"
+./build.sh vX.Y.Z "derived message"
 ```
 
-The agent never runs `./rel.sh` — only the director does. Do not add trailing commentary after presenting the command. The director already knows.
+The agent never runs the release command — only the director does. Do not add trailing commentary after presenting the command. The director already knows.
 
 ## CHANGELOG Conventions
 
