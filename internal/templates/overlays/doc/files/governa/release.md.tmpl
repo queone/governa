@@ -10,6 +10,17 @@ This repo uses `./build.sh vX.Y.Z "release message"` to cut releases. The releas
 
 Release messages must be 80 characters or fewer.
 
+### Build Presentation
+
+- Reuse the canonical build color policy and palette.
+- Color release status output by semantic role.
+- Emit plain output when stdout is not a terminal.
+- Emit plain output when `NO_COLOR` is set.
+- Emit plain output when `TERM=dumb`.
+- Require a 256-color-capable terminal before emitting ANSI sequences.
+- Preserve plain-text content and output streams when color is disabled.
+- Keep the self-contained build script compatible with Bash 3.2.
+
 ## Acceptance Tests
 
 Every AT in an AC document must be labeled `[Automated]` or `[Manual]`.

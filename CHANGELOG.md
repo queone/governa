@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.145.0 | AC156: align Rust CODE build presentation with Go |
 | 0.144.0 | AC155: remove driftscan; use governa drift-scan |
 | 0.143.0 | AC154: add explicit drift-scan stack selection |
 | 0.142.0 | AC153: require canonical build as first validation command |

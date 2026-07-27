@@ -19,6 +19,6 @@ Current contents:
 - `plan.md`
 - `README.md`
 
-`build.sh` is a self-contained Bash script that handles build, release-prep, and release orchestration. It carries its pipeline and color helpers inline, requires no external governa tools, and targets Bash 3.2+ so macOS system Bash is supported.
+`build.sh` is a self-contained Bash script that handles build, release-prep, and release orchestration. It carries its pipeline and canonical color helpers inline, uses the same semantic palette across supported stacks, requires no external governa tools, and targets Bash 3.2+ so macOS system Bash is supported. Color remains disabled for redirected stdout, `NO_COLOR`, `TERM=dumb`, and terminals without 256-color capability.
 
 See `plan.md` for future overlay improvements.

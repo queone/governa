@@ -1,6 +1,7 @@
 package governance
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -652,6 +653,59 @@ func runRustBuildWithEnv(
 	return string(out), cargoHome, err
 }
 
+func runRustPresentation(
+	t *testing.T,
+	dir, binDir, logPath, input string,
+	extras []string,
+	args ...string,
+) (string, string, error) {
+	t.Helper()
+	cmd := exec.Command("/bin/bash", append([]string{"./build.sh"}, args...)...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(input)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	names := []string{
+		"CARGO_HOME", "CARGO_INSTALL_ROOT", "CARGO_TARGET_DIR", "COLORTERM",
+		"GOVERNA_FORCE_TTY", "HOME", "NO_COLOR", "TERM", "TMPDIR",
+	}
+	env := make([]string, 0, len(os.Environ())+len(extras)+5)
+	for _, item := range os.Environ() {
+		drop := false
+		for _, name := range names {
+			if strings.HasPrefix(item, name+"=") {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			env = append(env, item)
+		}
+	}
+	env = append(env,
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"CARGO_LOG="+logPath,
+		"CARGO_HOME="+filepath.Join(t.TempDir(), "cargo-home"),
+		"HOME="+filepath.Join(t.TempDir(), "home"),
+		"TMPDIR="+t.TempDir(),
+	)
+	cmd.Env = append(env, extras...)
+	err := cmd.Run()
+	return stdout.String(), stderr.String(), err
+}
+
+func stripBuildANSI(value string) string {
+	for _, code := range []string{
+		"\x1b[38;5;227m", "\x1b[38;5;220m", "\x1b[38;5;34m",
+		"\x1b[38;5;46m", "\x1b[38;5;245m", "\x1b[38;5;44m",
+		"\x1b[38;5;124m", "\x1b[38;5;231m", "\x1b[1m", "\x1b[0m",
+	} {
+		value = strings.ReplaceAll(value, code, "")
+	}
+	return value
+}
+
 func normalizedCargoCalls(t *testing.T, logPath string) ([]string, string) {
 	t.Helper()
 	logBytes, err := os.ReadFile(logPath)
@@ -752,6 +806,199 @@ func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
 	if len(got) != 5 || !slices.Equal(got[:4], want) ||
 		!strings.HasPrefix(got[4], "install --verbose --path . --bins ") {
 		t.Fatalf("verbose cargo calls = %#v; want %#v", got, want)
+	}
+}
+
+func TestRustBuildPresentationColorPolicyAndFailures(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	binDir, logPath := writeFakeCargo(t, dir)
+	colorEnv := []string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color"}
+
+	stdout, stderr, err := runRustPresentation(
+		t, dir, binDir, logPath, "", colorEnv,
+	)
+	if err != nil {
+		t.Fatalf("colored Rust build failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	for _, want := range []string{
+		"\x1b[38;5;227m==> Check Rust formatting\x1b[0m",
+		"\x1b[38;5;34mcargo fmt --check\x1b[0m",
+		"\x1b[38;5;227m==> Run tests\x1b[0m",
+		"\x1b[38;5;227m==> Install package binaries\x1b[0m",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("colored output missing %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stderr, "\x1b[") {
+		t.Fatalf("successful build wrote unexpected colored stderr:\n%s", stderr)
+	}
+
+	cases := []struct {
+		name string
+		env  []string
+	}{
+		{"redirected", []string{"TERM=xterm-256color"}},
+		{"no-color", []string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color", "NO_COLOR=1"}},
+		{"dumb", []string{"GOVERNA_FORCE_TTY=1", "TERM=dumb", "COLORTERM=truecolor"}},
+		{"not-capable", []string{"GOVERNA_FORCE_TTY=1", "TERM=xterm"}},
+		{"forced-off", []string{"GOVERNA_FORCE_TTY=0", "TERM=xterm-256color"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			caseDir := renderRustRepo(t)
+			caseBin, caseLog := writeFakeCargo(t, caseDir)
+			out, errOut, runErr := runRustPresentation(
+				t, caseDir, caseBin, caseLog, "", tc.env,
+			)
+			if runErr != nil {
+				t.Fatalf("plain Rust build failed: %v\n%s\n%s", runErr, out, errOut)
+			}
+			if strings.Contains(out, "\x1b[") || strings.Contains(errOut, "\x1b[") {
+				t.Fatalf("plain-output case emitted ANSI:\nstdout:\n%s\nstderr:\n%s", out, errOut)
+			}
+		})
+	}
+
+	failDir := renderRustRepo(t)
+	failBin, failLog := writeFakeCargo(t, failDir)
+	_, failErr, runErr := runRustPresentation(
+		t,
+		failDir,
+		failBin,
+		failLog,
+		"",
+		append(colorEnv, "CARGO_FAIL_MATCH=fmt", "CARGO_FAIL_STATUS=17"),
+	)
+	exitErr, ok := runErr.(*exec.ExitError)
+	if runErr == nil || !ok || exitErr.ExitCode() != 17 {
+		t.Fatalf("format failure status = %v; want 17", runErr)
+	}
+	wantFailure := "\x1b[38;5;124mcargo fmt --check failed; " +
+		"if rustfmt is unavailable, run: rustup component add rustfmt\x1b[0m"
+	if !strings.Contains(failErr, wantFailure) {
+		t.Fatalf("format failure is not canonically colored:\n%s", failErr)
+	}
+}
+
+func TestRustPrepAndReleasePresentationParity(t *testing.T) {
+	dir := renderRustRepo(t)
+	cargo := "[package]\nname = \"example\"\nversion = \"0.1.0\"\n"
+	initializeRustFixtureRepo(t, dir, cargo)
+	binDir, logPath := writeFakeCargo(t, dir)
+	colored := []string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color"}
+	plain := []string{"NO_COLOR=1", "TERM=xterm-256color"}
+
+	colorOut, colorErr, err := runRustPresentation(
+		t, dir, binDir, logPath, "", colored,
+		"prep", "--dry-run", "v0.2.0", "Rust release",
+	)
+	if err != nil {
+		t.Fatalf("colored prep failed: %v\n%s\n%s", err, colorOut, colorErr)
+	}
+	plainOut, plainErr, err := runRustPresentation(
+		t, dir, binDir, logPath, "", plain,
+		"prep", "--dry-run", "v0.2.0", "Rust release",
+	)
+	if err != nil {
+		t.Fatalf("plain prep failed: %v\n%s\n%s", err, plainOut, plainErr)
+	}
+	if stripBuildANSI(colorOut) != plainOut || stripBuildANSI(colorErr) != plainErr {
+		t.Fatalf("prep text changed under color:\ncolored=%q\nplain=%q", colorOut, plainOut)
+	}
+	for _, want := range []string{
+		"\x1b[38;5;227mversion bumps:\x1b[0m",
+		"\x1b[38;5;34m0.2.0\x1b[0m",
+		"\x1b[38;5;34m./build.sh v0.2.0 \"Rust release\"\x1b[0m",
+	} {
+		if !strings.Contains(colorOut, want) {
+			t.Errorf("colored prep missing %q:\n%s", want, colorOut)
+		}
+	}
+
+	writeRepoFile(t, dir, "pending.md", "# pending\n")
+	colorOut, colorErr, err = runRustPresentation(
+		t, dir, binDir, logPath, "n\n", colored,
+		"v0.2.0", "Rust release",
+	)
+	if err == nil {
+		t.Fatal("colored cancelled release succeeded")
+	}
+	plainOut, plainErr, err = runRustPresentation(
+		t, dir, binDir, logPath, "n\n", plain,
+		"v0.2.0", "Rust release",
+	)
+	if err == nil {
+		t.Fatal("plain cancelled release succeeded")
+	}
+	if stripBuildANSI(colorOut) != plainOut || stripBuildANSI(colorErr) != plainErr {
+		t.Fatalf("release text changed under color:\ncolored=%q\nplain=%q", colorOut+colorErr, plainOut+plainErr)
+	}
+	for _, want := range []string{
+		"\x1b[38;5;227mrelease tag:\x1b[0m \x1b[38;5;34mv0.2.0\x1b[0m",
+		"\x1b[38;5;227mremote:\x1b[0m \x1b[38;5;44morigin\x1b[0m",
+		"\x1b[38;5;227mplan:\x1b[0m",
+	} {
+		if !strings.Contains(colorOut, want) {
+			t.Errorf("colored release missing %q:\n%s", want, colorOut)
+		}
+	}
+	if !strings.Contains(colorErr, "\x1b[38;5;124mrelease aborted\x1b[0m") {
+		t.Fatalf("release failure is not canonically colored:\n%s", colorErr)
+	}
+}
+
+func TestRustBuildPresentationCanonAndBash32(t *testing.T) {
+	t.Parallel()
+	goTemplate, err := templates.EmbeddedFS.ReadFile("overlays/code/stacks/go/build.sh.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rustTemplate, err := templates.EmbeddedFS.ReadFile("overlays/code/stacks/rust/build.sh.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extract := func(t *testing.T, content []byte, end string) string {
+		t.Helper()
+		text := string(content)
+		start := strings.Index(text, "_color_init() {")
+		if start < 0 {
+			t.Fatal("color helper start not found")
+		}
+		stop := strings.Index(text[start:], end)
+		if stop < 0 {
+			t.Fatal("color helper end not found")
+		}
+		return text[start : start+stop]
+	}
+	goHelpers := extract(t, goTemplate, "\n# ── usage formatting")
+	rustHelpers := extract(t, rustTemplate, "\n_failure()")
+	if goHelpers != rustHelpers {
+		t.Fatal("Rust canonical color helpers differ from Go")
+	}
+
+	dir := renderRustRepo(t)
+	version := exec.Command("/bin/bash", "-c", `printf '%s.%s' "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"`)
+	got, err := version.Output()
+	if err != nil || string(got) != "3.2" {
+		t.Fatalf("Bash 3.2 prerequisite unavailable: version=%q err=%v", got, err)
+	}
+	syntax := exec.Command("/bin/bash", "-n", "./build.sh")
+	syntax.Dir = dir
+	if out, err := syntax.CombinedOutput(); err != nil {
+		t.Fatalf("Bash 3.2 syntax failed: %v\n%s", err, out)
+	}
+	script, err := os.ReadFile(filepath.Join(dir, "build.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"declare -A", "mapfile", "readarray", "^^}", ",,}", "&>", "|&", "globstar", "coproc", "[[ -v ",
+	} {
+		if strings.Contains(string(script), forbidden) {
+			t.Errorf("rendered Rust build uses post-Bash-3.2 feature %q", forbidden)
+		}
 	}
 }
 
@@ -1195,18 +1442,30 @@ func TestRustReleasePrepUpdatesOwnedArtifacts(t *testing.T) {
 		"## Product Direction\n\n## Ideas To Explore\n\n- IE7: ship → governa/ac7-rust-release.md\n",
 	)
 	binDir, logPath := writeFakeCargo(t, dir)
-	out, err := runRustBuild(
+	out, stderr, err := runRustPresentation(
 		t,
 		dir,
 		binDir,
 		logPath,
+		"",
+		[]string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color"},
 		"prep",
 		"--no-build",
 		"v0.2.0",
 		"AC7: Rust release",
 	)
 	if err != nil {
-		t.Fatalf("release prep failed: %v\n%s", err, out)
+		t.Fatalf("release prep failed: %v\n%s\n%s", err, out, stderr)
+	}
+	for _, want := range []string{
+		"\x1b[38;5;227mprep: updated Cargo.toml [package].version to\x1b[0m",
+		"\x1b[38;5;227mprep: refreshing Cargo.lock\x1b[0m",
+		"\x1b[38;5;227mprep: deleted\x1b[0m",
+		"\x1b[38;5;34m./build.sh v0.2.0 \"AC7: Rust release\"\x1b[0m",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("colored write-mode prep missing %q:\n%s", want, out)
+		}
 	}
 	cargoBytes, err := os.ReadFile(filepath.Join(dir, "Cargo.toml"))
 	if err != nil {
@@ -1306,22 +1565,22 @@ func TestRustReleaseCancelsOrPushesLightweightTag(t *testing.T) {
 	writeRepoFile(t, dir, "pending.md", "# Pending release\n")
 
 	binDir, logPath := writeFakeCargo(t, dir)
-	runRelease := func(input string) (string, error) {
-		cmd := exec.Command("/bin/bash", "./build.sh", "v0.2.0", "Rust release")
-		cmd.Dir = dir
-		cmd.Stdin = strings.NewReader(input)
-		cmd.Env = append(os.Environ(),
-			"PATH="+binDir+":"+os.Getenv("PATH"),
-			"CARGO_LOG="+logPath,
-			"NO_COLOR=1",
+	runRelease := func(input string) (string, string, error) {
+		return runRustPresentation(
+			t,
+			dir,
+			binDir,
+			logPath,
+			input,
+			[]string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color"},
+			"v0.2.0",
+			"Rust release",
 		)
-		out, err := cmd.CombinedOutput()
-		return string(out), err
 	}
 
 	before := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
-	if out, err := runRelease("n\n"); err == nil {
-		t.Fatalf("cancelled release exited successfully:\n%s", out)
+	if out, stderr, err := runRelease("n\n"); err == nil {
+		t.Fatalf("cancelled release exited successfully:\n%s\n%s", out, stderr)
 	}
 	afterCancel := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
 	if afterCancel != before {
@@ -1331,8 +1590,18 @@ func TestRustReleaseCancelsOrPushesLightweightTag(t *testing.T) {
 		t.Fatal("cancelled release created a tag")
 	}
 
-	if out, err := runRelease("y\n"); err != nil {
-		t.Fatalf("confirmed release failed: %v\n%s", err, out)
+	out, stderr, err := runRelease("y\n")
+	if err != nil {
+		t.Fatalf("confirmed release failed: %v\n%s\n%s", err, out, stderr)
+	}
+	for _, want := range []string{
+		"\x1b[38;5;227mrelease tag:\x1b[0m \x1b[38;5;34mv0.2.0\x1b[0m",
+		"\x1b[38;5;227mremote:\x1b[0m \x1b[38;5;44morigin\x1b[0m",
+		"\x1b[38;5;227mReview the file list above. Proceed with release? (y/N): \x1b[0m",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("confirmed release presentation missing %q:\n%s", want, out)
+		}
 	}
 	if got := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "cat-file", "-t", "v0.2.0")); got != "commit" {
 		t.Fatalf("tag object type = %q; want lightweight commit reference", got)
