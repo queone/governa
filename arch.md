@@ -48,6 +48,8 @@ Template improvements flow in the opposite direction through an out-of-band work
 - overlays are additive; they must not conflict with the base governance contract
 - every template asset root must be registered in `internal/templates/templates.go` and exercised through rendered-output tests
 - first-class CODE stacks emit one canonical stack-specific `build.sh`; unsupported stacks emit the generic CODE scaffold without a build script
+- Rust CODE builds isolate compilation in one invocation-owned temporary Cargo target, clean it on handled exits, and install all package binaries through Cargo into its selected external home
+- Rust release prep suppresses installation during pre-change validation, isolates Cargo.lock refresh, and installs binaries only after successful post-change validation
 - stack guidance is composed immediately above `## Project Practices`, leaving the boundary and consumer-owned tail outside stack canon
 
 ## Conventions

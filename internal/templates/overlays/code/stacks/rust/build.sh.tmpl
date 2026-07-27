@@ -24,6 +24,155 @@ _require_cargo() {
   fi
 }
 
+_path_is_within() {
+  case "$1/" in
+  "$2/"*) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
+_cargo_target=''
+_repo_root=''
+
+_cleanup_cargo_target() {
+  local target="${_cargo_target:-}"
+  [ -n "$target" ] || return 0
+  case "$target" in
+  / | "${HOME:-}") return 1 ;;
+  esac
+  [ -n "$_repo_root" ] || return 1
+  _path_is_within "$target" "$_repo_root" && return 1
+  case "$(basename "$target")" in
+  governa-rust-target.*) ;;
+  *) return 1 ;;
+  esac
+  rm -rf -- "$target" || return 1
+  _cargo_target=''
+}
+
+_cargo_signal() {
+  local status="$1"
+  trap - HUP INT TERM
+  if ! _cleanup_cargo_target; then
+    printf '%s\n' \
+      "build: cleanup failed for Cargo target ${_cargo_target:-unknown}; remove it manually" >&2
+  fi
+  exit "$status"
+}
+
+_create_cargo_target() {
+  local parent candidate resolved home=''
+  _repo_root=$(pwd -P) || {
+    printf '%s\n' 'build: resolve repository root: failed; check directory access' >&2
+    return 1
+  }
+  parent="${TMPDIR:-/tmp}"
+  if ! resolved=$(cd "$parent" 2>/dev/null && pwd -P) ||
+     [ ! -w "$resolved" ] ||
+     _path_is_within "$resolved" "$_repo_root"; then
+    parent=/tmp
+    if ! resolved=$(cd "$parent" 2>/dev/null && pwd -P) ||
+       [ ! -w "$resolved" ] ||
+       _path_is_within "$resolved" "$_repo_root"; then
+      printf '%s\n' \
+        'build: create Cargo target: no safe temporary directory; set TMPDIR to a writable path outside the repository' >&2
+      return 1
+    fi
+  fi
+  candidate=$(mktemp -d "$resolved/governa-rust-target.XXXXXX") || {
+    printf '%s\n' \
+      'build: create Cargo target: mktemp failed; set TMPDIR to a writable path outside the repository' >&2
+    return 1
+  }
+  candidate=$(cd "$candidate" 2>/dev/null && pwd -P) || {
+    rmdir "$candidate" 2>/dev/null || true
+    printf '%s\n' 'build: resolve Cargo target: failed; remove the temporary directory manually' >&2
+    return 1
+  }
+  [ -n "${HOME:-}" ] && home=$(cd "$HOME" 2>/dev/null && pwd -P || true)
+  case "$candidate" in
+  / | "$home")
+    printf '%s\n' 'build: unsafe Cargo target path; refusing cleanup' >&2
+    return 1
+    ;;
+  esac
+  if _path_is_within "$candidate" "$_repo_root"; then
+    printf '%s\n' 'build: Cargo target resolved inside the repository; set a safe TMPDIR' >&2
+    return 1
+  fi
+  case "$(basename "$candidate")" in
+  governa-rust-target.*) ;;
+  *)
+    printf '%s\n' 'build: Cargo target has an unsafe name; refusing cleanup' >&2
+    return 1
+    ;;
+  esac
+  _cargo_target="$candidate"
+  export CARGO_TARGET_DIR="$_cargo_target"
+}
+
+_run_isolated() {
+  local rc=0 cleanup_rc=0
+  _create_cargo_target || return 1
+  trap '_cargo_signal 129' HUP
+  trap '_cargo_signal 130' INT
+  trap '_cargo_signal 143' TERM
+  "$@" || rc=$?
+  trap - HUP INT TERM
+  _cleanup_cargo_target || cleanup_rc=$?
+  if [ "$rc" -ne 0 ]; then return "$rc"; fi
+  if [ "$cleanup_rc" -ne 0 ]; then
+    printf '%s\n' \
+      "build: cleanup failed for Cargo target ${_cargo_target:-unknown}; remove it manually" >&2
+    return "$cleanup_rc"
+  fi
+}
+
+_cargo_install_root() {
+  local root parent leaf resolved
+  if [ -n "${CARGO_HOME:-}" ]; then
+    root="$CARGO_HOME"
+  elif [ -n "${HOME:-}" ]; then
+    root="$HOME/.cargo"
+  else
+    printf '%s\n' \
+      'build: resolve Cargo install root: set CARGO_HOME or HOME to an external writable directory' >&2
+    return 1
+  fi
+  case "$root" in
+  /*) ;;
+  *) root="$_repo_root/$root" ;;
+  esac
+  if _path_is_within "$root" "$_repo_root"; then
+    printf '%s\n' \
+      'build: Cargo install root resolves inside the repository; set CARGO_HOME outside the repository' >&2
+    return 1
+  fi
+  parent=$(dirname "$root")
+  leaf=$(basename "$root")
+  mkdir -p "$parent" || {
+    printf '%s\n' 'build: create Cargo install parent: failed; check CARGO_HOME or HOME permissions' >&2
+    return 1
+  }
+  resolved=$(cd "$parent" 2>/dev/null && pwd -P) || {
+    printf '%s\n' 'build: resolve Cargo install root: failed; check CARGO_HOME or HOME' >&2
+    return 1
+  }
+  root="$resolved/$leaf"
+  if [ -e "$root" ]; then
+    root=$(cd "$root" 2>/dev/null && pwd -P) || {
+      printf '%s\n' 'build: resolve Cargo install root: failed; check CARGO_HOME or HOME' >&2
+      return 1
+    }
+  fi
+  if _path_is_within "$root" "$_repo_root"; then
+    printf '%s\n' \
+      'build: Cargo install root resolves inside the repository; set CARGO_HOME outside the repository' >&2
+    return 1
+  fi
+  printf '%s' "$root"
+}
+
 _run_cargo() {
   local step="$1" component="$2"
   shift 2
@@ -56,9 +205,8 @@ Usage: build [-v|--verbose]
 EOF
 }
 
-build_run() {
-  local verbose="$1"
-  _require_cargo || return 1
+_build_phases() {
+  local verbose="$1" install="$2" rc=0
 
   printf '%s\n' '==> Check Rust formatting'
   _run_cargo 'cargo fmt --check' rustfmt cargo fmt --check || return $?
@@ -66,29 +214,69 @@ build_run() {
   printf '\n%s\n' '==> Run Clippy'
   if [ "$verbose" -eq 1 ]; then
     _run_cargo 'cargo clippy' clippy \
-      cargo clippy --verbose --all-targets --all-features -- -D warnings ||
+      cargo clippy --verbose --all-targets --all-features \
+      --target-dir "$_cargo_target" -- -D warnings ||
       return $?
   else
     _run_cargo 'cargo clippy' clippy \
-      cargo clippy --all-targets --all-features -- -D warnings || return $?
+      cargo clippy --all-targets --all-features \
+      --target-dir "$_cargo_target" -- -D warnings || return $?
   fi
 
   printf '\n%s\n' '==> Run tests'
   if [ "$verbose" -eq 1 ]; then
     _run_cargo 'cargo test' '' \
-      cargo test --verbose --all-targets --all-features || return $?
+      cargo test --verbose --all-targets --all-features \
+      --target-dir "$_cargo_target" || return $?
   else
     _run_cargo 'cargo test' '' \
-      cargo test --all-targets --all-features || return $?
+      cargo test --all-targets --all-features \
+      --target-dir "$_cargo_target" || return $?
   fi
 
   printf '\n%s\n' '==> Build release artifacts'
   if [ "$verbose" -eq 1 ]; then
     _run_cargo 'cargo build --release' '' \
-      cargo build --verbose --release || return $?
+      cargo build --verbose --release --target-dir "$_cargo_target" || return $?
   else
-    _run_cargo 'cargo build --release' '' cargo build --release || return $?
+    _run_cargo 'cargo build --release' '' \
+      cargo build --release --target-dir "$_cargo_target" || return $?
   fi
+
+  [ "$install" -eq 1 ] || return 0
+  local install_root
+  install_root=$(_cargo_install_root) || return 1
+  printf '\n%s\n' '==> Install package binaries'
+  if [ "$verbose" -eq 1 ]; then
+    _run_cargo 'cargo install package binaries' '' \
+      cargo install --verbose --path . --bins --all-features --locked \
+      --root "$install_root" --target-dir "$_cargo_target" || {
+        rc=$?
+        printf '%s\n' \
+          'build: install package binaries: declare at least one Cargo binary target and resolve destination conflicts before retrying' >&2
+        return "$rc"
+      }
+  else
+    _run_cargo 'cargo install package binaries' '' \
+      cargo install --path . --bins --all-features --locked \
+      --root "$install_root" --target-dir "$_cargo_target" || {
+        rc=$?
+        printf '%s\n' \
+          'build: install package binaries: declare at least one Cargo binary target and resolve destination conflicts before retrying' >&2
+        return "$rc"
+      }
+  fi
+}
+
+build_run() {
+  local verbose="$1"
+  _require_cargo || return 1
+  _run_isolated _build_phases "$verbose" 1
+}
+
+_refresh_cargo_lock() {
+  _run_cargo 'cargo check' '' \
+    cargo check --all-targets --all-features --target-dir "$_cargo_target"
 }
 
 build_main() {
@@ -313,7 +501,8 @@ EOF
 
   if [ "$nobuild" -ne 1 ]; then
     printf '%s\n' 'prep: running pre-change build'
-    ./build.sh || return 1
+    _require_cargo || return 1
+    _run_isolated _build_phases 0 0 || return 1
   fi
 
   _replace_cargo_version Cargo.toml "$stripped" || return 1
@@ -321,7 +510,7 @@ EOF
 
   _require_cargo || return 1
   printf '%s\n' 'prep: refreshing Cargo.lock'
-  cargo check --all-targets --all-features || {
+  _run_isolated _refresh_cargo_lock || {
     printf '%s\n' 'prep: refresh Cargo.lock with cargo check: failed' >&2
     return 1
   }

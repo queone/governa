@@ -298,7 +298,8 @@ func TestRustStackEmitsBuildIgnoreAndGuidance(t *testing.T) {
 	required := []string{
 		"cargo fmt --check",
 		"cargo clippy",
-		"--all-targets --all-features -- -D warnings",
+		"--all-targets --all-features",
+		"-- -D warnings",
 		"cargo test",
 		"cargo build",
 		"--release",
@@ -371,6 +372,14 @@ func TestRustStackEmitsBuildIgnoreAndGuidance(t *testing.T) {
 	if strings.Contains(guidelineContent, "## Go Practices") ||
 		strings.Contains(guidelineContent, "programVersion") {
 		t.Error("Rust guidelines contain Go-only guidance")
+	}
+	for _, want := range []string{
+		"Install binaries only during successful post-change release validation.",
+		"Skip binary installation during pre-change validation and `--no-build` release prep.",
+	} {
+		if !strings.Contains(guidelineContent, want) {
+			t.Errorf("Rust guidance missing release-path rule %q", want)
+		}
 	}
 }
 
@@ -457,14 +466,53 @@ func writeFakeCargo(t *testing.T, dir string) (string, string) {
 	}
 	logPath := filepath.Join(dir, "cargo.log")
 	script := `#!/usr/bin/env bash
-printf '%s\n' "$*" >>"$CARGO_LOG"
+printf 'target=%s args=%s\n' "${CARGO_TARGET_DIR:-}" "$*" >>"$CARGO_LOG"
+[ -n "${CARGO_TARGET_DIR:-}" ] && {
+  mkdir -p "$CARGO_TARGET_DIR"
+  : >"$CARGO_TARGET_DIR/fake-compilation"
+}
 if [ "${CARGO_FAIL_MATCH:-}" != "" ] &&
    printf '%s' "$*" | grep -Fq "$CARGO_FAIL_MATCH"; then
   printf '%s\n' "${CARGO_FAIL_OUTPUT:-forced cargo failure}" >&2
   exit "${CARGO_FAIL_STATUS:-7}"
 fi
+if [ "${CARGO_SELF_SIGNAL_MATCH:-}" != "" ] &&
+   printf '%s' "$*" | grep -Fq "$CARGO_SELF_SIGNAL_MATCH"; then
+  printf '%s\n' ready >"$CARGO_READY"
+  kill -"${CARGO_SELF_SIGNAL}" "$PPID"
+  sleep 1
+fi
 if [ "${1:-}" = check ]; then
   printf '%s\n' 'refreshed lock' >Cargo.lock
+fi
+if [ "${1:-}" = install ]; then
+  if [ "${CARGO_FAKE_REQUIRE_LOCK:-0}" = 1 ] && [ ! -f Cargo.lock ]; then
+    printf '%s\n' 'Cargo.lock needs to be updated but --locked was passed' >&2
+    exit 100
+  fi
+  if [ "${CARGO_FAKE_NO_BINS:-0}" = 1 ]; then
+    printf '%s\n' 'no binaries are available for install' >&2
+    exit 101
+  fi
+  root=''
+  previous=''
+  for argument in "$@"; do
+    [ "$previous" = --root ] && root="$argument"
+    previous="$argument"
+  done
+  [ -n "$root" ] || exit 98
+  mkdir -p "$root/bin"
+  old_ifs=$IFS
+  IFS=,
+  for binary in ${CARGO_FAKE_BINS:-example}; do
+    [ -e "$root/bin/$binary" ] && exit 99
+    printf '%s\n' "$binary" >"$root/bin/$binary"
+    chmod +x "$root/bin/$binary"
+  done
+  IFS=$old_ifs
+  if [ "${CARGO_FAKE_BREAK_CLEANUP:-0}" = 1 ]; then
+    chmod a-w "$(dirname "$CARGO_TARGET_DIR")"
+  fi
 fi
 `
 	path := filepath.Join(binDir, "cargo")
@@ -476,16 +524,106 @@ fi
 
 func runRustBuild(t *testing.T, dir, binDir, logPath string, args ...string) (string, error) {
 	t.Helper()
+	out, _, err := runRustBuildWithEnv(t, dir, binDir, logPath, nil, args...)
+	return out, err
+}
+
+func runRustBuildWithEnv(
+	t *testing.T,
+	dir, binDir, logPath string,
+	extras []string,
+	args ...string,
+) (string, string, error) {
+	t.Helper()
 	commandArgs := append([]string{"./build.sh"}, args...)
 	cmd := exec.Command("/bin/bash", commandArgs...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	cargoHome := filepath.Join(t.TempDir(), "cargo-home")
+	tempParent := t.TempDir()
+	hasExtra := func(name string) bool {
+		return slices.ContainsFunc(extras, func(item string) bool {
+			return strings.HasPrefix(item, name+"=")
+		})
+	}
+	for _, item := range extras {
+		if value, ok := strings.CutPrefix(item, "CARGO_HOME="); ok {
+			cargoHome = value
+		}
+	}
+	env := make([]string, 0, len(os.Environ())+6)
+	for _, item := range os.Environ() {
+		if strings.HasPrefix(item, "CARGO_HOME=") ||
+			strings.HasPrefix(item, "CARGO_INSTALL_ROOT=") ||
+			strings.HasPrefix(item, "CARGO_TARGET_DIR=") ||
+			strings.HasPrefix(item, "HOME=") ||
+			strings.HasPrefix(item, "TMPDIR=") {
+			continue
+		}
+		env = append(env, item)
+	}
+	cmd.Env = append(env,
 		"PATH="+binDir+":"+os.Getenv("PATH"),
 		"CARGO_LOG="+logPath,
 		"NO_COLOR=1",
 	)
+	if !hasExtra("CARGO_HOME") {
+		cmd.Env = append(cmd.Env, "CARGO_HOME="+cargoHome)
+	}
+	if !hasExtra("HOME") {
+		cmd.Env = append(cmd.Env, "HOME="+filepath.Join(t.TempDir(), "home"))
+	}
+	if !hasExtra("TMPDIR") {
+		cmd.Env = append(cmd.Env, "TMPDIR="+tempParent)
+	}
+	cmd.Env = append(cmd.Env, extras...)
 	out, err := cmd.CombinedOutput()
-	return string(out), err
+	return string(out), cargoHome, err
+}
+
+func normalizedCargoCalls(t *testing.T, logPath string) ([]string, string) {
+	t.Helper()
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	target := ""
+	for line := range strings.SplitSeq(strings.TrimSpace(string(logBytes)), "\n") {
+		rest, ok := strings.CutPrefix(line, "target=")
+		if !ok {
+			t.Fatalf("malformed Cargo log line %q", line)
+		}
+		current, args, ok := strings.Cut(rest, " args=")
+		if !ok || current == "" || !filepath.IsAbs(current) {
+			t.Fatalf("Cargo target is not absolute in %q", line)
+		}
+		if target == "" {
+			target = current
+		}
+		calls = append(calls, strings.ReplaceAll(args, current, "<target>"))
+	}
+	return calls, target
+}
+
+func cargoLogTargets(t *testing.T, logPath string) []string {
+	t.Helper()
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var targets []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(logBytes)), "\n") {
+		rest, ok := strings.CutPrefix(line, "target=")
+		if !ok {
+			t.Fatalf("malformed Cargo log line %q", line)
+		}
+		target, _, ok := strings.Cut(rest, " args=")
+		if !ok {
+			t.Fatalf("malformed Cargo log line %q", line)
+		}
+		targets = append(targets, target)
+	}
+	return targets
 }
 
 func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
@@ -500,19 +638,30 @@ func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
 	if out, err := runRustBuild(t, dir, binDir, logPath); err != nil {
 		t.Fatalf("normal build failed: %v\n%s", err, out)
 	}
-	logBytes, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := strings.Split(strings.TrimSpace(string(logBytes)), "\n")
+	got, target := normalizedCargoCalls(t, logPath)
 	want := []string{
 		"fmt --check",
-		"clippy --all-targets --all-features -- -D warnings",
-		"test --all-targets --all-features",
-		"build --release",
+		"clippy --all-targets --all-features --target-dir <target> -- -D warnings",
+		"test --all-targets --all-features --target-dir <target>",
+		"build --release --target-dir <target>",
+		"install --path . --bins --all-features --locked --root " +
+			filepath.Join(filepath.Dir(filepath.Dir(target)), "cargo-home") +
+			" --target-dir <target>",
 	}
-	if !slices.Equal(got, want) {
+	if len(got) != len(want) ||
+		!slices.Equal(got[:4], want[:4]) ||
+		!strings.HasPrefix(got[4], "install --path . --bins --all-features --locked --root ") ||
+		!strings.HasSuffix(got[4], " --target-dir <target>") ||
+		strings.Contains(got[4], "--force") {
 		t.Fatalf("cargo calls = %#v; want %#v", got, want)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("temporary Cargo target remains: %v", err)
+	}
+	for _, current := range cargoLogTargets(t, logPath) {
+		if current != target {
+			t.Fatalf("one build used multiple Cargo targets: %q and %q", target, current)
+		}
 	}
 
 	if err := os.Remove(logPath); err != nil {
@@ -521,19 +670,312 @@ func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
 	if out, err := runRustBuild(t, dir, binDir, logPath, "--verbose"); err != nil {
 		t.Fatalf("verbose build failed: %v\n%s", err, out)
 	}
-	logBytes, err = os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got = strings.Split(strings.TrimSpace(string(logBytes)), "\n")
+	got, _ = normalizedCargoCalls(t, logPath)
 	want = []string{
 		"fmt --check",
-		"clippy --verbose --all-targets --all-features -- -D warnings",
-		"test --verbose --all-targets --all-features",
-		"build --verbose --release",
+		"clippy --verbose --all-targets --all-features --target-dir <target> -- -D warnings",
+		"test --verbose --all-targets --all-features --target-dir <target>",
+		"build --verbose --release --target-dir <target>",
 	}
-	if !slices.Equal(got, want) {
+	if len(got) != 5 || !slices.Equal(got[:4], want) ||
+		!strings.HasPrefix(got[4], "install --verbose --path . --bins ") {
 		t.Fatalf("verbose cargo calls = %#v; want %#v", got, want)
+	}
+}
+
+func TestRustBuildInstallsAllBinariesAndPreservesRepositoryTarget(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	binDir, logPath := writeFakeCargo(t, dir)
+	sentinel := filepath.Join(dir, "target", "sentinel")
+	if err := os.MkdirAll(filepath.Dir(sentinel), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, cargoHome, err := runRustBuildWithEnv(
+		t,
+		dir,
+		binDir,
+		logPath,
+		[]string{"CARGO_FAKE_BINS=declared,auto,feature-gated"},
+	)
+	if err != nil {
+		t.Fatalf("Rust build failed: %v\n%s", err, out)
+	}
+	for _, binary := range []string{"declared", "auto", "feature-gated"} {
+		if _, err := os.Stat(filepath.Join(cargoHome, "bin", binary)); err != nil {
+			t.Errorf("installed binary %q: %v", binary, err)
+		}
+	}
+	content, err := os.ReadFile(sentinel)
+	if err != nil || string(content) != "keep" {
+		t.Fatalf("repository target sentinel changed: err=%v content=%q", err, content)
+	}
+	_, target := normalizedCargoCalls(t, logPath)
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("temporary Cargo target remains: %v", err)
+	}
+}
+
+func TestRustBuildRejectsMissingBinariesAndRepositoryCargoHome(t *testing.T) {
+	t.Parallel()
+	t.Run("missing binaries", func(t *testing.T) {
+		dir := renderRustRepo(t)
+		binDir, logPath := writeFakeCargo(t, dir)
+		out, _, err := runRustBuildWithEnv(
+			t,
+			dir,
+			binDir,
+			logPath,
+			[]string{"CARGO_FAKE_NO_BINS=1"},
+		)
+		if err == nil || !strings.Contains(out, "declare at least one Cargo binary target") {
+			t.Fatalf("missing-binary guidance: err=%v out=%s", err, out)
+		}
+	})
+	t.Run("repository Cargo home", func(t *testing.T) {
+		dir := renderRustRepo(t)
+		binDir, logPath := writeFakeCargo(t, dir)
+		out, _, err := runRustBuildWithEnv(
+			t,
+			dir,
+			binDir,
+			logPath,
+			[]string{"CARGO_HOME=" + filepath.Join(dir, ".cargo")},
+		)
+		if err == nil || !strings.Contains(out, "resolves inside the repository") {
+			t.Fatalf("repository Cargo home accepted: err=%v out=%s", err, out)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".cargo")); !os.IsNotExist(err) {
+			t.Fatalf("rejected Cargo home created repository content: %v", err)
+		}
+	})
+	t.Run("symlinked repository Cargo home", func(t *testing.T) {
+		dir := renderRustRepo(t)
+		binDir, logPath := writeFakeCargo(t, dir)
+		link := filepath.Join(t.TempDir(), "cargo-home")
+		if err := os.Symlink(dir, link); err != nil {
+			t.Fatal(err)
+		}
+		out, _, err := runRustBuildWithEnv(
+			t,
+			dir,
+			binDir,
+			logPath,
+			[]string{"CARGO_HOME=" + link},
+		)
+		if err == nil || !strings.Contains(out, "resolves inside the repository") {
+			t.Fatalf("symlinked Cargo home accepted: err=%v out=%s", err, out)
+		}
+	})
+	t.Run("missing homes", func(t *testing.T) {
+		dir := renderRustRepo(t)
+		binDir, logPath := writeFakeCargo(t, dir)
+		out, _, err := runRustBuildWithEnv(
+			t,
+			dir,
+			binDir,
+			logPath,
+			[]string{"CARGO_HOME=", "HOME="},
+		)
+		if err == nil || !strings.Contains(out, "set CARGO_HOME or HOME") {
+			t.Fatalf("missing homes accepted: err=%v out=%s", err, out)
+		}
+	})
+}
+
+func TestRustBuildPreservesInstallConflictsAndRequiresLock(t *testing.T) {
+	t.Parallel()
+	t.Run("binary conflict", func(t *testing.T) {
+		dir := renderRustRepo(t)
+		binDir, logPath := writeFakeCargo(t, dir)
+		cargoHome := t.TempDir()
+		binary := filepath.Join(cargoHome, "bin", "example")
+		if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(binary, []byte("unrelated"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		out, _, err := runRustBuildWithEnv(
+			t,
+			dir,
+			binDir,
+			logPath,
+			[]string{"CARGO_HOME=" + cargoHome},
+		)
+		if err == nil {
+			t.Fatalf("binary conflict succeeded:\n%s", out)
+		}
+		content, readErr := os.ReadFile(binary)
+		if readErr != nil || string(content) != "unrelated" {
+			t.Fatalf("binary conflict was overwritten: err=%v content=%q", readErr, content)
+		}
+		calls, _ := normalizedCargoCalls(t, logPath)
+		if strings.Contains(calls[len(calls)-1], "--force") {
+			t.Fatalf("install forced binary replacement: %q", calls[len(calls)-1])
+		}
+	})
+	t.Run("missing lock", func(t *testing.T) {
+		dir := renderRustRepo(t)
+		binDir, logPath := writeFakeCargo(t, dir)
+		out, cargoHome, err := runRustBuildWithEnv(
+			t,
+			dir,
+			binDir,
+			logPath,
+			[]string{"CARGO_FAKE_REQUIRE_LOCK=1"},
+		)
+		if err == nil || !strings.Contains(out, "Cargo.lock") {
+			t.Fatalf("missing lock accepted: err=%v out=%s", err, out)
+		}
+		if _, err := os.Stat(filepath.Join(cargoHome, "bin")); !os.IsNotExist(err) {
+			t.Fatalf("missing lock installed binaries: %v", err)
+		}
+	})
+}
+
+func TestRustBuildReportsCleanupFailure(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	binDir, logPath := writeFakeCargo(t, dir)
+	tempParent := t.TempDir()
+	out, _, err := runRustBuildWithEnv(
+		t,
+		dir,
+		binDir,
+		logPath,
+		[]string{
+			"TMPDIR=" + tempParent,
+			"CARGO_FAKE_BREAK_CLEANUP=1",
+		},
+	)
+	if chmodErr := os.Chmod(tempParent, 0o755); chmodErr != nil {
+		t.Fatalf("restore temporary parent permissions: %v", chmodErr)
+	}
+	if err == nil || !strings.Contains(out, "cleanup failed for Cargo target") {
+		t.Fatalf("cleanup failure not reported: err=%v out=%s", err, out)
+	}
+	_, target := normalizedCargoCalls(t, logPath)
+	if removeErr := os.Remove(target); removeErr != nil && !os.IsNotExist(removeErr) {
+		t.Fatalf("remove test-owned failed-cleanup target: %v", removeErr)
+	}
+}
+
+func TestRustBuildCleansTargetOnFailureAndHandledSignals(t *testing.T) {
+	t.Parallel()
+	for index, phase := range []string{"fmt", "clippy", "test", "build", "install"} {
+		t.Run("command failure "+phase, func(t *testing.T) {
+			dir := renderRustRepo(t)
+			binDir, logPath := writeFakeCargo(t, dir)
+			out, _, err := runRustBuildWithEnv(
+				t,
+				dir,
+				binDir,
+				logPath,
+				[]string{
+					"CARGO_FAIL_MATCH=" + phase,
+					"CARGO_FAIL_STATUS=37",
+				},
+			)
+			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 37 {
+				t.Fatalf("failure status: err=%v out=%s", err, out)
+			}
+			calls, target := normalizedCargoCalls(t, logPath)
+			if len(calls) != index+1 {
+				t.Fatalf("commands continued after %s failure: %#v", phase, calls)
+			}
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatalf("failed-build Cargo target remains: %v", err)
+			}
+		})
+	}
+	for _, fixture := range []struct {
+		signal string
+		status int
+	}{
+		{"HUP", 129},
+		{"INT", 130},
+		{"TERM", 143},
+	} {
+		t.Run(fixture.signal, func(t *testing.T) {
+			dir := renderRustRepo(t)
+			binDir, logPath := writeFakeCargo(t, dir)
+			ready := filepath.Join(t.TempDir(), "ready")
+			out, _, err := runRustBuildWithEnv(
+				t,
+				dir,
+				binDir,
+				logPath,
+				[]string{
+					"CARGO_SELF_SIGNAL_MATCH=clippy",
+					"CARGO_SELF_SIGNAL=" + fixture.signal,
+					"CARGO_READY=" + ready,
+				},
+			)
+			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != fixture.status {
+				t.Fatalf("%s status: err=%v out=%s", fixture.signal, err, out)
+			}
+			if _, err := os.Stat(ready); err != nil {
+				t.Fatalf("%s readiness marker: %v", fixture.signal, err)
+			}
+			_, target := normalizedCargoCalls(t, logPath)
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatalf("%s Cargo target remains: %v", fixture.signal, err)
+			}
+		})
+	}
+}
+
+func TestRustBuildOverridesCargoDestinationsAndUsesDefaultHome(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	binDir, logPath := writeFakeCargo(t, dir)
+	configuredTarget := filepath.Join(dir, "configured-target")
+	writeRepoFile(
+		t,
+		dir,
+		".cargo/config.toml",
+		"[build]\ntarget-dir = \""+configuredTarget+"\"\n",
+	)
+	isolatedHome := t.TempDir()
+	installRoot := t.TempDir()
+	out, _, err := runRustBuildWithEnv(
+		t,
+		dir,
+		binDir,
+		logPath,
+		[]string{
+			"CARGO_HOME=",
+			"HOME=" + isolatedHome,
+			"TMPDIR=" + dir,
+			"CARGO_TARGET_DIR=" + filepath.Join(dir, "inherited-target"),
+			"CARGO_INSTALL_ROOT=" + installRoot,
+		},
+	)
+	if err != nil {
+		t.Fatalf("default-home build failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(isolatedHome, ".cargo", "bin", "example")); err != nil {
+		t.Fatalf("default Cargo binary missing: %v", err)
+	}
+	if entries, err := os.ReadDir(installRoot); err != nil || len(entries) != 0 {
+		t.Fatalf("CARGO_INSTALL_ROOT was modified: err=%v entries=%v", err, entries)
+	}
+	if _, err := os.Stat(configuredTarget); !os.IsNotExist(err) {
+		t.Fatalf("configured repository target was used: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "inherited-target")); !os.IsNotExist(err) {
+		t.Fatalf("inherited repository target was used: %v", err)
+	}
+	_, target := normalizedCargoCalls(t, logPath)
+	if strings.HasPrefix(target+string(os.PathSeparator), dir+string(os.PathSeparator)) {
+		t.Fatalf("unsafe TMPDIR produced repository target %q", target)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("fallback Cargo target remains: %v", err)
 	}
 }
 
@@ -707,12 +1149,13 @@ func TestRustReleasePrepUpdatesOwnedArtifacts(t *testing.T) {
 	if err != nil || !strings.Contains(string(lockBytes), "refreshed lock") {
 		t.Fatalf("Cargo.lock not refreshed: err=%v content=%q", err, lockBytes)
 	}
-	logBytes, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
+	got, target := normalizedCargoCalls(t, logPath)
+	want := []string{"check --all-targets --all-features --target-dir <target>"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("--no-build Cargo calls = %#v; want %#v", got, want)
 	}
-	if strings.TrimSpace(string(logBytes)) != "check --all-targets --all-features" {
-		t.Fatalf("--no-build Cargo calls = %q", logBytes)
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("release-prep Cargo target remains: %v", err)
 	}
 	changelog, err := os.ReadFile(filepath.Join(dir, "CHANGELOG.md"))
 	if err != nil {
@@ -754,23 +1197,20 @@ func TestRustReleasePrepRunsPreAndPostValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("release prep failed: %v\n%s", err, out)
 	}
-	logBytes, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := strings.Split(strings.TrimSpace(string(logBytes)), "\n")
+	got, _ := normalizedCargoCalls(t, logPath)
 	want := []string{
 		"fmt --check",
-		"clippy --all-targets --all-features -- -D warnings",
-		"test --all-targets --all-features",
-		"build --release",
-		"check --all-targets --all-features",
+		"clippy --all-targets --all-features --target-dir <target> -- -D warnings",
+		"test --all-targets --all-features --target-dir <target>",
+		"build --release --target-dir <target>",
+		"check --all-targets --all-features --target-dir <target>",
 		"fmt --check",
-		"clippy --all-targets --all-features -- -D warnings",
-		"test --all-targets --all-features",
-		"build --release",
+		"clippy --all-targets --all-features --target-dir <target> -- -D warnings",
+		"test --all-targets --all-features --target-dir <target>",
+		"build --release --target-dir <target>",
 	}
-	if !slices.Equal(got, want) {
+	if len(got) != len(want)+1 || !slices.Equal(got[:len(want)], want) ||
+		!strings.HasPrefix(got[len(want)], "install --path . --bins ") {
 		t.Fatalf("prep Cargo calls = %#v; want %#v", got, want)
 	}
 }

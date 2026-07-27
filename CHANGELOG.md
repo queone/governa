@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.141.0 | AC152: isolate Rust builds and install binaries |
 | 0.140.0 | AC151: first-class Rust CODE stack |
 | 0.139.0 | AC150: DOC build.sh release and prep; retire rel.sh + cmd/rel |
 | 0.138.0 | AC148: first-class non-Go CODE stacks; Terraform + preserve-marker gate fix |

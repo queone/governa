@@ -49,6 +49,13 @@ stack-specific canonical `build.sh`; Rust and Go also emit stack-specific
 development guidance. Other stack values are accepted but produce the generic
 CODE scaffold without a build script.
 
+Rust canonical builds run formatting, Clippy, tests, and release compilation
+with a temporary Cargo target outside the repository, then remove that target
+on success or failure. They install every Cargo-recognized package binary with
+all features into `$CARGO_HOME/bin`, or `$HOME/.cargo/bin` when `CARGO_HOME` is
+unset. Rust CODE consumers must declare at least one binary target. Existing
+binary-name conflicts are reported rather than overwritten.
+
 **Existing repo** (governance artifacts found): all template files are written directly. Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`.
 
 ```bash

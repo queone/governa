@@ -1,6 +1,13 @@
 ## Rust Practices
 
 - Run all repository validation through `./build.sh`.
+- Declare at least one Cargo binary target.
+- Keep Cargo compilation artifacts in the build-managed temporary target.
+- Install all Cargo binary targets through the canonical build.
+- Install binaries only during successful post-change release validation.
+- Skip binary installation during pre-change validation and `--no-build` release prep.
+- Set `CARGO_HOME` to an external path when isolating binary installation.
+- Resolve installed-binary name conflicts before rerunning the build.
 - Format Rust code with rustfmt.
 - Treat Clippy warnings as build failures.
 - Test all targets and all features before handoff.
