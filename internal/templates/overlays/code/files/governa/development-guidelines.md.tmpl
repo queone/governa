@@ -29,12 +29,6 @@ Sections above ## Project Practices are governa-maintained canon and update via 
 - Grep the full repo for the pattern being changed before considering a fix complete
 - If a template and its rendered output diverge, the template is authoritative
 - Keep `build.sh` self-contained; do not add sourced production helper modules.
-- Add single-line godoc comments to exported functions in shared Go packages.
-
-## Program Version Declaration
-
-- Every installable `cmd/<name>/main.go` must declare a non-empty `const programVersion` string literal
-- Let `build.sh` validate this before compiling installable binaries; fail on missing or empty declarations.
 
 ## Error Handling And Validation
 
@@ -53,7 +47,7 @@ Sections above ## Project Practices are governa-maintained canon and update via 
 
 - Prefer standard library over external dependencies when the capability is equivalent
 - When adding a dependency, justify it — convenience alone is not sufficient
-- Keep import paths consistent after renames or reorganizations; grep for stale references
+- Keep import paths consistent after renames or reorganizations
 
 ## CLI Usage Formatting
 

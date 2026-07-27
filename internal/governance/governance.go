@@ -576,6 +576,8 @@ func stackIgnoreBlock(tfs fs.FS, stack string) (string, bool) {
 		file = "stack-ignores/go.txt"
 	case strings.EqualFold(stack, "terraform"):
 		file = "stack-ignores/terraform.txt"
+	case strings.EqualFold(stack, "rust"):
+		file = "stack-ignores/rust.txt"
 	default:
 		return "", false
 	}
@@ -584,6 +586,38 @@ func stackIgnoreBlock(tfs fs.FS, stack string) (string, bool) {
 		return "", false
 	}
 	return string(content), true
+}
+
+// stackGuidelineBlock returns the stack-specific development guidance to
+// insert above the consumer-owned Project Practices boundary.
+func stackGuidelineBlock(tfs fs.FS, stack string) (string, bool) {
+	var file string
+	switch {
+	case stackSuggestsGo(stack):
+		file = "stack-guidelines/go.md"
+	case strings.EqualFold(stack, "rust"):
+		file = "stack-guidelines/rust.md"
+	default:
+		return "", false
+	}
+	content, err := fs.ReadFile(tfs, file)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(content)), true
+}
+
+func insertStackGuidelines(content, block string) (string, error) {
+	const boundary = "## Project Practices"
+	const marker = "\n" + boundary + "\n"
+	index := strings.Index(content, marker)
+	if index < 0 {
+		return "", fmt.Errorf("compose stack guidelines: %s boundary not found", boundary)
+	}
+	index++
+	prefix := strings.TrimRight(content[:index], "\n")
+	suffix := content[index:]
+	return prefix + "\n\n" + block + "\n\n" + suffix, nil
 }
 
 func readModulePath(targetRoot string) string {
@@ -656,6 +690,14 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 		if targetRel == ".gitignore" {
 			if block, ok := stackIgnoreBlock(tfs, cfg.Stack); ok {
 				content = content + "\n" + block
+			}
+		}
+		if targetRel == filepath.Join("governa", "development-guidelines.md") {
+			if block, ok := stackGuidelineBlock(tfs, cfg.Stack); ok {
+				content, err = insertStackGuidelines(content, block)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		ops = append(ops, operation{

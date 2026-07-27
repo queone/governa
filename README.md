@@ -44,7 +44,10 @@ Or with flags to skip prompts:
 governa apply -k CODE -n my-service -s "Go"
 ```
 
-Go is the only stack with full overlay support today. Other values are accepted but produce a generic scaffold.
+Go, Rust, and Terraform have first-class CODE overlays. Each emits one
+stack-specific canonical `build.sh`; Rust and Go also emit stack-specific
+development guidance. Other stack values are accepted but produce the generic
+CODE scaffold without a build script.
 
 **Existing repo** (governance artifacts found): all template files are written directly. Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`.
 
@@ -60,7 +63,7 @@ Run `governa rm` from an adopted consumer repo root to emit a cleanup AC stub pl
 
 ### `deps`
 
-Run `governa deps` from an adopted CODE consumer repo root, or from the governa source repo itself, to report direct Go dependency freshness without modifying `go.mod` or `go.sum`. Governa helper libraries (`github.com/queone/governa-*`) are grouped first.
+Run `governa deps` from an adopted Go CODE consumer repo root, or from the governa source repo itself, to report direct Go dependency freshness without modifying `go.mod` or `go.sum`. `deps` is Go-only; other CODE stacks use their native dependency tools. Governa helper libraries (`github.com/queone/governa-*`) are grouped first.
 
 ### Self-service updates
 
@@ -99,6 +102,6 @@ governa is shifting from a single one-off-applied template to a layered model: c
 
 ## Rendered Examples
 
-Run `governa render-canon --flavor code <dir>` (and `--flavor doc <dir>`) to render flavor-specific canon into a target directory for inspection or testing. See `governa render-canon -h` for full usage.
+Run `governa render-canon --flavor code <dir>` (and `--flavor doc <dir>`) to render flavor-specific canon into a target directory for inspection or testing. CODE rendering infers the stack from the current directory; use `-s, --stack <name>` to override it. Go rendering reads the module path from `go.mod` unless `-m, --module-path <path>` is supplied. See `governa render-canon -h` for full usage.
 
 See [`governa/governance-model.md`](governa/governance-model.md).

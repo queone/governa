@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -140,6 +141,27 @@ func TestInferStackFromGoMod(t *testing.T) {
 	}
 }
 
+func TestInferStackFromCargoManifest(t *testing.T) {
+	t.Parallel()
+	dir := newFixtureTarget(t, map[string]string{
+		"Cargo.toml": "[package]\nname = \"example\"\nversion = \"0.1.0\"\n",
+	})
+	if got := inferStack(dir); got != "Rust" {
+		t.Errorf("inferStack = %q; want Rust", got)
+	}
+}
+
+func TestInferStackManifestPrecedenceRemainsStable(t *testing.T) {
+	t.Parallel()
+	dir := newFixtureTarget(t, map[string]string{
+		"go.mod":     "module example.com/test\n\ngo 1.25\n",
+		"Cargo.toml": "[package]\nname = \"example\"\nversion = \"0.1.0\"\n",
+	})
+	if got := inferStack(dir); got != "Go" {
+		t.Errorf("inferStack = %q; want Go precedence", got)
+	}
+}
+
 func TestInferStackFromTerraformLockFile(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
@@ -244,6 +266,624 @@ func TestTerraformStackGitignoreBlock(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Errorf(".gitignore missing %q for Terraform stack", want)
 		}
+	}
+}
+
+func TestRustStackEmitsBuildIgnoreAndGuidance(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Rust",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+	buildPath := filepath.Join(dir, "build.sh")
+	info, err := os.Stat(buildPath)
+	if err != nil {
+		t.Fatalf("build.sh not emitted: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Errorf("build.sh mode %v is not executable", info.Mode())
+	}
+	build, err := os.ReadFile(buildPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(build)
+	required := []string{
+		"cargo fmt --check",
+		"cargo clippy",
+		"--all-targets --all-features -- -D warnings",
+		"cargo test",
+		"cargo build",
+		"--release",
+	}
+	last := -1
+	for _, want := range required {
+		index := strings.Index(content, want)
+		if index < 0 {
+			t.Errorf("build.sh missing %q", want)
+		}
+		if index < last {
+			t.Errorf("build.sh command marker %q appears out of order", want)
+		}
+		last = index
+	}
+	for _, unwanted := range []string{"go mod tidy", "terraform validate"} {
+		if strings.Contains(content, unwanted) {
+			t.Errorf("Rust build.sh contains %q", unwanted)
+		}
+	}
+
+	gitignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ignoreContent := string(gitignore)
+	for _, want := range []string{"/target/", "**/*.rs.bk"} {
+		if !strings.Contains(ignoreContent, want) {
+			t.Errorf(".gitignore missing %q", want)
+		}
+	}
+	for line := range strings.SplitSeq(ignoreContent, "\n") {
+		if strings.TrimSpace(line) == "Cargo.lock" ||
+			strings.TrimSpace(line) == "/Cargo.lock" {
+			t.Error(".gitignore must not ignore Cargo.lock")
+		}
+	}
+
+	guidelines, err := os.ReadFile(filepath.Join(dir, "governa", "development-guidelines.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	guidelineContent := string(guidelines)
+	boundaryMarker := "\n## Project Practices\n"
+	boundary := strings.Index(guidelineContent, boundaryMarker)
+	rustBlock := strings.Index(guidelineContent, "\n## Rust Practices\n")
+	if rustBlock < 0 || boundary < 0 || rustBlock >= boundary {
+		t.Fatalf("Rust guidance must precede Project Practices")
+	}
+	if strings.Count(guidelineContent, boundaryMarker) != 1 {
+		t.Fatalf("Project Practices heading count = %d; want 1",
+			strings.Count(guidelineContent, boundaryMarker))
+	}
+	if !strings.Contains(
+		guidelineContent,
+		"Sections above ## Project Practices are governa-maintained canon",
+	) {
+		t.Fatal("stack composition broke the Project Practices introduction")
+	}
+	rustFragment, err := templates.EmbeddedFS.ReadFile("stack-guidelines/rust.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(
+		guidelineContent[rustBlock:boundary],
+		strings.TrimSpace(string(rustFragment)),
+	) {
+		t.Error("rendered Rust guidance does not contain the complete embedded fragment")
+	}
+	if strings.Contains(guidelineContent, "## Go Practices") ||
+		strings.Contains(guidelineContent, "programVersion") {
+		t.Error("Rust guidelines contain Go-only guidance")
+	}
+}
+
+func TestGoGuidanceMovesOutOfGenericCanon(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Go",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatal(err)
+	}
+	contentBytes, err := os.ReadFile(filepath.Join(dir, "governa", "development-guidelines.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(contentBytes)
+	block := strings.Index(content, "\n## Go Practices\n")
+	boundary := strings.Index(content, "\n## Project Practices\n")
+	if block < 0 || boundary < 0 || block >= boundary {
+		t.Fatal("Go guidance must precede Project Practices")
+	}
+	goFragment, err := templates.EmbeddedFS.ReadFile("stack-guidelines/go.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(content[block:boundary], strings.TrimSpace(string(goFragment))) {
+		t.Error("rendered Go guidance does not contain the complete embedded fragment")
+	}
+}
+
+func TestUnsupportedStackKeepsGenericCanon(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Unknown",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "build.sh")); !os.IsNotExist(err) {
+		t.Fatalf("unsupported stack build.sh stat error = %v; want not-exist", err)
+	}
+	contentBytes, err := os.ReadFile(filepath.Join(dir, "governa", "development-guidelines.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(contentBytes)
+	if strings.Contains(content, "## Go Practices") ||
+		strings.Contains(content, "## Rust Practices") {
+		t.Error("unsupported stack received stack-specific guidance")
+	}
+}
+
+func renderRustRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "test-repo",
+		Stack:    "Rust",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+	return dir
+}
+
+func writeFakeCargo(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	binDir := filepath.Join(dir, "fake-bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(dir, "cargo.log")
+	script := `#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CARGO_LOG"
+if [ "${CARGO_FAIL_MATCH:-}" != "" ] &&
+   printf '%s' "$*" | grep -Fq "$CARGO_FAIL_MATCH"; then
+  printf '%s\n' "${CARGO_FAIL_OUTPUT:-forced cargo failure}" >&2
+  exit "${CARGO_FAIL_STATUS:-7}"
+fi
+if [ "${1:-}" = check ]; then
+  printf '%s\n' 'refreshed lock' >Cargo.lock
+fi
+`
+	path := filepath.Join(binDir, "cargo")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return binDir, logPath
+}
+
+func runRustBuild(t *testing.T, dir, binDir, logPath string, args ...string) (string, error) {
+	t.Helper()
+	commandArgs := append([]string{"./build.sh"}, args...)
+	cmd := exec.Command("/bin/bash", commandArgs...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"CARGO_LOG="+logPath,
+		"NO_COLOR=1",
+	)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	syntax := exec.Command("/bin/bash", "-n", "./build.sh")
+	syntax.Dir = dir
+	if out, err := syntax.CombinedOutput(); err != nil {
+		t.Fatalf("bash -n failed: %v\n%s", err, out)
+	}
+	binDir, logPath := writeFakeCargo(t, dir)
+	if out, err := runRustBuild(t, dir, binDir, logPath); err != nil {
+		t.Fatalf("normal build failed: %v\n%s", err, out)
+	}
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSpace(string(logBytes)), "\n")
+	want := []string{
+		"fmt --check",
+		"clippy --all-targets --all-features -- -D warnings",
+		"test --all-targets --all-features",
+		"build --release",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("cargo calls = %#v; want %#v", got, want)
+	}
+
+	if err := os.Remove(logPath); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runRustBuild(t, dir, binDir, logPath, "--verbose"); err != nil {
+		t.Fatalf("verbose build failed: %v\n%s", err, out)
+	}
+	logBytes, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = strings.Split(strings.TrimSpace(string(logBytes)), "\n")
+	want = []string{
+		"fmt --check",
+		"clippy --verbose --all-targets --all-features -- -D warnings",
+		"test --verbose --all-targets --all-features",
+		"build --verbose --release",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("verbose cargo calls = %#v; want %#v", got, want)
+	}
+}
+
+func TestRustBuildScriptHelpAndFailureGuidance(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	binDir, logPath := writeFakeCargo(t, dir)
+	for _, flag := range []string{"-h", "-?", "--help"} {
+		out, err := runRustBuild(t, dir, binDir, logPath, flag)
+		if err != nil || !strings.Contains(out, "Usage: build") {
+			t.Errorf("help %s: err=%v out=%q", flag, err, out)
+		}
+	}
+	if out, err := runRustBuild(t, dir, binDir, logPath, "--help", "-v"); err == nil ||
+		!strings.Contains(out, "help flags must be used by themselves") {
+		t.Fatalf("mixed help: err=%v out=%q", err, out)
+	}
+
+	cmd := exec.Command("/bin/bash", "./build.sh")
+	cmd.Dir = dir
+	cmd.Env = []string{"PATH=" + filepath.Dir(findBash(t)), "NO_COLOR=1"}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "install the Rust toolchain") {
+		t.Fatalf("missing cargo: err=%v out=%s", err, out)
+	}
+
+	if err := os.Remove(logPath); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	fmtEnv := append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"CARGO_LOG="+logPath,
+		"CARGO_FAIL_MATCH=fmt",
+		"CARGO_FAIL_OUTPUT=no such command: fmt",
+		"CARGO_FAIL_STATUS=8",
+	)
+	cmd = exec.Command("/bin/bash", "./build.sh")
+	cmd.Dir = dir
+	cmd.Env = fmtEnv
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "rustup component add rustfmt") {
+		t.Fatalf("rustfmt failure: err=%v out=%s", err, out)
+	}
+	if err := os.Remove(logPath); err != nil {
+		t.Fatal(err)
+	}
+	failEnv := append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"CARGO_LOG="+logPath,
+		"CARGO_FAIL_MATCH=clippy",
+		"CARGO_FAIL_OUTPUT=no such command: clippy",
+		"CARGO_FAIL_STATUS=9",
+	)
+	cmd = exec.Command("/bin/bash", "./build.sh")
+	cmd.Dir = dir
+	cmd.Env = failEnv
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "rustup component add clippy") {
+		t.Fatalf("clippy failure: err=%v out=%s", err, out)
+	}
+	logBytes, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if strings.Contains(string(logBytes), "\ntest ") ||
+		strings.Contains(string(logBytes), "\nbuild ") {
+		t.Fatalf("commands continued after Clippy failure:\n%s", logBytes)
+	}
+}
+
+func findBash(t *testing.T) string {
+	t.Helper()
+	path, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func initializeRustFixtureRepo(t *testing.T, dir, cargo string) {
+	t.Helper()
+	writeRepoFile(t, dir, "Cargo.toml", cargo)
+	writeRepoFile(t, dir, "CHANGELOG.md", "| Version | Summary |\n|---|---|\n| Unreleased | |\n")
+	writeRepoFile(t, dir, "plan.md", "## Product Direction\n\n## Ideas To Explore\n")
+	mustRunRepoCommand(t, dir, "", "git", "init", "-q")
+	mustRunRepoCommand(t, dir, "", "git", "config", "user.name", "Rust Test")
+	mustRunRepoCommand(t, dir, "", "git", "config", "user.email", "rust-test@example.com")
+	mustRunRepoCommand(t, dir, "", "git", "add", ".")
+	mustRunRepoCommand(t, dir, "", "git", "commit", "-qm", "fixture")
+}
+
+func TestRustReleasePrepDryRunDoesNotWrite(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	cargo := "[package]\nname = \"example\"\nversion = \"0.1.0\"\n"
+	initializeRustFixtureRepo(t, dir, cargo)
+	before, err := os.ReadFile(filepath.Join(dir, "Cargo.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binDir, logPath := writeFakeCargo(t, dir)
+	out, err := runRustBuild(
+		t,
+		dir,
+		binDir,
+		logPath,
+		"prep",
+		"--dry-run",
+		"v0.2.0",
+		"Rust release",
+	)
+	if err != nil {
+		t.Fatalf("dry-run prep failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"Cargo.toml [package].version: 0.1.0 -> 0.2.0",
+		"./build.sh v0.2.0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dry-run output missing %q:\n%s", want, out)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "Cargo.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(before, after) {
+		t.Fatal("dry-run modified Cargo.toml")
+	}
+	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+		t.Fatalf("dry-run invoked Cargo; log stat=%v", err)
+	}
+}
+
+func TestRustReleasePrepUpdatesOwnedArtifacts(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	cargo := "[package]\nname = \"example\"\nversion  =  \"0.1.0\" # release version\n\n[dependencies]\nanyhow = \"1.0.0\"\n"
+	initializeRustFixtureRepo(t, dir, cargo)
+	writeRepoFile(t, dir, "governa/ac7-rust-release.md", "# fixture\n")
+	writeRepoFile(
+		t,
+		dir,
+		"plan.md",
+		"## Product Direction\n\n## Ideas To Explore\n\n- IE7: ship → governa/ac7-rust-release.md\n",
+	)
+	binDir, logPath := writeFakeCargo(t, dir)
+	out, err := runRustBuild(
+		t,
+		dir,
+		binDir,
+		logPath,
+		"prep",
+		"--no-build",
+		"v0.2.0",
+		"AC7: Rust release",
+	)
+	if err != nil {
+		t.Fatalf("release prep failed: %v\n%s", err, out)
+	}
+	cargoBytes, err := os.ReadFile(filepath.Join(dir, "Cargo.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cargoContent := string(cargoBytes)
+	if !strings.Contains(cargoContent, "version  =  \"0.2.0\" # release version") ||
+		!strings.Contains(cargoContent, "anyhow = \"1.0.0\"") {
+		t.Fatalf("Cargo.toml version update changed unrelated content:\n%s", cargoContent)
+	}
+	lockBytes, err := os.ReadFile(filepath.Join(dir, "Cargo.lock"))
+	if err != nil || !strings.Contains(string(lockBytes), "refreshed lock") {
+		t.Fatalf("Cargo.lock not refreshed: err=%v content=%q", err, lockBytes)
+	}
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(logBytes)) != "check --all-targets --all-features" {
+		t.Fatalf("--no-build Cargo calls = %q", logBytes)
+	}
+	changelog, err := os.ReadFile(filepath.Join(dir, "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(changelog), "| 0.2.0 | AC7: Rust release |") {
+		t.Fatalf("CHANGELOG missing release row:\n%s", changelog)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "governa", "ac7-rust-release.md")); !os.IsNotExist(err) {
+		t.Fatalf("completed AC was not deleted: %v", err)
+	}
+	plan, err := os.ReadFile(filepath.Join(dir, "plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plan), "ac7-rust-release") {
+		t.Fatalf("plan pointer was not removed:\n%s", plan)
+	}
+	if !strings.Contains(out, "./build.sh v0.2.0") {
+		t.Fatalf("release command not emitted:\n%s", out)
+	}
+}
+
+func TestRustReleasePrepRunsPreAndPostValidation(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	cargo := "[package]\nname = \"example\"\nversion = \"0.1.0\"\n"
+	initializeRustFixtureRepo(t, dir, cargo)
+	binDir, logPath := writeFakeCargo(t, dir)
+	out, err := runRustBuild(
+		t,
+		dir,
+		binDir,
+		logPath,
+		"prep",
+		"v0.2.0",
+		"Rust release",
+	)
+	if err != nil {
+		t.Fatalf("release prep failed: %v\n%s", err, out)
+	}
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSpace(string(logBytes)), "\n")
+	want := []string{
+		"fmt --check",
+		"clippy --all-targets --all-features -- -D warnings",
+		"test --all-targets --all-features",
+		"build --release",
+		"check --all-targets --all-features",
+		"fmt --check",
+		"clippy --all-targets --all-features -- -D warnings",
+		"test --all-targets --all-features",
+		"build --release",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("prep Cargo calls = %#v; want %#v", got, want)
+	}
+}
+
+func TestRustReleaseCancelsOrPushesLightweightTag(t *testing.T) {
+	dir := renderRustRepo(t)
+	cargo := "[package]\nname = \"example\"\nversion = \"0.1.0\"\n"
+	initializeRustFixtureRepo(t, dir, cargo)
+	branch := strings.TrimSpace(mustRunRepoCommand(
+		t,
+		dir,
+		"",
+		"git",
+		"branch",
+		"--show-current",
+	))
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	mustRunRepoCommand(t, dir, "", "git", "init", "--bare", "-q", remote)
+	mustRunRepoCommand(t, dir, "", "git", "remote", "add", "origin", remote)
+	mustRunRepoCommand(t, dir, "", "git", "push", "-q", "-u", "origin", branch)
+	writeRepoFile(t, dir, "pending.md", "# Pending release\n")
+
+	binDir, logPath := writeFakeCargo(t, dir)
+	runRelease := func(input string) (string, error) {
+		cmd := exec.Command("/bin/bash", "./build.sh", "v0.2.0", "Rust release")
+		cmd.Dir = dir
+		cmd.Stdin = strings.NewReader(input)
+		cmd.Env = append(os.Environ(),
+			"PATH="+binDir+":"+os.Getenv("PATH"),
+			"CARGO_LOG="+logPath,
+			"NO_COLOR=1",
+		)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	before := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
+	if out, err := runRelease("n\n"); err == nil {
+		t.Fatalf("cancelled release exited successfully:\n%s", out)
+	}
+	afterCancel := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
+	if afterCancel != before {
+		t.Fatalf("cancelled release changed HEAD: got %s, want %s", afterCancel, before)
+	}
+	if _, err := runRepoCommand(t, dir, "", "git", "rev-parse", "-q", "--verify", "refs/tags/v0.2.0"); err == nil {
+		t.Fatal("cancelled release created a tag")
+	}
+
+	if out, err := runRelease("y\n"); err != nil {
+		t.Fatalf("confirmed release failed: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "cat-file", "-t", "v0.2.0")); got != "commit" {
+		t.Fatalf("tag object type = %q; want lightweight commit reference", got)
+	}
+	localHead := strings.TrimSpace(mustRunRepoCommand(t, dir, "", "git", "rev-parse", "HEAD"))
+	remoteHead := strings.TrimSpace(mustRunRepoCommand(
+		t,
+		dir,
+		"",
+		"git",
+		"--git-dir",
+		remote,
+		"rev-parse",
+		"refs/heads/"+branch,
+	))
+	if remoteHead != localHead {
+		t.Fatalf("remote branch head = %s; want %s", remoteHead, localHead)
+	}
+	remoteTag := strings.TrimSpace(mustRunRepoCommand(
+		t,
+		dir,
+		"",
+		"git",
+		"--git-dir",
+		remote,
+		"rev-parse",
+		"refs/tags/v0.2.0",
+	))
+	if remoteTag != localHead {
+		t.Fatalf("remote tag target = %s; want %s", remoteTag, localHead)
+	}
+}
+
+func TestRustReleasePrepRejectsUnsupportedVersions(t *testing.T) {
+	t.Parallel()
+	fixtures := map[string]string{
+		"virtual workspace": "[workspace]\nmembers = [\"crate\"]\n",
+		"inherited version": "[package]\nname = \"example\"\nversion.workspace = true\n",
+		"missing version":   "[package]\nname = \"example\"\n",
+		"duplicate version": "[package]\nname = \"example\"\nversion = \"0.1.0\"\nversion = \"0.1.1\"\n",
+		"nonliteral version": "[package]\nname = \"example\"\n" +
+			"version = { workspace = true }\n",
+	}
+	for name, cargo := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := renderRustRepo(t)
+			initializeRustFixtureRepo(t, dir, cargo)
+			binDir, logPath := writeFakeCargo(t, dir)
+			out, err := runRustBuild(
+				t,
+				dir,
+				binDir,
+				logPath,
+				"prep",
+				"--dry-run",
+				"v0.2.0",
+				"Rust release",
+			)
+			if err == nil || !strings.Contains(out, "prep:") {
+				t.Fatalf("unsupported manifest accepted: err=%v out=%s", err, out)
+			}
+		})
 	}
 }
 

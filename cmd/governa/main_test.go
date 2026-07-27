@@ -158,3 +158,117 @@ func TestUpdateCheckRunsOnNonZeroReturn(t *testing.T) {
 		t.Fatalf("expected deferred update notice on non-zero path, got:\n%s", out)
 	}
 }
+
+func TestRenderCanonInfersRustAndAcceptsStackOverride(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+
+	rustDir := t.TempDir()
+	cargo := "[package]\nname = \"example\"\nversion = \"0.1.0\"\n"
+	if err := os.WriteFile(filepath.Join(rustDir, "Cargo.toml"), []byte(cargo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "inferred")
+	cmd := exec.Command(bin, "render-canon", "--flavor", "code", target)
+	cmd.Dir = rustDir
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("inferred Rust render failed: %v\n%s", err, out)
+	}
+	build, err := os.ReadFile(filepath.Join(target, "build.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(build), "cargo clippy") {
+		t.Fatal("inferred Rust canon did not emit Rust build.sh")
+	}
+
+	goDir := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(goDir, "go.mod"),
+		[]byte("module example.com/go-consumer\n\ngo 1.25\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"render-canon", "--flavor", "code", "-s", "Rust", filepath.Join(t.TempDir(), "short")},
+		{"render-canon", "--flavor", "code", "--stack", "Rust", filepath.Join(t.TempDir(), "long")},
+	} {
+		cmd = exec.Command(bin, args...)
+		cmd.Dir = goDir
+		cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Rust override failed: %v\n%s", err, out)
+		}
+		rendered, err := os.ReadFile(filepath.Join(args[len(args)-1], "build.sh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(rendered), "cargo test") {
+			t.Fatal("explicit Rust override did not win over go.mod")
+		}
+	}
+}
+
+func TestRenderCanonStackHelpAndFlavorValidation(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+	cmd := exec.Command(bin, "render-canon", "--help")
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("help failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{"-s, --stack <name>", "-m, --module-path <path>"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("help missing %q:\n%s", want, out)
+		}
+	}
+
+	docDir := t.TempDir()
+	cmd = exec.Command(
+		bin,
+		"render-canon",
+		"--flavor",
+		"doc",
+		"--stack",
+		"Rust",
+		filepath.Join(t.TempDir(), "doc"),
+	)
+	cmd.Dir = docDir
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "--stack applies only to CODE canon") {
+		t.Fatalf("DOC stack rejection: err=%v out=%s", err, out)
+	}
+
+	for name, args := range map[string][]string{
+		"Rust CODE": {
+			"render-canon",
+			"--flavor",
+			"code",
+			"--stack",
+			"Rust",
+			"--module-path",
+			"example.com/wrong",
+			filepath.Join(t.TempDir(), "rust"),
+		},
+		"DOC": {
+			"render-canon",
+			"--flavor",
+			"doc",
+			"--module-path",
+			"example.com/wrong",
+			filepath.Join(t.TempDir(), "doc-module"),
+		},
+	} {
+		cmd = exec.Command(bin, args...)
+		cmd.Dir = docDir
+		cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+		out, err = cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "--module-path applies only to Go CODE canon") {
+			t.Errorf("%s module-path rejection: err=%v out=%s", name, err, out)
+		}
+	}
+}

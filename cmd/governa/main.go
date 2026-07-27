@@ -17,7 +17,7 @@ import (
 	"github.com/queone/governa/internal/updatecheck"
 )
 
-const programVersion = "0.139.0"
+const programVersion = "0.140.0"
 
 const sourceRepo = "github.com/queone/governa"
 
@@ -133,19 +133,21 @@ func printUsage() {
 // Canon files only — no adoption record, no go.mod seed, no symlinks. Smoke
 // harnesses (build.sh) seed go.mod and create symlinks separately as needed.
 // Flavor defaults to driftscan.DetectFlavor on cwd; --flavor flag overrides.
-// For CODE flavor, {{MODULE_PATH}} substitution reads the module path from
-// the cwd's go.mod (the consumer's actual repo), or from the --module-path
-// flag when set. For DOC flavor, no Go module path is needed.
+// CODE stack defaults to manifest inference on cwd; --stack overrides. Go
+// canon reads {{MODULE_PATH}} from cwd's go.mod or --module-path. Non-Go CODE
+// canon uses the cwd basename for both repo name and module-path placeholders.
 func runRenderCanon(args []string) error {
 	flavor := ""
 	target := ""
 	modulePath := ""
+	stack := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-h", "--help", "-?":
-			fmt.Fprint(os.Stderr, color.FormatUsage("governa render-canon [--flavor code|doc] [--module-path <path>] <target>", []color.UsageLine{
+			fmt.Fprint(os.Stderr, color.FormatUsage("governa render-canon [--flavor code|doc] [--stack <name>] [--module-path <path>] <target>", []color.UsageLine{
 				{Flag: "-f, --flavor code|doc", Desc: "select consumer flavor (default: inferred from cwd via driftscan.DetectFlavor)"},
-				{Flag: "-m, --module-path <path>", Desc: "module path for CODE-flavor {{MODULE_PATH}} substitution (default: read from cwd's go.mod)"},
+				{Flag: "-s, --stack <name>", Desc: "select CODE stack (default: inferred from cwd manifests)"},
+				{Flag: "-m, --module-path <path>", Desc: "module path for Go CODE canon (default: read from cwd's go.mod)"},
 			}, "Render canon files into <target>/ in flat repo-relative layout. Canon files only — no adoption record. Target is not pre-cleaned; remove or empty it beforehand if you need a fresh tree."))
 			return nil
 		case "-f", "--flavor":
@@ -159,6 +161,15 @@ func runRenderCanon(args []string) error {
 				return fmt.Errorf("--module-path requires a value")
 			}
 			modulePath = args[i+1]
+			i++
+		case "-s", "--stack":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--stack requires a value")
+			}
+			stack = strings.TrimSpace(args[i+1])
+			if stack == "" {
+				return fmt.Errorf("--stack requires a non-empty value")
+			}
 			i++
 		default:
 			if target != "" {
@@ -185,10 +196,31 @@ func runRenderCanon(args []string) error {
 		}
 		flavor = inferred
 	}
-	if flavor == "code" && modulePath == "" {
-		modulePath = governance.ReadModulePath(cwd)
-		if modulePath == "" {
-			return fmt.Errorf("could not read module path from cwd's go.mod (cwd=%s); pass --module-path to override", cwd)
+	if flavor == "doc" && stack != "" {
+		return fmt.Errorf("--stack applies only to CODE canon; remove --stack or select --flavor code")
+	}
+	if flavor == "doc" && modulePath != "" {
+		return fmt.Errorf("--module-path applies only to Go CODE canon; remove --module-path or select --flavor code")
+	}
+	if flavor == "code" {
+		if stack == "" {
+			stack = governance.InferStack(cwd)
+			if stack == "" {
+				return fmt.Errorf("could not infer CODE stack from cwd=%s; pass --stack to override", cwd)
+			}
+		}
+		if strings.EqualFold(stack, "go") || strings.EqualFold(stack, "golang") {
+			if modulePath == "" {
+				modulePath = governance.ReadModulePath(cwd)
+				if modulePath == "" {
+					return fmt.Errorf("could not read module path from cwd's go.mod (cwd=%s); pass --module-path to override", cwd)
+				}
+			}
+		} else {
+			if modulePath != "" {
+				return fmt.Errorf("--module-path applies only to Go CODE canon; remove --module-path or select --stack Go")
+			}
+			modulePath = filepath.Base(cwd)
 		}
 	}
 
@@ -220,7 +252,7 @@ func runRenderCanon(args []string) error {
 	}
 	if flavor == "code" {
 		cfg.Type = governance.RepoTypeCode
-		cfg.Stack = "Go"
+		cfg.Stack = stack
 	} else {
 		cfg.Type = governance.RepoTypeDoc
 	}

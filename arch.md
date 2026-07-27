@@ -22,7 +22,9 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 ## Major Components
 
 - `internal/templates/base/`: cross-repo governance artifacts such as `AGENTS.md`
-- `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`
+- `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`, including first-class Go, Rust, and Terraform CODE build templates
+- `internal/templates/stack-ignores/`: stack-specific `.gitignore` fragments
+- `internal/templates/stack-guidelines/`: stack-specific development-guideline fragments composed above the consumer-owned boundary
 - `cmd/governa`: installable CLI binary. One command: `apply`.
 - `build.sh`: self-contained Bash script for local validation (`./build.sh`), release staging (`./build.sh prep …`), and release orchestration (`./build.sh vX.Y.Z "…"`)
 - `internal/`: shared logic for governance, colorized CLI output, and template access
@@ -44,6 +46,9 @@ Template improvements flow in the opposite direction through an out-of-band work
 - retain only `governa-color` as an external Go dependency (verified via `go.mod`)
 - templates use `{{PLACEHOLDER}}` substitution, not a templating engine (text/template intentionally not used)
 - overlays are additive; they must not conflict with the base governance contract
+- every template asset root must be registered in `internal/templates/templates.go` and exercised through rendered-output tests
+- first-class CODE stacks emit one canonical stack-specific `build.sh`; unsupported stacks emit the generic CODE scaffold without a build script
+- stack guidance is composed immediately above `## Project Practices`, leaving the boundary and consumer-owned tail outside stack canon
 
 ## Conventions
 
