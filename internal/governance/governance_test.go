@@ -415,6 +415,78 @@ func TestGoGuidanceMovesOutOfGenericCanon(t *testing.T) {
 	}
 }
 
+func markdownH3Block(t *testing.T, content, heading string) string {
+	t.Helper()
+	marker := "### " + heading + "\n"
+	start := strings.Index(content, marker)
+	if start < 0 {
+		t.Fatalf("missing markdown heading %q", marker)
+	}
+	block := content[start:]
+	if next := strings.Index(block[len(marker):], "\n### "); next >= 0 {
+		block = block[:len(marker)+next]
+	}
+	return strings.TrimSpace(block)
+}
+
+func TestCanonicalBuildVerificationMatchesSourceTemplateAndRenderedCode(t *testing.T) {
+	t.Parallel()
+	const expected = `### Build Verification
+
+- Start a validation cycle when an authorized change pass is ready for validation.
+- Run ` + "`./build.sh`" + ` as the first validation command in every validation cycle.
+- Use ` + "`./build.sh`" + ` for repository-wide formatting validation, testing, vetting, linting, static analysis, and compilation checks.
+- Do not invoke direct formatter, test, vet, lint, static-analysis, or repository-wide compilation commands before the first canonical build.
+- Run prerequisite implementation commands such as code generation, dependency maintenance, and migrations before validation as needed.
+- Use read-only inspection commands before validation when they do not claim repository health.
+- Use isolated binary smoke commands before validation only when they do not claim repository health.
+- Use a direct validation tool only to diagnose or correct a corresponding failure reported by the latest ` + "`./build.sh`" + `.
+- Scope each direct diagnostic or corrective command to the reported failure.
+- Rerun ` + "`./build.sh`" + ` after any diagnostic or corrective command that changes files.
+- Rerun ` + "`./build.sh`" + ` before running an unrelated direct validation command.
+- Complete the validation cycle only after the final ` + "`./build.sh`" + ` succeeds.
+- Treat work as unverified until the final ` + "`./build.sh`" + ` succeeds.
+- Build smoke-test binaries with an explicit output path outside the repository.`
+
+	sourceBytes, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read source AGENTS.md: %v", err)
+	}
+	templateBytes, err := templates.EmbeddedFS.ReadFile("base/AGENTS.md")
+	if err != nil {
+		t.Fatalf("read CODE AGENTS.md template: %v", err)
+	}
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:     ModeApply,
+		Target:   dir,
+		Type:     RepoTypeCode,
+		RepoName: "build-verification-test",
+		Stack:    "Unknown",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	renderedBytes, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read rendered CODE AGENTS.md: %v", err)
+	}
+
+	blocks := map[string]string{
+		"source":   markdownH3Block(t, string(sourceBytes), "Build Verification"),
+		"template": markdownH3Block(t, string(templateBytes), "Build Verification"),
+		"rendered": markdownH3Block(t, string(renderedBytes), "Build Verification"),
+	}
+	for name, block := range blocks {
+		if block != expected {
+			t.Errorf("%s Build Verification block drifted:\n%s", name, block)
+		}
+		if strings.Contains(block, "Use direct `go` and `staticcheck` calls only") {
+			t.Errorf("%s retains superseded direct-validation wording", name)
+		}
+	}
+}
+
 func TestUnsupportedStackKeepsGenericCanon(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -152,9 +152,20 @@ Note: mixed-content files (AGENTS.md, `governa/development-guidelines.md`, `gove
 
 ### Build Verification
 
-- **Run `./build.sh` for every "is the repo green" check — never substitute direct `go test`, `go vet`, `go fmt`, `go fix`, or `staticcheck` invocations.**
-- Use direct `go` and `staticcheck` calls only for debugging a single failure (`go test -run <Name>`), inspecting code (`go list`, `go doc`), or smoking one binary (`go run ./cmd/<tool>/` or `go build -o /tmp/<name> ./cmd/<tool>/`) — never `go build ./cmd/<tool>/` from repo root, which drops a stray binary.
-- Complete the repo's canonical validation before preparing any commit handoff.
+- Start a validation cycle when an authorized change pass is ready for validation.
+- Run `./build.sh` as the first validation command in every validation cycle.
+- Use `./build.sh` for repository-wide formatting validation, testing, vetting, linting, static analysis, and compilation checks.
+- Do not invoke direct formatter, test, vet, lint, static-analysis, or repository-wide compilation commands before the first canonical build.
+- Run prerequisite implementation commands such as code generation, dependency maintenance, and migrations before validation as needed.
+- Use read-only inspection commands before validation when they do not claim repository health.
+- Use isolated binary smoke commands before validation only when they do not claim repository health.
+- Use a direct validation tool only to diagnose or correct a corresponding failure reported by the latest `./build.sh`.
+- Scope each direct diagnostic or corrective command to the reported failure.
+- Rerun `./build.sh` after any diagnostic or corrective command that changes files.
+- Rerun `./build.sh` before running an unrelated direct validation command.
+- Complete the validation cycle only after the final `./build.sh` succeeds.
+- Treat work as unverified until the final `./build.sh` succeeds.
+- Build smoke-test binaries with an explicit output path outside the repository.
 
 ### Versioning and Dependencies
 

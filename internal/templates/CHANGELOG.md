@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.142.0 | AC153: require canonical build as first validation command |
 | 0.141.0 | AC152: isolate Rust builds and install binaries |
 | 0.140.0 | AC151: first-class Rust CODE stack |
 | 0.139.0 | AC150: DOC build.sh release and prep; retire rel.sh + cmd/rel |
