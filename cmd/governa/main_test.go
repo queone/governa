@@ -86,6 +86,92 @@ func TestDriftScanHelp(t *testing.T) {
 	if !strings.Contains(string(out), "Scan an adopted-governa repo") {
 		t.Errorf("drift-scan help should describe the command, got:\n%s", out)
 	}
+	for _, want := range []string{
+		"-s, --stack <name>",
+		"CODE stack",
+		"inferred from manifests",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("drift-scan help missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDriftScanSelectsRustBeforeManifest(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+	dir := t.TempDir()
+	files := map[string]string{
+		"AGENTS.md":              "# AGENTS.md\n",
+		"CHANGELOG.md":           "| Version | Summary |\n|---|---|\n| Unreleased | |\n",
+		"governa/ac-template.md": "# AC template\n",
+	}
+	for rel, content := range files {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rustBuild, err := os.ReadFile(
+		filepath.Join(
+			"..",
+			"..",
+			"internal",
+			"templates",
+			"overlays",
+			"code",
+			"stacks",
+			"rust",
+			"build.sh.tmpl",
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "build.sh"), rustBuild, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"git", "init", "-q"},
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "add", "-A"},
+		{"git", "commit", "-qm", "initial"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	cmd := exec.Command(
+		bin,
+		"drift-scan",
+		"--flavor",
+		"code",
+		"--stack",
+		"Rust",
+	)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pre-manifest Rust drift-scan: %v\n%s", err, out)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "governa", "ac*-drift-scan-v*.md"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("emitted ACs: %v err=%v output=%s", matches, err, out)
+	}
+	stub, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stub), "`build.sh` —") {
+		t.Fatalf("canonical Rust build.sh was reported as drift:\n%s", stub)
+	}
 }
 
 // AT13: drift-scan rejects positional arguments — no <repo-path> accepted.

@@ -100,6 +100,48 @@ func TestNoArgsSucceedsInAdoptedRepo(t *testing.T) {
 	if len(matches) == 0 {
 		t.Errorf("expected at least one ac1-drift-scan-v*.md file emitted under governa/, found none")
 	}
+	for _, match := range matches {
+		if err := os.Remove(match); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rustBuild, err := os.ReadFile(
+		filepath.Join(
+			"..",
+			"..",
+			"internal",
+			"templates",
+			"overlays",
+			"code",
+			"stacks",
+			"rust",
+			"build.sh.tmpl",
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "build.sh"), rustBuild, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command(bin, "--flavor", "code", "--stack", "Rust")
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+	cmd.Dir = dir
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("standalone pre-manifest Rust scan failed: %v\n%s", err, out)
+	}
+	matches, _ = filepath.Glob(filepath.Join(dir, "governa/ac1-drift-scan-v*.md"))
+	if len(matches) != 1 {
+		t.Fatalf("standalone Rust scan emitted %d ACs", len(matches))
+	}
+	stub, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stub), "`build.sh` —") {
+		t.Fatalf("canonical Rust build.sh was reported as drift:\n%s", stub)
+	}
 }
 
 func TestHelpFlag(t *testing.T) {
@@ -111,5 +153,24 @@ func TestHelpFlag(t *testing.T) {
 		if !strings.Contains(string(out), "Usage:") {
 			t.Errorf("driftscan %s: missing Usage:, got:\n%s", arg, out)
 		}
+		for _, want := range []string{
+			"-s, --stack <name>",
+			"CODE stack",
+			"inferred from manifests",
+		} {
+			if !strings.Contains(string(out), want) {
+				t.Errorf("driftscan %s: missing %q, got:\n%s", arg, want, out)
+			}
+		}
+	}
+}
+
+func TestVersionReportsStandaloneRelease(t *testing.T) {
+	out, err := driftScanCmd(t, "--version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("driftscan --version: %v\n%s", err, out)
+	}
+	if strings.TrimSpace(string(out)) != "governa-driftscan v0.102.0" {
+		t.Fatalf("standalone version = %q", out)
 	}
 }

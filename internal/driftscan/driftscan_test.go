@@ -179,6 +179,384 @@ func devNull(t *testing.T) *os.File {
 	return f
 }
 
+func parseArgsFrom(t *testing.T, dir string, args ...string) (Config, bool, error) {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Errorf("restore cwd: %v", err)
+		}
+	})
+	return ParseArgs(args)
+}
+
+func TestStackSelectorParsingAndPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	for name, args := range map[string][]string{
+		"short":        {"-s", "Rust"},
+		"long":         {"--stack", "Rust"},
+		"short equals": {"-s=Rust"},
+		"long equals":  {"--stack=Rust"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, help, err := parseArgsFrom(t, dir, args...)
+			if err != nil || help {
+				t.Fatalf("ParseArgs: help=%v err=%v", help, err)
+			}
+			if cfg.Stack != "Rust" || !strings.Contains(cfg.Invocation, "Rust") {
+				t.Fatalf("stack parse = %q invocation=%q", cfg.Stack, cfg.Invocation)
+			}
+		})
+	}
+	cfg, _, err := parseArgsFrom(t, dir, "-s", "Go", "--stack", " Rust ")
+	if err != nil || cfg.Stack != "Rust" {
+		t.Fatalf("last stack selector did not win: stack=%q err=%v", cfg.Stack, err)
+	}
+}
+
+func TestStackSelectorRejectsMissingEmptyAndExplicitDoc(t *testing.T) {
+	dir := t.TempDir()
+	for name, args := range map[string][]string{
+		"missing":      {"--stack"},
+		"empty":        {"--stack", "  "},
+		"empty equals": {"-s=  "},
+		"explicit DOC": {"--flavor", "doc", "--stack", "Rust"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := parseArgsFrom(t, dir, args...)
+			if err == nil {
+				t.Fatal("expected selector error")
+			}
+			if name == "explicit DOC" {
+				if !strings.Contains(err.Error(), "remove --stack or select --flavor code") {
+					t.Fatalf("DOC guidance: %v", err)
+				}
+			} else if !strings.Contains(err.Error(), "-s, --stack <name>") {
+				t.Fatalf("stack-value guidance: %v", err)
+			}
+		})
+	}
+}
+
+func TestExplicitRustStackSupportsPremanifestAndOverridesGo(t *testing.T) {
+	for name, fixture := range map[string]func(*testing.T) string{
+		"premanifest": docFixture,
+		"Go override": codeFixture,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := fixture(t)
+			canon, err := governance.RenderCanonicalFiles(
+				EmbeddedFS,
+				governance.Config{
+					Mode:     governance.ModeApply,
+					Target:   dir,
+					Type:     governance.RepoTypeCode,
+					RepoName: filepath.Base(dir),
+					Stack:    "Rust",
+				},
+				dir,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(dir, "build.sh"), canon["build.sh"])
+			cfg := Config{
+				Target:          dir,
+				Flavor:          "code",
+				Stack:           " Rust ",
+				DiffLines:       50,
+				OverrideCanonID: "v0.0.0-test",
+			}
+			var exit int
+			var runErr error
+			out := captureOut(t, func(f *os.File) {
+				exit, runErr = Run(cfg, EmbeddedFS, f)
+			})
+			if exit != ExitOK || runErr != nil {
+				t.Fatalf("Rust scan: exit=%d err=%v out=%s", exit, runErr, out)
+			}
+			stub := mustRead(
+				t,
+				filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"),
+			)
+			for _, want := range []string{ReachabilityHeaderReminder} {
+				if !strings.Contains(stub, want) {
+					t.Errorf("Rust stub missing %q:\n%s", want, stub)
+				}
+			}
+			if strings.Contains(stub, "`build.sh` —") {
+				t.Fatalf("canonical Rust build.sh was reported as drift:\n%s", stub)
+			}
+		})
+	}
+}
+
+func TestPremanifestRustReportCarriesBuildPreview(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{
+		Target:          dir,
+		Flavor:          "code",
+		Stack:           "Rust",
+		JSON:            true,
+		DiffLines:       200,
+		OverrideCanonID: "v0.0.0-test",
+	}
+	var exit int
+	var runErr error
+	out := captureOut(t, func(f *os.File) {
+		exit, runErr = Run(cfg, EmbeddedFS, f)
+	})
+	if exit != ExitOK || runErr != nil {
+		t.Fatalf("pre-manifest Rust report: exit=%d err=%v", exit, runErr)
+	}
+	var report Report
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, out)
+	}
+	if report.Header.Flavor != "code" {
+		t.Fatalf("report flavor = %q", report.Header.Flavor)
+	}
+	found := false
+	for _, file := range report.Files {
+		if file.Relpath != "build.sh" {
+			continue
+		}
+		found = true
+		if file.Classification != ClassMissingTarget ||
+			!strings.Contains(file.Diff, "cargo is required") {
+			t.Fatalf("Rust build preview: class=%s diff=%s", file.Classification, file.Diff)
+		}
+	}
+	if !found {
+		t.Fatal("Rust report omitted build.sh")
+	}
+	matches, err := filepath.Glob(
+		filepath.Join(dir, "governa", "ac*-drift-scan-v*.md"),
+	)
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("Rust report AC emission: matches=%v err=%v", matches, err)
+	}
+}
+
+func TestStackSelectorValidationEmitsNothing(t *testing.T) {
+	for name, cfg := range map[string]Config{
+		"direct DOC": {
+			Flavor: "doc",
+			Stack:  " Rust ",
+		},
+		"inferred DOC": {
+			Stack: "Rust",
+		},
+		"unresolved CODE": {
+			Flavor: "code",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := docFixture(t)
+			cfg.Target = dir
+			cfg.DiffLines = 50
+			var exit int
+			var runErr error
+			out := captureOut(t, func(f *os.File) {
+				exit, runErr = Run(cfg, EmbeddedFS, f)
+			})
+			wantExit := ExitEnvError
+			if name == "direct DOC" {
+				wantExit = ExitUsage
+			}
+			if exit != wantExit || runErr == nil || out != "" {
+				t.Fatalf("selector failure: exit=%d err=%v out=%q", exit, runErr, out)
+			}
+			staged, globErr := filepath.Glob(
+				filepath.Join(dir, "governa", "ac*-drift-scan-v*.md"),
+			)
+			if globErr != nil || len(staged) != 0 {
+				t.Fatalf("selector failure emitted ACs: %v", staged)
+			}
+			if name == "unresolved CODE" {
+				if !strings.Contains(runErr.Error(), "-s, --stack <name>") ||
+					strings.Contains(runErr.Error(), "pass -f") ||
+					strings.Contains(runErr.Error(), "pass --flavor") {
+					t.Fatalf("unresolved-stack guidance: %v", runErr)
+				}
+			} else if !strings.Contains(
+				runErr.Error(),
+				"remove --stack or select --flavor code",
+			) {
+				t.Fatalf("DOC-stack guidance: %v", runErr)
+			}
+		})
+	}
+}
+
+func TestUnknownStackUsesGenericCodeCanon(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{
+		Target:          dir,
+		Flavor:          "code",
+		Stack:           "FutureLang",
+		DiffLines:       50,
+		OverrideCanonID: "v0.0.0-test",
+	}
+	exit, err := Run(cfg, EmbeddedFS, devNull(t))
+	if exit != ExitOK || err != nil {
+		t.Fatalf("generic CODE stack: exit=%d err=%v", exit, err)
+	}
+	stub := mustRead(t, filepath.Join(dir, "governa/ac1-drift-scan-v0.0.0-test.md"))
+	if strings.Contains(stub, "`build.sh`") {
+		t.Fatalf("generic CODE stack unexpectedly rendered stack build.sh:\n%s", stub)
+	}
+}
+
+func TestRecognizedStackInferenceRemainsAvailable(t *testing.T) {
+	fixtures := map[string]string{
+		"go.mod":              "module example.com/test\n\ngo 1.22\n",
+		".terraform.lock.hcl": "# lock\n",
+		"main.tf":             "terraform {}\n",
+		"package.json":        "{}\n",
+		"Cargo.toml":          "[package]\nname=\"test\"\nversion=\"0.1.0\"\n",
+		"pyproject.toml":      "[project]\nname=\"test\"\nversion=\"0.1.0\"\n",
+		"pom.xml":             "<project/>\n",
+		"build.gradle":        "plugins {}\n",
+	}
+	for manifest, content := range fixtures {
+		t.Run(manifest, func(t *testing.T) {
+			dir := docFixture(t)
+			mustWrite(t, filepath.Join(dir, manifest), content)
+			cfg := Config{
+				Target:          dir,
+				Flavor:          "code",
+				DiffLines:       50,
+				OverrideCanonID: "v0.0.0-test",
+			}
+			exit, err := Run(cfg, EmbeddedFS, devNull(t))
+			if exit != ExitOK || err != nil {
+				t.Fatalf("manifest inference for %s: exit=%d err=%v", manifest, exit, err)
+			}
+		})
+	}
+}
+
+func TestAutomaticGoAndDocFlavorInferenceRemainsAvailable(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		fixture func(*testing.T) string
+		flavor  string
+	}{
+		"Go":  {codeFixture, "code"},
+		"DOC": {docFixture, "doc"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := testCase.fixture(t)
+			cfg := Config{
+				Target:          dir,
+				DiffLines:       50,
+				OverrideCanonID: "v0.0.0-test",
+			}
+			var report Report
+			out := captureOut(t, func(f *os.File) {
+				cfg.JSON = true
+				exit, err := Run(cfg, EmbeddedFS, f)
+				if exit != ExitOK || err != nil {
+					t.Fatalf("automatic %s inference: exit=%d err=%v", name, exit, err)
+				}
+			})
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatalf("decode %s report: %v\n%s", name, err, out)
+			}
+			if report.Header.Flavor != testCase.flavor {
+				t.Fatalf("%s flavor = %q", name, report.Header.Flavor)
+			}
+		})
+	}
+}
+
+func TestProgrammaticStackAppearsInInvocation(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{
+		Target:          dir,
+		Flavor:          "code",
+		Stack:           " Rust ",
+		JSON:            true,
+		DiffLines:       50,
+		OverrideCanonID: "v0.0.0-test",
+	}
+	var exit int
+	var runErr error
+	out := captureOut(t, func(f *os.File) {
+		exit, runErr = Run(cfg, EmbeddedFS, f)
+	})
+	if exit != ExitOK || runErr != nil {
+		t.Fatalf("programmatic Rust scan: exit=%d err=%v", exit, runErr)
+	}
+	var report Report
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, out)
+	}
+	if !strings.Contains(report.Header.Invocation, `--stack "Rust"`) {
+		t.Fatalf("programmatic invocation omitted stack: %q", report.Header.Invocation)
+	}
+}
+
+func TestFlavorAmbiguityStillNamesFlavorSelector(t *testing.T) {
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module example.com/test\n")
+	mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n")
+	exit, err := Run(Config{Target: dir, DiffLines: 50}, EmbeddedFS, devNull(t))
+	if exit != ExitEnvError || err == nil ||
+		!strings.Contains(err.Error(), "-f|--flavor code|doc") {
+		t.Fatalf("flavor ambiguity: exit=%d err=%v", exit, err)
+	}
+}
+
+func TestStackSelectionDocumentationStaysSynchronized(t *testing.T) {
+	root := filepath.Join("..", "..")
+	source := mustRead(t, filepath.Join(root, "governa", "drift-scan.md"))
+	for _, rel := range []string{
+		"internal/templates/overlays/code/files/governa/drift-scan.md.tmpl",
+		"internal/templates/overlays/doc/files/governa/drift-scan.md.tmpl",
+	} {
+		if got := mustRead(t, filepath.Join(root, rel)); got != source {
+			t.Errorf("%s drifted from governa/drift-scan.md", rel)
+		}
+	}
+	for _, want := range []string{
+		"governa drift-scan --flavor code --stack Rust",
+		"`--stack` does not imply CODE",
+		"remove `--stack` or add `--flavor code`",
+		"another non-empty name selects generic CODE canon",
+	} {
+		if !strings.Contains(source, want) {
+			t.Errorf("drift-scan docs missing %q", want)
+		}
+	}
+	readme := mustRead(t, filepath.Join(root, "README.md"))
+	for _, want := range []string{
+		"governa drift-scan --flavor code --stack Rust",
+		"`--stack` alone does not imply CODE",
+		"override flavor and stack inference independently",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("README missing %q", want)
+		}
+	}
+	for name, content := range map[string]string{
+		"drift-scan docs": source,
+		"README":          readme,
+	} {
+		if strings.Contains(content, "/Users"+"/") ||
+			strings.Contains(content, "/home"+"/") ||
+			strings.Contains(content, `C:`+`\`) {
+			t.Errorf("%s contains a machine-specific path", name)
+		}
+	}
+}
+
 // T5 — C1 regression: target without .git/ must error, not silently
 // classify divergent files as clear-sync.
 func TestNoGitWorktree(t *testing.T) {

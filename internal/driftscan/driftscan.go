@@ -67,6 +67,7 @@ const ReachabilityHeaderReminder = "Reachability check: verify divergent canon-c
 type Config struct {
 	Target     string // resolved absolute path to target repo
 	Flavor     string // "code" or "doc"
+	Stack      string // explicit CODE stack; empty uses manifest inference
 	JSON       bool
 	DiffLines  int    // diff truncation limit
 	RepoName   string // overrides basename of Target
@@ -87,6 +88,8 @@ func ParseArgs(args []string) (Config, bool, error) {
 
 	fset.StringVar(&cfg.Flavor, "f", "", "overlay flavor: code|doc")
 	fset.StringVar(&cfg.Flavor, "flavor", "", "overlay flavor: code|doc")
+	fset.StringVar(&cfg.Stack, "s", "", "CODE stack (default: inferred from manifests)")
+	fset.StringVar(&cfg.Stack, "stack", "", "CODE stack (default: inferred from manifests)")
 	fset.BoolVar(&cfg.JSON, "j", false, "emit JSON report instead of markdown")
 	fset.BoolVar(&cfg.JSON, "json", false, "emit JSON report instead of markdown")
 	fset.IntVar(&cfg.DiffLines, "l", 200, "diff truncation limit")
@@ -105,6 +108,12 @@ func ParseArgs(args []string) (Config, bool, error) {
 		if errors.Is(err, flag.ErrHelp) {
 			printUsage()
 			return cfg, true, nil
+		}
+		if strings.Contains(err.Error(), "flag needs an argument: -s") ||
+			strings.Contains(err.Error(), "flag needs an argument: -stack") {
+			return cfg, false, fmt.Errorf(
+				"drift-scan: -s, --stack <name> requires a value",
+			)
 		}
 		return cfg, false, err
 	}
@@ -125,9 +134,20 @@ func ParseArgs(args []string) (Config, bool, error) {
 	cfg.Target = abs
 
 	cfg.Invocation = "governa drift-scan " + strings.Join(args, " ")
+	cfg.Stack = strings.TrimSpace(cfg.Stack)
 
 	if cfg.Flavor != "" && cfg.Flavor != "code" && cfg.Flavor != "doc" {
 		return cfg, false, fmt.Errorf("drift-scan: --flavor must be code or doc, got %q", cfg.Flavor)
+	}
+	if stackFlagSupplied(args) && cfg.Stack == "" {
+		return cfg, false, fmt.Errorf(
+			"drift-scan: -s, --stack <name> requires a non-empty value",
+		)
+	}
+	if cfg.Flavor == "doc" && cfg.Stack != "" {
+		return cfg, false, fmt.Errorf(
+			"drift-scan: --stack applies only to CODE canon; remove --stack or select --flavor code",
+		)
 	}
 
 	return cfg, false, nil
@@ -141,10 +161,22 @@ Scan an adopted-governa repo against canon. Run from the consumer repo root
 
 Flags:
   -f, --flavor code|doc      overlay flavor (default: auto-detect)
+  -s, --stack <name>         CODE stack (default: inferred from manifests)
   -j, --json                 emit JSON report alongside markdown emission
   -l, --diff-lines <N>       diff truncation limit (default: 200)
   -n, --repo-name <name>     override repo name (default: basename of cwd)
   -h, --help                 show this help`)
+}
+
+func stackFlagSupplied(args []string) bool {
+	for _, arg := range args {
+		if arg == "-s" || arg == "--stack" ||
+			strings.HasPrefix(arg, "-s=") ||
+			strings.HasPrefix(arg, "--stack=") {
+			return true
+		}
+	}
+	return false
 }
 
 // RunCLI is the cmd-layer entry point. Parses args, runs the scan, returns exit code.
@@ -209,14 +241,32 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		sha = "v" + templates.TemplateVersion
 	}
 
-	// Flavor.
-	flavor := cfg.Flavor
+	// Flavor and stack selectors are validated before canon rendering or
+	// report construction so invalid combinations cannot emit partial output.
+	flavor := strings.TrimSpace(cfg.Flavor)
+	stack := strings.TrimSpace(cfg.Stack)
+	flavorInferred := flavor == ""
 	if flavor == "" {
 		var err error
 		flavor, err = detectFlavor(cfg.Target)
 		if err != nil {
 			return ExitEnvError, fmt.Errorf("drift-scan: %w", err)
 		}
+	}
+	if flavor != "code" && flavor != "doc" {
+		return ExitUsage, fmt.Errorf(
+			"drift-scan: --flavor must be code or doc, got %q",
+			flavor,
+		)
+	}
+	if flavor == "doc" && stack != "" {
+		exit := ExitUsage
+		if flavorInferred {
+			exit = ExitEnvError
+		}
+		return exit, fmt.Errorf(
+			"drift-scan: --stack applies only to CODE canon; remove --stack or select --flavor code",
+		)
 	}
 
 	// Repo name.
@@ -234,9 +284,14 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	switch flavor {
 	case "code":
 		gcfg.Type = governance.RepoTypeCode
-		stack := governance.InferStack(cfg.Target)
 		if stack == "" {
-			return ExitEnvError, fmt.Errorf("drift-scan: cannot resolve template variable {{STACK_OR_PLATFORM}} — target %s lacks a recognized stack manifest (go.mod, package.json, etc.); pass -f to disambiguate or run drift-scan against an apply'd target", cfg.Target)
+			stack = governance.InferStack(cfg.Target)
+		}
+		if stack == "" {
+			return ExitEnvError, fmt.Errorf(
+				"drift-scan: cannot resolve CODE stack for target %s; pass -s, --stack <name> or add a recognized stack manifest",
+				cfg.Target,
+			)
 		}
 		gcfg.Stack = stack
 	case "doc":
@@ -263,7 +318,11 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	// M4: ensure Invocation has a sensible default for library callers.
 	invocation := cfg.Invocation
 	if invocation == "" {
-		invocation = fmt.Sprintf("governa drift-scan %s (programmatic)", cfg.Target)
+		invocation = fmt.Sprintf("governa drift-scan --flavor %s", flavor)
+		if stack != "" {
+			invocation += fmt.Sprintf(" --stack %q", stack)
+		}
+		invocation += fmt.Sprintf(" %s (programmatic)", cfg.Target)
 	}
 
 	// Walk canon, classify each.

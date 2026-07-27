@@ -13,6 +13,18 @@ The tool is consumer-run. Install the binary (`go install github.com/queone/gove
 - Before any canon→cwd walk, the tool runs the `## Canon-coherence precondition` check. If canon is internally incoherent on a registered cross-file rule, the tool refuses to emit and reports the incoherence on stdout. No file writes occur.
 - One repo per invocation. The tool makes no commits in the cwd and does not modify `plan.md`. Writes under `<cwd>/governa/` are limited to the AC stub.
 
+## Stack selection
+
+Use `-s, --stack <name>` to select CODE canon when the consumer has no language manifest yet:
+
+```bash
+governa drift-scan --flavor code --stack Rust
+```
+
+Explicit selectors override their corresponding inference independently: `--flavor` overrides flavor inference, and `--stack` overrides manifest-based stack inference. `--stack` does not imply CODE; when flavor inference resolves to DOC, remove `--stack` or add `--flavor code`. Passing `--stack` with explicit DOC flavor is invalid. When CODE flavor is selected without a recognized manifest, pass `-s, --stack <name>`.
+
+Stack names remain free-form. First-class names such as `Go`, `Rust`, and `Terraform` select their stack overlays; another non-empty name selects generic CODE canon.
+
 ## What the tool emits
 
 One file under the consumer repo's `governa/`, plus a single-line stdout summary.

@@ -13,7 +13,7 @@ import (
 // programVersion is read by buildtool's prep version-bump scan; staticcheck
 // would otherwise flag it as unused since the binary delegates everything to
 // driftscan.RunCLI.
-const programVersion = "0.101.0"
+const programVersion = "0.102.0"
 
 func main() {
 	args := os.Args[1:]
