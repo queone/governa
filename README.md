@@ -20,6 +20,14 @@ governa ships a closed two-role model so agent sessions have a predictable start
 
 Full role definitions and the self-review contract live in [`governa/roles.md`](governa/roles.md). The shared `AGENTS.md` contract applies in every case. The reasoning behind the contract structure — particularly the session-entry rule — is in [`governa/operator-contract-rationale.md`](governa/operator-contract-rationale.md).
 
+## Acceptance Criteria
+
+Governa uses Acceptance Criteria (AC) as its central change-control artifact for non-trivial work: a bounded, executable contract that translates Director intent into the change the Operator implements and verifies. Every non-trivial change is AC-first.
+
+An AC records the change summary, authoritative scope, exclusions, acceptance tests, review state, and implementation status. After critique and pre-implementation verification, the Director explicitly confirms that the AC is implementation-ready. Release prep deletes completed ACs after their durable decisions have landed in code or governing documentation.
+
+Trivial changes may proceed without an AC when explicitly authorized; size alone does not make a change trivial. The direct path still requires scoped authorization, appropriate tests, documentation alignment, file-change discipline, and Operator self-review.
+
 ## Usage
 
 Install the binary:
@@ -81,7 +89,7 @@ The target repo stays self-contained. The template repo is read-only at bootstra
 
 ## Current Stage
 
-governa is early. Releases, commits, and pushes are driven by the human director; there's no branch or PR workflow yet. These are phase choices while the governance contract stabilizes — branch workflows and release automation layer on later, without changing the primitives.
+governa is early. Releases, commits, and pushes remain Director-controlled; `build.sh` provides validation, release prep, and interactive release orchestration without removing that human gate. There's no branch or PR workflow yet. These are phase choices while the governance contract stabilizes.
 
 Scope is also deliberately narrow. governa aims to be a small, stable collaboration contract — not a full-stack generator, not an opinionated starter kit, not an attempt to be another [gstack](https://github.com/garrytan/gstack). The fewer primitives governa ships, the less there is to drift against.
 
@@ -99,13 +107,13 @@ This repo is itself governed as a `CODE` repo and carries the core artifacts at 
 
 The `governa` CLI may print a quiet stderr notice when a newer governa release is available. Set `GOVERNA_NO_UPDATE_CHECK=1` to suppress that best-effort check.
 
-## Library Family
+## External Library
 
-governa is shifting from a single one-off-applied template to a layered model: convention applied once + code distributed as separate-repo libraries (`governa-<x>`). Extractions are gated by [`governa/library-policy.md`](governa/library-policy.md).
+governa keeps generated repositories self-contained and retains one direct external Go dependency in the source CLI:
 
-- [`governa-color`](https://github.com/queone/governa-color) — ANSI terminal color helpers for CLI output.
-- [`governa-reltool`](https://github.com/queone/governa-reltool) — Git tag, commit, and push orchestration for release flows.
-- [`governa-buildtool`](https://github.com/queone/governa-buildtool) — Build pipeline orchestration: programVersion validation, vet/test, build/install, next-tag suggestion.
+- [`governa-color`](https://github.com/queone/governa-color) — ANSI terminal color and usage-formatting helpers for the internal CLI surface.
+
+Its independent versioning policy lives in [`governa/library-policy.md`](governa/library-policy.md). Build, release-prep, and release orchestration remain self-contained in generated `build.sh` files rather than external libraries.
 
 ## Rendered Examples
 

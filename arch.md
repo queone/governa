@@ -25,7 +25,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 - `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`, including first-class Go, Rust, and Terraform CODE build templates
 - `internal/templates/stack-ignores/`: stack-specific `.gitignore` fragments
 - `internal/templates/stack-guidelines/`: stack-specific development-guideline fragments composed above the consumer-owned boundary
-- `cmd/governa`: installable CLI binary. One command: `apply`.
+- `cmd/governa`: single installable CLI binary containing the `apply`, `drift-scan`, `rm`, `deps`, and `render-canon` subcommands; there is no standalone `driftscan` binary
 - `build.sh`: self-contained Bash script for local validation (`./build.sh`), release staging (`./build.sh prep …`), and release orchestration (`./build.sh vX.Y.Z "…"`)
 - `internal/`: shared logic for governance, colorized CLI output, and template access
 - `governa render-canon`: on-demand command that renders flavor-specific canon files into a target directory; canon-only (no adoption record). Drives drift-scan adoption and CODE/DOC build-validation harnesses.
@@ -34,6 +34,10 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 
 A user runs `governa apply` from inside a target repo or empty directory. Governa detects whether this is a new or existing repo, prompts for any missing parameters, and renders base plus overlay files into concrete output. All files are written directly — after apply, the consumer repo owns everything and evolves independently. Apply is fully stateless: no network call, no bookkeeping directory, no persistent metadata beyond the rendered files themselves.
 
+Post-adoption commands provide bounded maintenance paths. `governa drift-scan` compares a consumer with embedded canon and writes an adoption AC. `governa rm` writes a cleanup AC plus targeted diffs. `governa deps` performs read-only Go dependency inspection. `governa render-canon` writes canon only to its explicit target for inspection, adoption, and validation.
+
+Acceptance Criteria are non-runtime control artifacts for non-trivial changes. An AC carries Director intent through bounded Operator implementation and verification, then is deleted during release prep after durable decisions land elsewhere. Trivial changes may proceed directly when authorized, but they do not bypass approval, validation, or self-review rules. `AGENTS.md` is authoritative for the AC threshold and gates.
+
 Template improvements flow in the opposite direction through an out-of-band workflow documented in `governa/governance-model.md`: the Operator reviewing the governa repo reads consumer repos' governance files and AC history directly, then proposes template changes through the normal AC workflow. There is no CLI subcommand for this.
 
 ## Architecture Notes
@@ -41,6 +45,8 @@ Template improvements flow in the opposite direction through an out-of-band work
 - generated repos must remain self-contained and must not depend on this repo at runtime
 - this repo treats itself as a governed `CODE` repo, but does not re-bootstrap itself through `apply`
 - `build.sh` is the canonical build/release tool; implementation lives in shell, not Go
+- `build.sh` owns local validation, release prep, and interactive release orchestration
+- ACs control non-trivial change flow but are not runtime architecture
 - `governa/roles.md` defines the two-role model (Operator, Director) that supplements the shared governance contract
 - apply is stateless: no `.governa/` directory and no manifest in consumer repos. Provenance is recorded in `governa/ac1-governa-apply.md`.
 - retain only `governa-color` as an external Go dependency (verified via `go.mod`)
