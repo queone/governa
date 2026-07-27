@@ -391,13 +391,13 @@ _BUILD_REPO="$(mktemp -d "${TMPDIR:-/tmp}/governa-bld.XXXXXX")"
 _BUILD_REPO="$(cd "$_BUILD_REPO" && pwd)"
 cp -r "$_FIXT/buildrepo/." "$_BUILD_REPO/"
 
-# Targeted build (driftscan) with GOVERNA_SELFTEST_FORCE_FAIL=1 → succeeds.
+# Targeted build (gadget) with GOVERNA_SELFTEST_FORCE_FAIL=1 → succeeds.
 # build_run self-test condition requires ${#targets[@]} -eq 0; a named
 # target skips the self-test entirely, so SELFTEST_FORCE_FAIL has no effect.
 _selftest_rc=0
 ( cd "$_BUILD_REPO" && NO_COLOR=1 PATH="$_SHIMS:$PATH" \
     GOVERNA_SELFTEST_FORCE_FAIL=1 \
-    bash "$_BS" driftscan ) >"$_TMPD/selftest-tgt.out" 2>"$_TMPD/selftest-tgt.err" || _selftest_rc=$?
+    bash "$_BS" gadget ) >"$_TMPD/selftest-tgt.out" 2>"$_TMPD/selftest-tgt.err" || _selftest_rc=$?
 [ "$_selftest_rc" -eq 0 ] \
   && _ok "self-test: targeted build with SELFTEST_FORCE_FAIL=1 → exit 0" \
   || { _fail "self-test: targeted build unexpectedly failed (rc=$_selftest_rc)"; \
@@ -483,12 +483,12 @@ printf '%d\n' "$rc" >"$_TMPD/rc"
 _cmp_golden "build-verbose (NO_COLOR unset)" "$_GOLD/build-verbose" \
   "$_TMPD/out" "$_TMPD/err" "$_TMPD/rc" "$_BUILD_SAN"
 
-_run_build_golden "build-driftscan (NO_COLOR=1)"  "$_GOLD/build-driftscan" driftscan
+_run_build_golden "build-gadget (NO_COLOR=1)"  "$_GOLD/build-gadget" gadget
 rc=0
 ( cd "$_BUILD_REPO" && unset NO_COLOR && PATH="$_SHIMS:$PATH" GOVERNA_SHIM_ROOT="$_SHIMS" \
-    bash "$_BS" driftscan ) >"$_TMPD/out" 2>"$_TMPD/err" || rc=$?
+    bash "$_BS" gadget ) >"$_TMPD/out" 2>"$_TMPD/err" || rc=$?
 printf '%d\n' "$rc" >"$_TMPD/rc"
-_cmp_golden "build-driftscan (NO_COLOR unset)" "$_GOLD/build-driftscan" \
+_cmp_golden "build-gadget (NO_COLOR unset)" "$_GOLD/build-gadget" \
   "$_TMPD/out" "$_TMPD/err" "$_TMPD/rc" "$_BUILD_SAN"
 
 # ── prep-dry-run golden (subprocess + git shim, both NO_COLOR modes) ──────────

@@ -6,7 +6,7 @@
 - run formatting, static checks, tests, and packaging through that command or documented sequence
 - do not trigger release work during routine implementation
 
-This repo uses a self-contained `build.sh` for all build, release-prep, and release work. No external Go tools (`governa-buildtool`, `governa-reltool`) are required; everything runs directly from `build.sh`.
+This repo uses a self-contained `build.sh` for all build, release-prep, and release work. No external governa tools are required; everything runs directly from `build.sh`.
 
 ## Minimum Validation
 
@@ -24,7 +24,7 @@ This repo uses a self-contained `build.sh` for all build, release-prep, and rele
 To scope the run to selected commands:
 
 ```bash
-./build.sh driftscan
+./build.sh governa
 ```
 
 `staticcheck` is pinned to `v0.7.0` and installed to `$(go env GOPATH)/bin/staticcheck` on first run. The installed path is used directly (not any `staticcheck` on `PATH`), so the version is deterministic across environments.

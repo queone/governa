@@ -87,7 +87,11 @@ func TestDriftScanHelp(t *testing.T) {
 		t.Errorf("drift-scan help should describe the command, got:\n%s", out)
 	}
 	for _, want := range []string{
+		"-f, --flavor code|doc",
 		"-s, --stack <name>",
+		"-j, --json",
+		"-l, --diff-lines <N>",
+		"-n, --repo-name <name>",
 		"CODE stack",
 		"inferred from manifests",
 	} {

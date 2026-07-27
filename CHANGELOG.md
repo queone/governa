@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.144.0 | AC155: remove driftscan; use governa drift-scan |
 | 0.143.0 | AC154: add explicit drift-scan stack selection |
 | 0.142.0 | AC153: require canonical build as first validation command |
 | 0.141.0 | AC152: isolate Rust builds and install binaries |

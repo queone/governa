@@ -31,12 +31,12 @@ ok  	example.com/widget	0.000s
 ==> Building all utilities
 
 ==> Validate programVersion declarations
-    cmd/driftscan: programVersion = "0.5.0"
+    cmd/gadget: programVersion = "0.5.0"
     cmd/widget: programVersion = "0.1.0"
 
-==> Building and installing driftscan
-    go build -o GOPATH/bin/driftscan -ldflags -s -w ./cmd/driftscan
-    installed: GOPATH/bin/driftscan
+==> Building and installing gadget
+    go build -o GOPATH/bin/gadget -ldflags -s -w ./cmd/gadget
+    installed: GOPATH/bin/gadget
 
 ==> Building and installing widget
     go build -o GOPATH/bin/widget -ldflags -s -w ./cmd/widget

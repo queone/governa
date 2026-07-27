@@ -14,7 +14,7 @@
     No issues found by go vet.
 
 ==> Run tests for all packages in the repository
-    go test -coverprofile=COVERFILE ./cmd/driftscan
+    go test -coverprofile=COVERFILE ./cmd/gadget
 ok  	example.com/widget	(cached)
     domain coverage: 83.3%  (total: 83.3%)
 
@@ -25,14 +25,14 @@ ok  	example.com/widget	(cached)
 ==> Analyze Go code for potential issues
     No issues found by staticcheck.
 
-==> Building specific utilities: driftscan
+==> Building specific utilities: gadget
 
 ==> Validate programVersion declarations
-    cmd/driftscan: programVersion = "0.5.0"
+    cmd/gadget: programVersion = "0.5.0"
 
-==> Building and installing driftscan
-    go build -o GOPATH/bin/driftscan -ldflags -s -w ./cmd/driftscan
-    installed: GOPATH/bin/driftscan
+==> Building and installing gadget
+    go build -o GOPATH/bin/gadget -ldflags -s -w ./cmd/gadget
+    installed: GOPATH/bin/gadget
 
 ==> To release, run:
 
