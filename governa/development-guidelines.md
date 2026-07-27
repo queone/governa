@@ -24,7 +24,7 @@ For workflow, see `development-cycle.md`. For validation, see `build-release.md`
 Overlay templates are shipped snapshots: the propagation discipline below ensures governa ships correct templates at adoption time. After `governa apply`, the consumer repo owns all files and evolves them independently — there is no ongoing sync.
 
 - Keep source-of-truth code in `internal/`; keep standalone copies of duplicated logic under `internal/templates/overlays/`.
-- Propagate every `build.sh` fix to `internal/templates/overlays/code/files/build.sh.tmpl`.
+- Propagate every `build.sh` fix to the affected stack template under `internal/templates/overlays/code/stacks/`.
 - Omit governa's example-render stage and source-only self-test from the consumer template.
 - Version `governa-color` independently per `governa/library-policy.md`; do not propagate its source through overlays.
 - Overlay copies of `roles.md` are consumer-facing. When root governance docs evolve, propagate to overlay copies with targeted edits that filter governa-specific content. The DOC overlay `roles.md` references `governa/release.md` where the CODE overlay references `governa/build-release.md`.
@@ -36,18 +36,14 @@ Overlay templates are shipped snapshots: the propagation discipline below ensure
 
 | Source | Template Copy |
 |--------|--------------|
-| `build.sh` | `internal/templates/overlays/code/files/build.sh.tmpl` |
+| Stack build behavior | `internal/templates/overlays/code/stacks/<stack>/build.sh.tmpl` |
 
 The source `build.sh` renders and validates overlay examples and runs `tests/run.sh`. The consumer template omits both governa-source-only paths while retaining the same build, prep, and release functions.
 
-## Program Version Declaration
-
-- Every installable `cmd/<name>/main.go` must declare a non-empty `const programVersion` string literal
-- Let `build.sh` validate declarations before compiling installable binaries; fail on missing or empty declarations.
-
 ## Error Handling And Validation
 
-- `go vet` and `staticcheck` errors are build failures, not warnings — use fail-hard checks
+- Treat stack-specific static-analysis errors as build failures.
+- Validate installable-target declarations before compiling or installing them.
 - Validate apply config at entry (mode, repo type, required fields) before rendering any files
 - Prefer explicit error returns over silent fallbacks; a clear failure is better than wrong output
 
@@ -88,3 +84,13 @@ The base template emits rendered files with several prose-content placeholders. 
 
 - `{{REPO_NAME}}` — the repo identifier; use the same form as the module path's final component (e.g., `skout`, not `Skout Baseball`).
 - `{{STACK_OR_PLATFORM}}` — the primary language or runtime stack for CODE repos (e.g., `Go`, `Python`, `Node`). Inferred from manifest files when not supplied.
+
+## Project Practices
+
+- Propagate Governa's root `build.sh` changes to `internal/templates/overlays/code/stacks/go/build.sh.tmpl`.
+- Require every installable `cmd/<name>/main.go` to declare a non-empty `const programVersion` string literal.
+- Validate every `programVersion` declaration before compiling installable binaries.
+- Pin `staticcheck` to `v0.7.0`.
+- Install pinned `staticcheck` under `$(go env GOPATH)/bin`.
+- Invoke the pinned `staticcheck` path directly.
+- Treat sandbox-only `staticcheck` cache warnings as advisory only when no finding is present.

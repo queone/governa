@@ -35,14 +35,12 @@ This repo uses a self-contained `build.sh` for all build, release-prep, and rele
 To scope the run to selected commands:
 
 ```bash
-./build.sh governa
+./build.sh <target> [<target> ...]
 ```
 
-`staticcheck` is pinned to `v0.7.0` and installed to `$(go env GOPATH)/bin/staticcheck` on first run. The installed path is used directly (not any `staticcheck` on `PATH`), so the version is deterministic across environments.
+Use space-separated target names. Supported CODE stacks may retain package-wide shared-code validation while limiting target-specific checks, tests, artifacts, and installation to the selected targets.
 
-## Sandboxed Execution
-
-Under sandboxed execution that blocks Go's build cache (look for `writing stat cache ... operation not permitted`), `staticcheck` may print a `matched no packages` warning even though it ran cleanly. Treat as advisory unless real findings appear; an unrestricted rerun confirms.
+Run `./build.sh` without targets for repository-wide validation. Release-prep pre-change and post-change validation always use this package-wide form.
 
 ## Pre-Release Checklist
 

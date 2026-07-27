@@ -304,7 +304,7 @@ func TestPremanifestRustReportCarriesBuildPreview(t *testing.T) {
 		Flavor:          "code",
 		Stack:           "Rust",
 		JSON:            true,
-		DiffLines:       200,
+		DiffLines:       1200,
 		OverrideCanonID: "v0.0.0-test",
 	}
 	var exit int
@@ -331,6 +331,15 @@ func TestPremanifestRustReportCarriesBuildPreview(t *testing.T) {
 		if file.Classification != ClassMissingTarget ||
 			!strings.Contains(file.Diff, "cargo is required") {
 			t.Fatalf("Rust build preview: class=%s diff=%s", file.Classification, file.Diff)
+		}
+		for _, want := range []string{
+			"Usage: build [target ...] [-v|--verbose]",
+			"_build_scoped_phases",
+			"--no-track",
+		} {
+			if !strings.Contains(file.Diff, want) {
+				t.Errorf("Rust build preview missing %q", want)
+			}
 		}
 	}
 	if !found {

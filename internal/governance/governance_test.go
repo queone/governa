@@ -371,7 +371,8 @@ func TestRustStackEmitsBuildIgnoreAndGuidance(t *testing.T) {
 		t.Error("rendered Rust guidance does not contain the complete embedded fragment")
 	}
 	if strings.Contains(guidelineContent, "## Go Practices") ||
-		strings.Contains(guidelineContent, "programVersion") {
+		strings.Contains(guidelineContent, "programVersion") ||
+		strings.Contains(guidelineContent, "staticcheck") {
 		t.Error("Rust guidelines contain Go-only guidance")
 	}
 	for _, want := range []string{
@@ -528,6 +529,26 @@ func renderRustRepo(t *testing.T) string {
 	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
 		t.Fatalf("RunWithFS: %v", err)
 	}
+	writeRepoFile(t, dir, "Cargo.toml", `[package]
+name = "example"
+version = "0.1.0"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "zeta"
+path = "tools/zeta.rs"
+
+[[bin]]
+name = "alpha"
+path = "src/bin/alpha.rs"
+`)
+	writeRepoFile(t, dir, "src/lib.rs", "pub fn shared() {}\n")
+	writeRepoFile(t, dir, "src/bin/alpha.rs", "fn main() {}\n")
+	writeRepoFile(t, dir, "tools/zeta.rs", "fn main() {}\n")
+	writeRepoFile(t, dir, "tests/alpha_cli.rs", "#[test]\nfn alpha_cli() {}\n")
+	writeRepoFile(t, dir, "tests/zeta_cli.rs", "#[test]\nfn zeta_cli() {}\n")
 	return dir
 }
 
@@ -569,20 +590,34 @@ if [ "${1:-}" = install ]; then
   fi
   root=''
   previous=''
+  selected=''
+  force=0
+  no_track=0
   for argument in "$@"; do
     [ "$previous" = --root ] && root="$argument"
+    [ "$previous" = --bin ] && selected="${selected}${selected:+,}$argument"
+    [ "$argument" = --force ] && force=1
+    [ "$argument" = --no-track ] && no_track=1
     previous="$argument"
   done
   [ -n "$root" ] || exit 98
   mkdir -p "$root/bin"
   old_ifs=$IFS
   IFS=,
-  for binary in ${CARGO_FAKE_BINS:-example}; do
-    [ -e "$root/bin/$binary" ] && exit 99
+  binaries=${CARGO_FAKE_BINS:-example}
+  if [ "${CARGO_FAKE_MODEL_SELECTION:-0}" = 1 ] && [ -n "$selected" ]; then
+    binaries=$selected
+  fi
+  for binary in $binaries; do
+    if [ -e "$root/bin/$binary" ] && [ "$force" -ne 1 ]; then exit 99; fi
     printf '%s\n' "$binary" >"$root/bin/$binary"
     chmod +x "$root/bin/$binary"
   done
   IFS=$old_ifs
+  if [ "${CARGO_FAKE_MODEL_SELECTION:-0}" = 1 ] && [ "$no_track" -ne 1 ]; then
+    printf '%s\n' tracked >"$root/.crates.toml"
+    printf '%s\n' tracked >"$root/.crates2.json"
+  fi
   if [ "${CARGO_FAKE_BREAK_CLEANUP:-0}" = 1 ]; then
     chmod a-w "$(dirname "$CARGO_TARGET_DIR")"
   fi
@@ -806,6 +841,285 @@ func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
 	if len(got) != 5 || !slices.Equal(got[:4], want) ||
 		!strings.HasPrefix(got[4], "install --verbose --path . --bins ") {
 		t.Fatalf("verbose cargo calls = %#v; want %#v", got, want)
+	}
+}
+
+func TestRustScopedBuildRoutingAndParser(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	binDir, logPath := writeFakeCargo(t, dir)
+	out, err := runRustBuild(t, dir, binDir, logPath, "-v", "zeta", "--verbose", "alpha")
+	if err != nil {
+		t.Fatalf("scoped build failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "selected targets: alpha zeta") {
+		t.Fatalf("targets were not byte-sorted:\n%s", out)
+	}
+	got, _ := normalizedCargoCalls(t, logPath)
+	want := []string{
+		"fmt --check",
+		"clippy --verbose --all-features --lib --bin alpha --bin zeta " +
+			"--test alpha_cli --test zeta_cli --target-dir <target> -- -D warnings",
+		"test --verbose --all-features --lib --bin alpha --bin zeta " +
+			"--test alpha_cli --test zeta_cli --target-dir <target>",
+		"build --verbose --release --bin alpha --bin zeta --target-dir <target>",
+	}
+	if len(got) != 5 || !slices.Equal(got[:4], want) ||
+		!strings.Contains(got[4], "install --verbose --path . --no-track --force --bin alpha --bin zeta") {
+		t.Fatalf("scoped Cargo calls = %#v; want prefix %#v", got, want)
+	}
+
+	for name, args := range map[string][]string{
+		"duplicate": {"alpha", "-v", "alpha"},
+		"unknown":   {"omega"},
+		"comma":     {"alpha,zeta"},
+		"help":      {"alpha", "--help"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			caseDir := renderRustRepo(t)
+			caseBin, caseLog := writeFakeCargo(t, caseDir)
+			caseOut, runErr := runRustBuild(t, caseDir, caseBin, caseLog, args...)
+			if runErr == nil {
+				t.Fatalf("invalid arguments succeeded:\n%s", caseOut)
+			}
+			if _, statErr := os.Stat(caseLog); !os.IsNotExist(statErr) {
+				t.Fatalf("invalid arguments invoked Cargo: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestRustScopedBuildColorParity(t *testing.T) {
+	t.Parallel()
+	colorDir := renderRustRepo(t)
+	colorBin, colorLog := writeFakeCargo(t, colorDir)
+	colorOut, colorErr, err := runRustPresentation(
+		t,
+		colorDir,
+		colorBin,
+		colorLog,
+		"",
+		[]string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color"},
+		"zeta",
+		"alpha",
+	)
+	if err != nil {
+		t.Fatalf("colored scoped build failed: %v\n%s\n%s", err, colorOut, colorErr)
+	}
+	plainDir := renderRustRepo(t)
+	plainBin, plainLog := writeFakeCargo(t, plainDir)
+	plainOut, plainErr, err := runRustPresentation(
+		t,
+		plainDir,
+		plainBin,
+		plainLog,
+		"",
+		[]string{"NO_COLOR=1", "TERM=xterm-256color"},
+		"zeta",
+		"alpha",
+	)
+	if err != nil {
+		t.Fatalf("plain scoped build failed: %v\n%s\n%s", err, plainOut, plainErr)
+	}
+	if strings.SplitN(stripBuildANSI(colorOut), "\n", 2)[0] !=
+		strings.SplitN(plainOut, "\n", 2)[0] ||
+		stripBuildANSI(colorErr) != plainErr {
+		t.Fatalf("scoped target presentation changed under color:\ncolored=%q\nplain=%q",
+			colorOut+colorErr, plainOut+plainErr)
+	}
+	colorCalls, _ := normalizedCargoCalls(t, colorLog)
+	plainCalls, _ := normalizedCargoCalls(t, plainLog)
+	normalizeRoot := func(calls []string) {
+		for index, call := range calls {
+			fields := strings.Fields(call)
+			for field := 0; field+1 < len(fields); field++ {
+				if fields[field] == "--root" {
+					fields[field+1] = "<root>"
+				}
+			}
+			calls[index] = strings.Join(fields, " ")
+		}
+	}
+	normalizeRoot(colorCalls)
+	normalizeRoot(plainCalls)
+	if !slices.Equal(colorCalls, plainCalls) {
+		t.Fatalf("scoped Cargo routing changed under color:\ncolored=%#v\nplain=%#v",
+			colorCalls, plainCalls)
+	}
+}
+
+func TestRustScopedInstallPreservesUnselectedAndTracking(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	binDir, logPath := writeFakeCargo(t, dir)
+	cargoHome := t.TempDir()
+	for path, content := range map[string]string{
+		"bin/alpha":     "old-alpha\n",
+		"bin/zeta":      "keep-zeta\n",
+		".crates.toml":  "keep-toml\n",
+		".crates2.json": "keep-json\n",
+	} {
+		writeRepoFile(t, cargoHome, path, content)
+	}
+	out, _, err := runRustBuildWithEnv(
+		t,
+		dir,
+		binDir,
+		logPath,
+		[]string{
+			"CARGO_HOME=" + cargoHome,
+			"CARGO_FAKE_MODEL_SELECTION=1",
+		},
+		"alpha",
+	)
+	if err != nil {
+		t.Fatalf("scoped install failed: %v\n%s", err, out)
+	}
+	for path, want := range map[string]string{
+		"bin/alpha":     "alpha\n",
+		"bin/zeta":      "keep-zeta\n",
+		".crates.toml":  "keep-toml\n",
+		".crates2.json": "keep-json\n",
+	} {
+		got, readErr := os.ReadFile(filepath.Join(cargoHome, path))
+		if readErr != nil || string(got) != want {
+			t.Errorf("%s: content=%q err=%v; want %q", path, got, readErr, want)
+		}
+	}
+}
+
+func TestRustManifestPreflightRejectsWithoutCargo(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"missing path": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = "alpha"
+`,
+		"duplicate name": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = "alpha"
+path = "src/bin/alpha.rs"
+[[bin]]
+name = "alpha"
+path = "tools/zeta.rs"
+`,
+		"duplicate key after empty literal": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = ""
+name = "alpha"
+path = "src/bin/alpha.rs"
+`,
+		"escaped literal": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = "al\\pha"
+path = "src/bin/alpha.rs"
+`,
+		"dotted key": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name.value = "alpha"
+path = "src/bin/alpha.rs"
+`,
+		"nested bin-like header": `[package]
+name = "example"
+version = "0.1.0"
+[[bin.metadata]]
+name = "alpha"
+path = "src/bin/alpha.rs"
+`,
+		"unsafe path": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = "alpha"
+path = "../alpha.rs"
+`,
+		"reserved name": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = "v1.2.3"
+path = "src/bin/alpha.rs"
+`,
+		"missing integration test": `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = "orphan"
+path = "src/bin/alpha.rs"
+`,
+	}
+	for name, manifest := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := renderRustRepo(t)
+			writeRepoFile(t, dir, "Cargo.toml", manifest)
+			binDir, logPath := writeFakeCargo(t, dir)
+			out, err := runRustBuild(t, dir, binDir, logPath)
+			if err == nil {
+				t.Fatalf("invalid manifest succeeded:\n%s", out)
+			}
+			if _, statErr := os.Stat(logPath); !os.IsNotExist(statErr) {
+				t.Fatalf("invalid manifest invoked Cargo: %v", statErr)
+			}
+		})
+	}
+	t.Run("symlink traversal", func(t *testing.T) {
+		dir := renderRustRepo(t)
+		if err := os.Symlink(filepath.Join(dir, "src"), filepath.Join(dir, "linked-src")); err != nil {
+			t.Fatal(err)
+		}
+		writeRepoFile(t, dir, "Cargo.toml", `[package]
+name = "example"
+version = "0.1.0"
+[[bin]]
+name = "alpha"
+path = "linked-src/bin/alpha.rs"
+`)
+		binDir, logPath := writeFakeCargo(t, dir)
+		out, err := runRustBuild(t, dir, binDir, logPath)
+		if err == nil || !strings.Contains(out, "traverses a symlink") {
+			t.Fatalf("symlink path result: err=%v out=%s", err, out)
+		}
+		if _, statErr := os.Stat(logPath); !os.IsNotExist(statErr) {
+			t.Fatalf("symlink preflight invoked Cargo: %v", statErr)
+		}
+	})
+}
+
+func TestRustManifestAcceptsCRLFCommentsAndBinaryOnly(t *testing.T) {
+	t.Parallel()
+	dir := renderRustRepo(t)
+	manifest := strings.ReplaceAll(`[package]
+name = "example"
+version = "0.1.0"
+
+[[bin]] # selected utility
+name = "alpha" # public target
+path = "src/bin/alpha.rs" # arbitrary safe path
+`, "\n", "\r\n")
+	writeRepoFile(t, dir, "Cargo.toml", manifest)
+	if err := os.Remove(filepath.Join(dir, "src", "lib.rs")); err != nil {
+		t.Fatal(err)
+	}
+	binDir, logPath := writeFakeCargo(t, dir)
+	out, err := runRustBuild(t, dir, binDir, logPath, "alpha")
+	if err != nil {
+		t.Fatalf("CRLF binary-only build failed: %v\n%s", err, out)
+	}
+	calls, _ := normalizedCargoCalls(t, logPath)
+	for _, call := range calls {
+		if strings.Contains(call, " --lib ") {
+			t.Fatalf("binary-only build included --lib: %q", call)
+		}
 	}
 }
 
@@ -1315,7 +1629,7 @@ func TestRustBuildScriptHelpAndFailureGuidance(t *testing.T) {
 
 	cmd := exec.Command("/bin/bash", "./build.sh")
 	cmd.Dir = dir
-	cmd.Env = []string{"PATH=" + filepath.Dir(findBash(t)), "NO_COLOR=1"}
+	cmd.Env = []string{"PATH=/bin:/usr/bin", "NO_COLOR=1"}
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "install the Rust toolchain") {
 		t.Fatalf("missing cargo: err=%v out=%s", err, out)
@@ -1365,17 +1679,19 @@ func TestRustBuildScriptHelpAndFailureGuidance(t *testing.T) {
 	}
 }
 
-func findBash(t *testing.T) string {
-	t.Helper()
-	path, err := exec.LookPath("bash")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func initializeRustFixtureRepo(t *testing.T, dir, cargo string) {
 	t.Helper()
+	if !strings.Contains(cargo, "[[bin]]") {
+		cargo += `
+[[bin]]
+name = "alpha"
+path = "src/bin/alpha.rs"
+
+[[bin]]
+name = "zeta"
+path = "tools/zeta.rs"
+`
+	}
 	writeRepoFile(t, dir, "Cargo.toml", cargo)
 	writeRepoFile(t, dir, "CHANGELOG.md", "| Version | Summary |\n|---|---|\n| Unreleased | |\n")
 	writeRepoFile(t, dir, "plan.md", "## Product Direction\n\n## Ideas To Explore\n")

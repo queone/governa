@@ -272,6 +272,15 @@ func TestRenderCanonInfersRustAndAcceptsStackOverride(t *testing.T) {
 	if !strings.Contains(string(build), "cargo clippy") {
 		t.Fatal("inferred Rust canon did not emit Rust build.sh")
 	}
+	for _, want := range []string{
+		"Usage: build [target ...] [-v|--verbose]",
+		"_build_scoped_phases",
+		"--no-track",
+	} {
+		if !strings.Contains(string(build), want) {
+			t.Errorf("inferred Rust canon missing scoped-build marker %q", want)
+		}
+	}
 
 	goDir := t.TempDir()
 	if err := os.WriteFile(
@@ -297,6 +306,9 @@ func TestRenderCanonInfersRustAndAcceptsStackOverride(t *testing.T) {
 		}
 		if !strings.Contains(string(rendered), "cargo test") {
 			t.Fatal("explicit Rust override did not win over go.mod")
+		}
+		if !strings.Contains(string(rendered), "_build_scoped_phases") {
+			t.Fatal("explicit Rust override omitted scoped-build routing")
 		}
 	}
 }

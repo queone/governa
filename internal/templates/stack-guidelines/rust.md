@@ -1,11 +1,18 @@
 ## Rust Practices
 
 - Run all repository validation through `./build.sh`.
-- Declare at least one Cargo binary target.
+- Declare every installable Cargo binary with an explicit literal `[[bin]]` name and path.
+- Use space-separated binary names for scoped builds.
+- Keep selected target order deterministic under the byte locale.
 - Keep Cargo compilation artifacts in the build-managed temporary target.
-- Install all Cargo binary targets through the canonical build.
+- Validate formatting and shared library code package-wide during scoped builds.
+- Limit binary checks, matching integration tests, release artifacts, and installation to selected targets.
+- Install all Cargo binary targets with tracked installation during a full build.
+- Install selected Cargo binaries with `--no-track --force` during a scoped build.
+- Preserve unselected installed binaries and Cargo tracking metadata during scoped installation.
 - Install binaries only during successful post-change release validation.
 - Skip binary installation during pre-change validation and `--no-build` release prep.
+- Run release-prep pre-change and post-change validation package-wide.
 - Set `CARGO_HOME` to an external path when isolating binary installation.
 - Resolve installed-binary name conflicts before rerunning the build.
 - Format Rust code with rustfmt.
