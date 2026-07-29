@@ -152,7 +152,7 @@ func ModeHelp(mode Mode) string {
 		return color.FormatUsage("governa apply [options]", []color.UsageLine{
 			{Flag: "-n, --repo-name", Desc: "repo name"},
 			{Flag: "-k, --type", Desc: "repo type: CODE or DOC"},
-			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos; currently: Go)"},
+			{Flag: "-s, --stack", Desc: "stack or platform (CODE repos)"},
 			{Flag: "-t, --target", Desc: "target directory (default: current dir)"},
 			{Flag: "-g, --init-git", Desc: "initialize git if target is not a repo"},
 		}, "Apply governance template to a new or existing repo. Detects repo state and prompts for missing parameters. After apply, all files are consumer-owned.")
@@ -186,6 +186,19 @@ var stackManifests = []struct {
 }
 
 func inferStack(targetDir string) string {
+	// Preserve legacy precedence while allowing a Swift package to outrank
+	// generic language-tooling manifests.
+	for _, sm := range stackManifests {
+		if sm.stack != "Go" && sm.stack != "Terraform" && sm.stack != "Rust" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(targetDir, sm.file)); err == nil {
+			return sm.stack
+		}
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "Package.swift")); err == nil {
+		return "Swift"
+	}
 	for _, sm := range stackManifests {
 		if _, err := os.Stat(filepath.Join(targetDir, sm.file)); err == nil {
 			return sm.stack
@@ -578,6 +591,8 @@ func stackIgnoreBlock(tfs fs.FS, stack string) (string, bool) {
 		file = "stack-ignores/terraform.txt"
 	case strings.EqualFold(stack, "rust"):
 		file = "stack-ignores/rust.txt"
+	case strings.EqualFold(stack, "swift"):
+		file = "stack-ignores/swift.txt"
 	default:
 		return "", false
 	}
@@ -597,6 +612,8 @@ func stackGuidelineBlock(tfs fs.FS, stack string) (string, bool) {
 		file = "stack-guidelines/go.md"
 	case strings.EqualFold(stack, "rust"):
 		file = "stack-guidelines/rust.md"
+	case strings.EqualFold(stack, "swift"):
+		file = "stack-guidelines/swift.md"
 	default:
 		return "", false
 	}

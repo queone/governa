@@ -313,6 +313,37 @@ func TestRenderCanonInfersRustAndAcceptsStackOverride(t *testing.T) {
 	}
 }
 
+func TestRenderCanonInfersSwiftAndAcceptsCaseInsensitiveOverride(t *testing.T) {
+	t.Parallel()
+	bin := governaBinary(t)
+	swiftDir := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(swiftDir, "Package.swift"),
+		[]byte("// swift-tools-version: 6.0\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"render-canon", "--flavor", "code", filepath.Join(t.TempDir(), "inferred")},
+		{"render-canon", "--flavor", "code", "--stack", "sWiFt", filepath.Join(t.TempDir(), "explicit")},
+	} {
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = swiftDir
+		cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Swift render failed: %v\n%s", err, out)
+		}
+		build, err := os.ReadFile(filepath.Join(args[len(args)-1], "build.sh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(build), "swift format lint --strict") {
+			t.Fatal("Swift canon did not emit Swift build.sh")
+		}
+	}
+}
+
 func TestRenderCanonStackHelpAndFlavorValidation(t *testing.T) {
 	t.Parallel()
 	bin := governaBinary(t)

@@ -8,6 +8,7 @@ Index for repo-level workflow and maintenance docs.
 - [build-release.md](build-release.md): canonical local build and release rules
 - [development-cycle.md](development-cycle.md): working cycle and artifact expectations
 - [development-guidelines.md](development-guidelines.md): durable engineering guidance for any agent or contributor
+- [code-stacks.md](code-stacks.md): first-class CODE stack contracts
 - [overlay-scope.md](overlay-scope.md): `CODE` versus `DOC` boundaries
 - [ac-template.md](ac-template.md): acceptance-criteria template
 - [roles.md](roles.md): two-role model (Operator, Director)

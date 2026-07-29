@@ -353,6 +353,34 @@ func TestPremanifestRustReportCarriesBuildPreview(t *testing.T) {
 	}
 }
 
+func TestPremanifestSwiftReportCarriesBuildPreview(t *testing.T) {
+	dir := docFixture(t)
+	cfg := Config{
+		Target: dir, Flavor: "code", Stack: "Swift", JSON: true,
+		DiffLines: 1200, OverrideCanonID: "v0.0.0-test",
+	}
+	var exit int
+	var runErr error
+	out := captureOut(t, func(f *os.File) {
+		exit, runErr = Run(cfg, EmbeddedFS, f)
+	})
+	if exit != ExitOK || runErr != nil {
+		t.Fatalf("pre-manifest Swift report: exit=%d err=%v", exit, runErr)
+	}
+	var report Report
+	if err := json.Unmarshal([]byte(out), &report); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range report.Files {
+		if file.Relpath == "build.sh" &&
+			strings.Contains(file.Diff, "Swift 6.0 or newer") &&
+			strings.Contains(file.Diff, "swift test") {
+			return
+		}
+	}
+	t.Fatal("Swift report omitted Swift build preview")
+}
+
 func TestStackSelectorValidationEmitsNothing(t *testing.T) {
 	for name, cfg := range map[string]Config{
 		"direct DOC": {

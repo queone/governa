@@ -52,8 +52,8 @@ Or with flags to skip prompts:
 governa apply -k CODE -n my-service -s "Go"
 ```
 
-Go, Rust, and Terraform have first-class CODE overlays. Each emits one
-stack-specific canonical `build.sh`; Rust and Go also emit stack-specific
+Go, Rust, Terraform, and Swift have first-class CODE overlays. Each emits one
+stack-specific canonical `build.sh`; Go, Rust, and Swift also emit stack-specific
 development guidance. Other stack values are accepted but produce the generic
 CODE scaffold without a build script.
 
@@ -63,6 +63,12 @@ on success or failure. They install every Cargo-recognized package binary with
 all features into `$CARGO_HOME/bin`, or `$HOME/.cargo/bin` when `CARGO_HOME` is
 unset. Rust CODE consumers must declare at least one binary target. Existing
 binary-name conflicts are reported rather than overwritten.
+
+Swift canonical builds require Swift 6 and a root `Package.swift`, then run
+strict formatting, debug compilation, tests, and release compilation with
+warnings as errors. The initial Swift phase supports macOS and Linux, keeps
+artifacts in `.build/`, and does not install or accept scoped products. See
+[`governa/code-stacks.md`](governa/code-stacks.md) for stack contracts.
 
 **Existing repo** (governance artifacts found): all template files are written directly. Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`.
 

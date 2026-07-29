@@ -1,0 +1,261 @@
+#!/usr/bin/env bash
+# build.sh — canonical SwiftPM build, release-prep, and release tooling.
+# Targets Bash 3.2+ and delegates language work to Swift 6.
+set -euo pipefail
+
+_quote() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+_byte_len() { LC_ALL=C printf '%s' "$1" | LC_ALL=C wc -c | tr -d ' '; }
+_fail() { printf '%s\n' "$1" >&2; return 1; }
+
+_swift_version() {
+  swift --version 2>&1 | awk '
+    match($0, /Swift version [0-9]+\.[0-9]+(\.[0-9]+)?/) {
+      value=substr($0,RSTART,RLENGTH); sub(/^Swift version /,"",value)
+      print value; exit
+    }
+    match($0, /Swift [0-9]+\.[0-9]+(\.[0-9]+)?/) {
+      value=substr($0,RSTART,RLENGTH); sub(/^Swift /,"",value)
+      print value; exit
+    }'
+}
+
+_require_swift() {
+  command -v swift >/dev/null 2>&1 ||
+    _fail 'build: Swift 6.0 or newer is required; install Swift and retry' ||
+    return 1
+  local version major minor
+  version=$(_swift_version)
+  [ -n "$version" ] ||
+    _fail 'build: read Swift version: unrecognized output; install a supported Swift 6 toolchain' ||
+    return 1
+  major=${version%%.*}; minor=${version#*.}; minor=${minor%%.*}
+  if [ "$major" -lt 6 ]; then
+    _fail "build: Swift 6.0 or newer is required; found $version" || return 1
+  fi
+}
+
+_require_package() {
+  [ -f Package.swift ] ||
+    _fail 'build: Package.swift is missing; run from the Swift package root' ||
+    return 1
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+    _fail 'build: source discovery requires a Git work tree; initialize Git and retry' ||
+    return 1
+  swift package dump-package >/dev/null 2>&1 ||
+    _fail 'build: validate Package.swift: fix its tools-version declaration or manifest syntax' ||
+    return 1
+}
+
+_swift_sources() {
+  git ls-files -co --exclude-standard -z -- Package.swift '*.swift'
+}
+
+_format() {
+  local files=() path
+  while IFS= read -r -d '' path; do
+    case "$path" in
+    .build/*|.git/*) continue ;;
+    esac
+    files+=("$path")
+  done < <(_swift_sources)
+  [ "${#files[@]}" -gt 0 ] ||
+    _fail 'build: discover Swift sources: no Package.swift or Swift files found' ||
+    return 1
+  swift format lint --strict "${files[@]}" ||
+    _fail 'build: Swift formatting failed; run swift format on the reported files' ||
+    return 1
+}
+
+_run_swift() {
+  local label="$1"; shift
+  printf '    %s\n' "$*"
+  "$@" || { local rc=$?; _fail "build: $label failed; fix the reported SwiftPM error and retry"; return "$rc"; }
+}
+
+build_usage() {
+  cat <<'EOF'
+Usage: build [-v|--verbose]
+
+  -v, --verbose   show verbose SwiftPM output
+  -h, -?, --help  show this help
+EOF
+}
+
+build_run() {
+  local verbose="$1" verbose_flag='' resolved_flag=''
+  [ "$verbose" -eq 1 ] && verbose_flag=-v
+  if [ -n "${GOVERNA_SWIFT_PREP:-}" ] && [ -f Package.resolved ]; then
+    resolved_flag=--force-resolved-versions
+  fi
+  _require_swift
+  _require_package
+  printf '%s\n' '==> Check Swift formatting'
+  _format
+  printf '\n%s\n' '==> Build Swift package'
+  _run_swift 'debug build' swift build \
+    ${verbose_flag:+"$verbose_flag"} ${resolved_flag:+"$resolved_flag"} \
+    -Xswiftc -warnings-as-errors
+  printf '\n%s\n' '==> Run Swift tests'
+  _run_swift 'tests' swift test \
+    ${verbose_flag:+"$verbose_flag"} ${resolved_flag:+"$resolved_flag"} \
+    -Xswiftc -warnings-as-errors
+  printf '\n%s\n' '==> Build Swift release artifacts'
+  _run_swift 'release build' swift build \
+    ${verbose_flag:+"$verbose_flag"} ${resolved_flag:+"$resolved_flag"} \
+    -c release -Xswiftc -warnings-as-errors
+}
+
+build_main() {
+  if [ "$#" -eq 1 ]; then
+    case "$1" in -h|-\?|--help) build_usage; return 0 ;; esac
+  fi
+  local verbose=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+    -v|--verbose) verbose=1 ;;
+    -h|-\?|--help) _fail 'help flags must be used by themselves'; return 2 ;;
+    -*) _fail "unsupported option $(_quote "$arg"); use -v, --verbose, or --help"; return 2 ;;
+    *) _fail "unexpected product name $(_quote "$arg"); scoped Swift builds are not supported; rerun without product names"; return 2 ;;
+    esac
+  done
+  build_run "$verbose"
+}
+
+_validate_release_inputs() {
+  local prefix="$1" version="$2" message="$3"
+  printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' ||
+    { _fail "$prefix: version must match vMAJOR.MINOR.PATCH: $(_quote "$version")"; return 1; }
+  [ -n "$message" ] || { _fail "$prefix: message must be non-empty"; return 1; }
+  [ "$(_byte_len "$message")" -le 80 ] ||
+    { _fail "$prefix: message must be 80 characters or fewer"; return 1; }
+}
+
+_validate_git_state() {
+  local prefix="$1" version="$2"
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+    { _fail "$prefix: run from the root of a Git work tree"; return 1; }
+  ! git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1 ||
+    { _fail "$prefix: tag $version already exists"; return 1; }
+}
+
+_prep_refs() { printf '%s\n' "$1" | grep -Eo 'AC[0-9]+' | sort -u || true; }
+
+_package_has_dependencies() {
+  swift package dump-package | awk '
+    /"dependencies"[[:space:]]*:[[:space:]]*\[/ { inside=1; next }
+    inside && /^[[:space:]]*\]/ { exit }
+    inside && /"identity"[[:space:]]*:/ { found=1; exit }
+    END { exit(found ? 0 : 1) }'
+}
+
+_prep_validate_resolution() {
+  if [ -f Package.resolved ]; then
+    swift package resolve --force-resolved-versions >/dev/null 2>&1 ||
+      { _fail 'prep: Package.resolved is stale or ineligible; resolve and review dependencies before retrying'; return 1; }
+  elif _package_has_dependencies; then
+    _fail 'prep: Package.resolved is required for a leaf package with dependencies; run swift package resolve and review it'
+    return 1
+  fi
+}
+
+_prep_apply() {
+  local version="$1" message="$2" stripped="${1#v}" refs ref file tmp
+  [ -f CHANGELOG.md ] || { _fail 'prep: CHANGELOG.md is missing'; return 1; }
+  ! grep -Eq "^[|][[:space:]]*$stripped[[:space:]]*[|]" CHANGELOG.md ||
+    { _fail "prep: CHANGELOG.md already contains $stripped"; return 1; }
+  tmp=$(mktemp "${TMPDIR:-/tmp}/swift-changelog.XXXXXX")
+  awk -v row="| $stripped | $message |" '
+    { print }
+    /^\| Unreleased \|/ && !done { print row; done=1 }
+    END { if (!done) exit 1 }' CHANGELOG.md >"$tmp" ||
+    { rm -f "$tmp"; _fail 'prep: CHANGELOG.md must contain the Unreleased row'; return 1; }
+  mv "$tmp" CHANGELOG.md
+  refs=$(_prep_refs "$message")
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    for file in governa/"$(printf '%s' "$ref" | tr '[:upper:]' '[:lower:]')"-*.md; do
+      [ -f "$file" ] && rm -f "$file"
+    done
+    if [ -f plan.md ]; then
+      tmp=$(mktemp "${TMPDIR:-/tmp}/swift-plan.XXXXXX")
+      grep -v "→ governa/$(printf '%s' "$ref" | tr '[:upper:]' '[:lower:]')-" plan.md >"$tmp" || true
+      mv "$tmp" plan.md
+    fi
+  done <<EOF
+$refs
+EOF
+}
+
+prep_usage() {
+  cat <<'EOF'
+Usage: build prep [--dry-run|-n] [--no-build|-B] vX.Y.Z "release message"
+EOF
+}
+
+prep_main() {
+  local dry=0 no_build=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+    -h|-\?|--help) prep_usage; return 0 ;;
+    -n|--dry-run) dry=1; shift ;;
+    -B|--no-build) no_build=1; shift ;;
+    *) break ;;
+    esac
+  done
+  [ "$#" -eq 2 ] || { prep_usage >&2; return 2; }
+  local version="$1" message="$2"
+  _validate_release_inputs prep "$version" "$message"
+  _validate_git_state prep "$version"
+  _require_swift
+  _require_package
+  _prep_validate_resolution
+  if [ "$dry" -eq 1 ]; then
+    local refs
+    refs=$(_prep_refs "$message")
+    printf 'prep dry-run:\n  CHANGELOG.md: insert %s\n' "${version#v}"
+    if [ -n "$refs" ]; then
+      printf '  AC files: delete referenced %s\n' "$(printf '%s' "$refs" | tr '\n' ' ')"
+      printf '  plan.md: remove matching AC-pointer IE lines\n'
+    fi
+    printf '  Package.swift: unchanged\n  Package.resolved: unchanged\n'
+  else
+    [ "$no_build" -eq 1 ] || GOVERNA_SWIFT_PREP=1 build_main
+    _prep_apply "$version" "$message"
+    [ "$no_build" -eq 1 ] || GOVERNA_SWIFT_PREP=1 build_main
+  fi
+  printf '\nrelease command:\n  ./build.sh %s %s\n' "$version" "$(_quote "$message")"
+}
+
+release_usage() { printf 'Usage: build vX.Y.Z "release message"\n'; }
+
+release_main() {
+  [ "$#" -eq 2 ] || { release_usage >&2; return 2; }
+  local version="$1" message="$2" answer
+  _validate_release_inputs release "$version" "$message"
+  _validate_git_state release "$version"
+  git status --short
+  printf '%s\n' \
+    "git add -A" \
+    "git commit -m $(_quote "$message")" \
+    "git tag $(_quote "$version")" \
+    "git push origin $(_quote "$version")" \
+    'git push origin HEAD'
+  printf 'Proceed? [y/N] '
+  IFS= read -r answer || true
+  case "$answer" in y|Y|yes|YES) ;; *) printf 'release cancelled\n'; return 0 ;; esac
+  git add -A
+  git commit -m "$message" || { _fail 'release: commit failed; fix Git state and retry'; return 1; }
+  git tag "$version" || { _fail 'release: tag failed; remove any partial tag and retry'; return 1; }
+  git push origin "$version" || { _fail 'release: tag push failed; inspect the remote before retrying'; return 1; }
+  git push origin HEAD || { _fail 'release: branch push failed; the tag may already be remote'; return 1; }
+}
+
+main() {
+  if [ "${1:-}" = prep ]; then shift; prep_main "$@"; return; fi
+  case "${1:-}" in
+  v[0-9]*.[0-9]*.[0-9]*) release_main "$@" ;;
+  *) build_main "$@" ;;
+  esac
+}
+
+main "$@"

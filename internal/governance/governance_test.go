@@ -163,6 +163,31 @@ func TestInferStackManifestPrecedenceRemainsStable(t *testing.T) {
 	}
 }
 
+func TestInferSwiftStackAndMixedManifestPrecedence(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{"swift", map[string]string{"Package.swift": "// swift-tools-version: 6.0\n"}, "Swift"},
+		{"rust wins", map[string]string{"Package.swift": "", "Cargo.toml": ""}, "Rust"},
+		{"go wins", map[string]string{"Package.swift": "", "go.mod": ""}, "Go"},
+		{"terraform wins", map[string]string{"Package.swift": "", ".terraform.lock.hcl": ""}, "Terraform"},
+		{"swift beats node", map[string]string{"Package.swift": "", "package.json": "{}"}, "Swift"},
+		{"swift beats python", map[string]string{"Package.swift": "", "pyproject.toml": ""}, "Swift"},
+		{"swift beats java", map[string]string{"Package.swift": "", "pom.xml": ""}, "Swift"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := inferStack(newFixtureTarget(t, tt.files)); got != tt.want {
+				t.Errorf("inferStack = %q; want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInferStackFromTerraformLockFile(t *testing.T) {
 	t.Parallel()
 	dir := newFixtureTarget(t, map[string]string{
@@ -382,6 +407,175 @@ func TestRustStackEmitsBuildIgnoreAndGuidance(t *testing.T) {
 		if !strings.Contains(guidelineContent, want) {
 			t.Errorf("Rust guidance missing release-path rule %q", want)
 		}
+	}
+}
+
+func TestSwiftStackEmitsBuildIgnoreGuidanceAndReference(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{
+		Mode: ModeApply, Target: dir, Type: RepoTypeCode,
+		RepoName: "swift-tool", Stack: "sWiFt",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatalf("RunWithFS: %v", err)
+	}
+	build, err := os.ReadFile(filepath.Join(dir, "build.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(build)
+	for _, want := range []string{
+		"swift format lint --strict",
+		"swift build",
+		"swift test",
+		"-c release",
+		"-warnings-as-errors",
+		"--force-resolved-versions",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("Swift build.sh missing %q", want)
+		}
+	}
+	ignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(ignore), "/.build/") {
+		t.Error("Swift .gitignore missing /.build/")
+	}
+	for _, unwanted := range []string{".swiftpm/", "Package.resolved"} {
+		if strings.Contains(string(ignore), unwanted) {
+			t.Errorf("Swift .gitignore unexpectedly contains %q", unwanted)
+		}
+	}
+	guidance, err := os.ReadFile(filepath.Join(dir, "governa", "development-guidelines.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	swiftAt := strings.Index(string(guidance), "\n## Swift Practices\n")
+	boundaryAt := strings.Index(string(guidance), "\n## Project Practices\n")
+	if swiftAt < 0 || boundaryAt < 0 || swiftAt >= boundaryAt {
+		t.Fatal("Swift practices must precede Project Practices")
+	}
+	reference, err := os.ReadFile(filepath.Join(dir, "governa", "code-stacks.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, heading := range []string{"## Go", "## Rust", "## Terraform", "## Swift"} {
+		if !strings.Contains(string(reference), heading) {
+			t.Errorf("code-stacks.md missing %q", heading)
+		}
+	}
+}
+
+func TestSwiftBuildScriptDispatchAndArgumentValidation(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Mode: ModeApply, Target: dir, Type: RepoTypeCode,
+		RepoName: "swift-tool", Stack: "Swift",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(dir, "Package.swift"),
+		[]byte("// swift-tools-version: 6.0\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(dir, "Sources", "Tool", "main.swift")
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("print(\"ok\")\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "swift.log")
+	fake := `#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$SWIFT_LOG"
+case "$*" in
+"--version") printf '%s\n' 'Apple Swift version 6.0 (swiftlang-test)' ;;
+"package dump-package") printf '%s\n' '{"dependencies":[]}' ;;
+esac
+`
+	swiftPath := filepath.Join(bin, "swift")
+	if err := os.WriteFile(swiftPath, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test"},
+		{"add", "-A"},
+		{"commit", "-q", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	cmd := exec.Command("/bin/bash", "build.sh", "--verbose")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "SWIFT_LOG="+logPath)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Swift build failed: %v\n%s", err, out)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"format lint --strict Package.swift Sources/Tool/main.swift",
+		"build -v -Xswiftc -warnings-as-errors",
+		"test -v -Xswiftc -warnings-as-errors",
+		"build -v -c release -Xswiftc -warnings-as-errors",
+	} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("Swift dispatch missing %q\n%s", want, log)
+		}
+	}
+	cmd = exec.Command("/bin/bash", "build.sh", "tool")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "SWIFT_LOG="+logPath)
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "rerun without product names") {
+		t.Fatalf("scoped rejection: err=%v out=%s", err, out)
+	}
+	manifestBefore, err := os.ReadFile(filepath.Join(dir, "Package.swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command(
+		"/bin/bash", "build.sh", "prep", "--dry-run",
+		"v1.2.3", "AC42: test Swift prep",
+	)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "SWIFT_LOG="+logPath)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Swift prep dry-run failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"CHANGELOG.md: insert 1.2.3",
+		"AC files: delete referenced AC42",
+		"plan.md: remove matching AC-pointer IE lines",
+		"Package.swift: unchanged",
+		"Package.resolved: unchanged",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("prep dry-run missing %q\n%s", want, out)
+		}
+	}
+	manifestAfter, err := os.ReadFile(filepath.Join(dir, "Package.swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(manifestBefore, manifestAfter) {
+		t.Fatal("prep dry-run changed Package.swift")
 	}
 }
 

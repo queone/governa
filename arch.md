@@ -22,7 +22,7 @@ The repo also serves as its own `CODE`-repo example by carrying its own `AGENTS.
 ## Major Components
 
 - `internal/templates/base/`: cross-repo governance artifacts such as `AGENTS.md`
-- `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`, including first-class Go, Rust, and Terraform CODE build templates
+- `internal/templates/overlays/`: concrete repo-type overlays for `CODE` and `DOC`, including first-class Go, Rust, Terraform, and Swift CODE build templates
 - `internal/templates/stack-ignores/`: stack-specific `.gitignore` fragments
 - `internal/templates/stack-guidelines/`: stack-specific development-guideline fragments composed above the consumer-owned boundary
 - `cmd/governa`: single installable CLI binary containing the `apply`, `drift-scan`, `rm`, `deps`, and `render-canon` subcommands; there is no standalone `driftscan` binary
@@ -56,6 +56,7 @@ Template improvements flow in the opposite direction through an out-of-band work
 - first-class CODE stacks emit one canonical stack-specific `build.sh`; unsupported stacks emit the generic CODE scaffold without a build script
 - Rust CODE builds isolate compilation in one invocation-owned temporary Cargo target, clean it on handled exits, and install all package binaries through Cargo into its selected external home
 - Rust release prep suppresses installation during pre-change validation, isolates Cargo.lock refresh, and installs binaries only after successful post-change validation
+- Swift CODE canon uses a SwiftPM backend for one root package; native Xcode projects and Apple application bundles remain a separate future backend
 - stack guidance is composed immediately above `## Project Practices`, leaving the boundary and consumer-owned tail outside stack canon
 
 ## Conventions
