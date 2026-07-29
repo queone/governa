@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.147.1 | AC159: inline coverage fixture in build self-test |
 | 0.147.0 | AC158: add scoped Rust builds |
 | 0.146.0 | AC157: align README and architecture with current Governa |
 | 0.145.0 | AC156: align Rust CODE build presentation with Go |

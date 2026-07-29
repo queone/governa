@@ -97,6 +97,37 @@ _cmp_file() {
 # Normalizes: coverage temp path → COVERFILE; GOPATH install path → GOPATH.
 _BUILD_SAN="s|-coverprofile=[^ ]*|-coverprofile=COVERFILE|g;s|${_SHIMS_REAL}/gopath|GOPATH|g;s|${_SHIMS}/gopath|GOPATH|g"
 
+# ── go shim coverage profile ─────────────────────────────────────────────────
+_COVER_GOT="$_TMPD/coverage.got"
+_COVER_WANT="$_TMPD/coverage.want"
+printf '%s\n' \
+  'mode: set' \
+  'example.com/widget/internal/foo/foo.go:10.1,12.2 3 1' \
+  'example.com/widget/internal/bar/bar.go:10.1,12.2 2 1' \
+  'example.com/widget/internal/bar/bar.go:14.1,14.2 1 0' \
+  >"$_COVER_WANT"
+
+_cover_rc=0
+(
+  unset GOVERNA_SHIM_ROOT
+  /bin/bash "$_SHIMS/go" test "-coverprofile=$_COVER_GOT" ./...
+) >"$_TMPD/coverage.out" 2>"$_TMPD/coverage.err" || _cover_rc=$?
+if [ "$_cover_rc" -eq 0 ]; then
+  _cmp_file "go shim coverage: exact profile without shim root" \
+    "$_COVER_WANT" "$_COVER_GOT"
+else
+  _fail "go shim coverage: exact profile without shim root"
+fi
+
+_cover_rc=0
+/bin/bash "$_SHIMS/go" test "-coverprofile=$_TMPD" ./... \
+  >"$_TMPD/coverage-fail.out" 2>"$_TMPD/coverage-fail.err" || _cover_rc=$?
+if [ "$_cover_rc" -ne 0 ] && [ ! -s "$_TMPD/coverage-fail.out" ]; then
+  _ok "go shim coverage: unwritable profile fails before success"
+else
+  _fail "go shim coverage: unwritable profile fails before success"
+fi
+
 # ── _go_quote parity ─────────────────────────────────────────────────────────
 _tgq() {
   local in="$1" want="$2" label="$3"

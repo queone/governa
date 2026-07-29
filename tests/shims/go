@@ -53,8 +53,15 @@ test)
     -coverprofile=*) _coverfile="${_a#-coverprofile=}" ;;
     esac
   done
-  if [ -n "$_coverfile" ] && [ -n "${GOVERNA_SHIM_ROOT:-}" ]; then
-    cp "$GOVERNA_SHIM_ROOT/../fixtures/coverage/profile.out" "$_coverfile" 2>/dev/null || true
+  if [ -n "$_coverfile" ]; then
+    if ! printf '%s\n' \
+      'mode: set' \
+      'example.com/widget/internal/foo/foo.go:10.1,12.2 3 1' \
+      'example.com/widget/internal/bar/bar.go:10.1,12.2 2 1' \
+      'example.com/widget/internal/bar/bar.go:14.1,14.2 1 0' \
+      >"$_coverfile"; then
+      exit 1
+    fi
   fi
   if [ "$_verbose" = 1 ]; then
     printf '=== RUN   TestExample\n'
