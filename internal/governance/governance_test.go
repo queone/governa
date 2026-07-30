@@ -496,31 +496,75 @@ func TestSwiftBuildScriptDispatchAndArgumentValidation(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "swift.log")
 	fake := `#!/usr/bin/env bash
 printf '%s\n' "$*" >>"$SWIFT_LOG"
-case "$*" in
-"--version") printf '%s\n' 'Apple Swift version 6.0 (swiftlang-test)' ;;
-"package dump-package") printf '%s\n' '{"dependencies":[]}' ;;
+case "${1:-}" in
+--version) printf '%s\n' 'Apple Swift version 6.3.3 (swiftlang-test)'; exit 0 ;;
+*product-parser.swift) printf 'alpha\0zeta\0'; exit 0 ;;
 esac
+if [ "${1:-}" = package ]; then
+  case "$*" in
+  *dump-package*) printf '%s\n' '{"dependencies":[]}' ;;
+  *describe*) printf '%s\n' '{"products":[{"name":"alpha","type":{"executable":null}},{"name":"zeta","type":{"executable":null}}]}' ;;
+  esac
+  exit 0
+fi
+scratch=''
+product=''
+release=0
+show=0
+previous=''
+for arg in "$@"; do
+  [ "$previous" = scratch ] && scratch="$arg"
+  [ "$previous" = product ] && product="$arg"
+  previous=''
+  case "$arg" in
+  --scratch-path) previous=scratch ;;
+  --product) previous=product ;;
+  -c) previous=config ;;
+  release) release=1 ;;
+  --show-bin-path) show=1 ;;
+  esac
+done
+if [ "$show" -eq 1 ]; then
+  mkdir -p "$scratch/release"
+  printf '%s\n' "$scratch/release"
+  exit 0
+fi
+if [ "$release" -eq 1 ]; then
+  mkdir -p "$scratch/release"
+  if [ -n "$product" ]; then
+    printf '#!/bin/sh\n' >"$scratch/release/$product"
+    chmod +x "$scratch/release/$product"
+  else
+    for name in alpha zeta; do
+      printf '#!/bin/sh\n' >"$scratch/release/$name"
+      chmod +x "$scratch/release/$name"
+    done
+  fi
+fi
 `
 	swiftPath := filepath.Join(bin, "swift")
 	if err := os.WriteFile(swiftPath, []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"init", "-q"},
-		{"config", "user.email", "test@example.com"},
-		{"config", "user.name", "Test"},
-		{"add", "-A"},
-		{"commit", "-q", "-m", "init"},
-	} {
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
+	installDir := t.TempDir()
+	scratchParent := t.TempDir()
 	cmd := exec.Command("/bin/bash", "build.sh", "--verbose")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "SWIFT_LOG="+logPath)
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"SWIFT_LOG="+logPath,
+		"SWIFT_BIN_HOME="+installDir,
+		"TMPDIR="+scratchParent,
+		"NO_COLOR=1",
+	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("Swift build failed: %v\n%s", err, out)
 	}
@@ -530,20 +574,101 @@ esac
 	}
 	for _, want := range []string{
 		"format lint --strict Package.swift Sources/Tool/main.swift",
-		"build -v -Xswiftc -warnings-as-errors",
-		"test -v -Xswiftc -warnings-as-errors",
-		"build -v -c release -Xswiftc -warnings-as-errors",
+		"build --verbose --scratch-path",
+		"test --verbose --scratch-path",
+		"build --verbose -c release --scratch-path",
+		"build -c release --show-bin-path --scratch-path",
 	} {
 		if !strings.Contains(string(log), want) {
 			t.Errorf("Swift dispatch missing %q\n%s", want, log)
 		}
 	}
-	cmd = exec.Command("/bin/bash", "build.sh", "tool")
+	for _, name := range []string{"alpha", "zeta"} {
+		info, statErr := os.Stat(filepath.Join(installDir, name))
+		if statErr != nil || info.Mode()&0o111 == 0 {
+			t.Errorf("installed %s: info=%v err=%v", name, info, statErr)
+		}
+	}
+	scratchEntries, err := os.ReadDir(scratchParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scratchEntries) != 0 {
+		t.Fatalf("external scratch was not cleaned: %v", scratchEntries)
+	}
+	alphaBefore, err := os.ReadFile(filepath.Join(installDir, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "alpha"), []byte("preserve alpha\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("/bin/bash", "build.sh", "-v", "zeta")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "SWIFT_LOG="+logPath)
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"SWIFT_LOG="+logPath,
+		"SWIFT_BIN_HOME="+installDir,
+		"TMPDIR="+scratchParent,
+		"NO_COLOR=1",
+	)
 	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "rerun without product names") {
-		t.Fatalf("scoped rejection: err=%v out=%s", err, out)
+	if err != nil {
+		t.Fatalf("scoped Swift build failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "selected products:") ||
+		!strings.Contains(string(out), "Build selected Swift products") {
+		t.Fatalf("scoped presentation missing:\n%s", out)
+	}
+	alphaAfter, err := os.ReadFile(filepath.Join(installDir, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(alphaBefore, alphaAfter) || string(alphaAfter) != "preserve alpha\n" {
+		t.Fatalf("scoped build changed unselected alpha: %q", alphaAfter)
+	}
+	cmd = exec.Command("/bin/bash", "build.sh", "--")
+	cmd.Dir = dir
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"SWIFT_LOG="+logPath,
+		"SWIFT_BIN_HOME="+installDir,
+		"TMPDIR="+scratchParent,
+		"NO_COLOR=1",
+	)
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "delimiter requires at least one") {
+		t.Fatalf("empty delimiter selection: err=%v out=%s", err, out)
+	}
+	cmd = exec.Command("/bin/bash", "build.sh", "--", "zeta")
+	cmd.Dir = dir
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"SWIFT_LOG="+logPath,
+		"SWIFT_BIN_HOME="+installDir,
+		"TMPDIR="+scratchParent,
+		"NO_COLOR=1",
+	)
+	out, err = cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), `selected products: "zeta"`) {
+		t.Fatalf("selector after delimiter: err=%v out=%s", err, out)
+	}
+	cmd = exec.Command("/bin/bash", "build.sh", "missing")
+	cmd.Dir = dir
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"SWIFT_LOG="+logPath,
+		"SWIFT_BIN_HOME="+installDir,
+		"TMPDIR="+scratchParent,
+		"NO_COLOR=1",
+	)
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "available products:") {
+		t.Fatalf("unknown product: err=%v out=%s", err, out)
 	}
 	manifestBefore, err := os.ReadFile(filepath.Join(dir, "Package.swift"))
 	if err != nil {
@@ -554,7 +679,14 @@ esac
 		"v1.2.3", "AC42: test Swift prep",
 	)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "SWIFT_LOG="+logPath)
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"SWIFT_LOG="+logPath,
+		"SWIFT_BIN_HOME="+installDir,
+		"TMPDIR="+scratchParent,
+		"NO_COLOR=1",
+	)
 	out, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Swift prep dry-run failed: %v\n%s", err, out)
@@ -576,6 +708,68 @@ esac
 	}
 	if !bytes.Equal(manifestBefore, manifestAfter) {
 		t.Fatal("prep dry-run changed Package.swift")
+	}
+}
+
+func TestSwiftBuildScriptIsolationPresentationAndDocs(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Mode: ModeApply, Target: dir, Type: RepoTypeCode,
+		RepoName: "swift-tool", Stack: "Swift",
+	}
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
+		t.Fatal(err)
+	}
+	build, err := os.ReadFile(filepath.Join(dir, "build.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(build)
+	for _, want := range []string{
+		"governa-swift-build.XXXXXX",
+		"--scratch-path",
+		"swift package describe --type json",
+		"product-parser.swift",
+		"SWIFT_MODULECACHE_PATH",
+		"CLANG_MODULE_CACHE_PATH",
+		"${SWIFT_BIN_HOME:-}",
+		"governa-swift-probe.XXXXXX",
+		"governa-swift-stage.XXXXXX",
+		"selected products:",
+		"--product",
+		"GOVERNA_FORCE_TTY",
+		"NO_COLOR",
+		"TERM",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("Swift build contract missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"mapfile", "declare -A", "${var^^}", "&>>"} {
+		if strings.Contains(content, forbidden) {
+			t.Errorf("Swift build uses post-Bash-3.2 feature %q", forbidden)
+		}
+	}
+	for _, rel := range []string{"governa/code-stacks.md", "governa/development-guidelines.md"} {
+		data, readErr := os.ReadFile(filepath.Join(dir, rel))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		text := string(data)
+		for _, want := range []string{"SWIFT_BIN_HOME", "scoped"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing %q", rel, want)
+			}
+		}
+	}
+	overlayREADME, err := templates.EmbeddedFS.ReadFile("overlays/code/README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"SWIFT_BIN_HOME", "scoped"} {
+		if !strings.Contains(string(overlayREADME), want) {
+			t.Errorf("CODE overlay README missing %q", want)
+		}
 	}
 }
 

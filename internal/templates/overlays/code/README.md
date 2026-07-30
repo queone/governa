@@ -19,6 +19,6 @@ Current contents:
 - `plan.md`
 - `README.md`
 
-`build.sh` is a self-contained Bash script that handles build, release-prep, and release orchestration. It carries its stack-specific pipeline inline, requires no external governa tools, and targets Bash 3.2+ so macOS system Bash is supported. Swift CODE builds require Swift 6 and a root `Package.swift`; they run strict formatting, debug compilation, tests, and release compilation without installation in the initial phase.
+`build.sh` is a self-contained Bash script that handles build, release-prep, and release orchestration. It carries its stack-specific pipeline inline, requires no external governa tools, and targets Bash 3.2+ so macOS system Bash is supported. Swift CODE builds require Swift 6 and a root `Package.swift`; they isolate SwiftPM artifacts outside the repository, keep formatting and tests package-wide, build full or selected (scoped) executable products, and install release executables into `${SWIFT_BIN_HOME:-$HOME/.local/bin}` with canonical color or plain-text presentation. Library-only Swift packages validate without installation.
 
 See `plan.md` for future overlay improvements.

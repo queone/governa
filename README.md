@@ -66,8 +66,13 @@ binary-name conflicts are reported rather than overwritten.
 
 Swift canonical builds require Swift 6 and a root `Package.swift`, then run
 strict formatting, debug compilation, tests, and release compilation with
-warnings as errors. The initial Swift phase supports macOS and Linux, keeps
-artifacts in `.build/`, and does not install or accept scoped products. See
+warnings as errors. Builds use an invocation-owned external scratch directory,
+clean it on handled exits, and install executable products into
+`${SWIFT_BIN_HOME:-$HOME/.local/bin}` by atomically replacing regular files.
+With product names, formatting and tests remain package-wide while debug builds,
+release builds, and installation are limited to the selected products.
+Library-only packages validate without installation. Swift build, prep, and
+release output follows the canonical color and plain-text policy. See
 [`governa/code-stacks.md`](governa/code-stacks.md) for stack contracts.
 
 **Existing repo** (governance artifacts found): all template files are written directly. Repo name, type, and stack are inferred from the target directory (directory basename, manifest files). Explicit flags override inference: `-n`, `-k`, `-s`.

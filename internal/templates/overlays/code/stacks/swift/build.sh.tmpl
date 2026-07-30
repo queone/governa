@@ -3,9 +3,129 @@
 # Targets Bash 3.2+ and delegates language work to Swift 6.
 set -euo pipefail
 
-_quote() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+_swift_scratch=''
+_repo_root=''
+_install_root=''
+_install_probe=''
+_swift_bin_path=''
+_swift_products=()
+_swift_selected=()
+_swift_stages=()
+_swift_stage_products=()
+_swift_installed=()
+_swift_product_count=0
+_swift_selected_count=0
+_swift_stage_count=0
+_swift_installed_count=0
+
 _byte_len() { LC_ALL=C printf '%s' "$1" | LC_ALL=C wc -c | tr -d ' '; }
-_fail() { printf '%s\n' "$1" >&2; return 1; }
+
+_quote() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i; printf "\"" }
+    { if (NR > 1) printf "\\n"
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1); b = ord[c]
+        if (c == "\\") printf "\\\\"
+        else if (c == "\"") printf "\\\""
+        else if (b == 7) printf "\\a"
+        else if (b == 8) printf "\\b"
+        else if (b == 9) printf "\\t"
+        else if (b == 10) printf "\\n"
+        else if (b == 11) printf "\\v"
+        else if (b == 12) printf "\\f"
+        else if (b == 13) printf "\\r"
+        else if (b < 32 || b == 127) printf "\\x%02x", b
+        else printf "%s", c
+      }
+    }
+    END { printf "\"" }
+  '
+}
+
+# ── color ────────────────────────────────────────────────────────────────────
+_color_init() {
+  _color_on=1
+  [ -n "${NO_COLOR:-}" ] && _color_on=0
+  [ "${TERM:-}" = "dumb" ] && _color_on=0
+  if [ -n "${GOVERNA_FORCE_TTY:-}" ]; then
+    [ "${GOVERNA_FORCE_TTY}" = "1" ] || _color_on=0
+  elif [ ! -t 1 ]; then
+    _color_on=0
+  fi
+  _color256=0
+  case "${COLORTERM:-}" in truecolor | 24bit) _color256=1 ;; esac
+  case "${TERM:-}" in *256color*) _color256=1 ;; esac
+  return 0
+}
+
+_wrap() {
+  if [ "$_color_on" = 1 ] && [ "$_color256" = 1 ]; then
+    printf '\033[%sm%s\033[0m' "$1" "$2"
+  else
+    printf '%s' "$2"
+  fi
+}
+
+yel7() { _wrap '38;5;227' "$1"; }
+yel5() { _wrap '38;5;220' "$1"; }
+grn3() { _wrap '38;5;34' "$1"; }
+grn5() { _wrap '38;5;46' "$1"; }
+gra5() { _wrap '38;5;245' "$1"; }
+cya4() { _wrap '38;5;44' "$1"; }
+red3() { _wrap '38;5;124' "$1"; }
+whi5() { _wrap '38;5;231' "$1"; }
+
+bold() {
+  if [ "$_color_on" = 1 ] && [ "$_color256" = 1 ]; then
+    local reset bold1
+    reset=$(printf '\033[0m')
+    bold1=$(printf '\033[1m')
+    local s=${1//"$reset"/"$reset$bold1"}
+    printf '\033[1m%s\033[0m' "$s"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+_fail() {
+  printf '%s\n' "$(red3 "$1")" >&2
+  return 1
+}
+
+_emit_usage_line() {
+  local flag="$1" desc="$2" col=$((2 + ${#1})) pad
+  if [ "$col" -lt 38 ]; then pad=$(printf '%*s' $((38 - col)) ''); else pad='  '; fi
+  printf '  %s%s%s\n' "$flag" "$pad" "$desc"
+}
+
+_path_is_within() {
+  case "$1/" in "$2/"*) return 0 ;; *) return 1 ;; esac
+}
+
+_command_text() {
+  local arg out='' rendered
+  for arg in "$@"; do
+    case "$arg" in
+    *[!A-Za-z0-9_./:=+,-]*|'') rendered=$(_quote "$arg") ;;
+    *) rendered="$arg" ;;
+    esac
+    out="${out}${out:+ }${rendered}"
+  done
+  printf '%s' "$out"
+}
+
+_run_swift() {
+  local label="$1"
+  shift
+  printf '    %s\n' "$(yel5 "$(_command_text "$@")")"
+  "$@" || {
+    local rc=$?
+    _fail "build: $label failed; fix the reported SwiftPM error and retry"
+    return "$rc"
+  }
+}
 
 _swift_version() {
   swift --version 2>&1 | awk '
@@ -23,14 +143,20 @@ _require_swift() {
   command -v swift >/dev/null 2>&1 ||
     _fail 'build: Swift 6.0 or newer is required; install Swift and retry' ||
     return 1
-  local version major minor
+  local version major
   version=$(_swift_version)
   [ -n "$version" ] ||
     _fail 'build: read Swift version: unrecognized output; install a supported Swift 6 toolchain' ||
     return 1
-  major=${version%%.*}; minor=${version#*.}; minor=${minor%%.*}
-  if [ "$major" -lt 6 ]; then
-    _fail "build: Swift 6.0 or newer is required; found $version" || return 1
+  major=${version%%.*}
+  [ "$major" -ge 6 ] ||
+    _fail "build: Swift 6.0 or newer is required; found $version" ||
+    return 1
+}
+
+_force_resolved_args() {
+  if [ -n "${GOVERNA_SWIFT_PREP:-}" ] && [ -f Package.resolved ]; then
+    printf '%s\n' '--force-resolved-versions'
   fi
 }
 
@@ -41,84 +167,548 @@ _require_package() {
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
     _fail 'build: source discovery requires a Git work tree; initialize Git and retry' ||
     return 1
-  swift package dump-package >/dev/null 2>&1 ||
+  local forced=''
+  forced=$(_force_resolved_args)
+  if [ -n "$forced" ]; then
+    swift package "$forced" dump-package >/dev/null 2>&1
+  else
+    swift package dump-package >/dev/null 2>&1
+  fi ||
     _fail 'build: validate Package.swift: fix its tools-version declaration or manifest syntax' ||
     return 1
 }
 
-_swift_sources() {
-  git ls-files -co --exclude-standard -z -- Package.swift '*.swift'
-}
+_swift_sources() { git ls-files -co --exclude-standard -z -- Package.swift '*.swift'; }
 
 _format() {
   local files=() path
   while IFS= read -r -d '' path; do
-    case "$path" in
-    .build/*|.git/*) continue ;;
-    esac
+    case "$path" in .build/* | .git/*) continue ;; esac
     files+=("$path")
   done < <(_swift_sources)
   [ "${#files[@]}" -gt 0 ] ||
     _fail 'build: discover Swift sources: no Package.swift or Swift files found' ||
     return 1
-  swift format lint --strict "${files[@]}" ||
-    _fail 'build: Swift formatting failed; run swift format on the reported files' ||
-    return 1
+  _run_swift 'Swift formatting' swift format lint --strict "${files[@]}"
 }
 
-_run_swift() {
-  local label="$1"; shift
-  printf '    %s\n' "$*"
-  "$@" || { local rc=$?; _fail "build: $label failed; fix the reported SwiftPM error and retry"; return "$rc"; }
+_cleanup_staging() {
+  local path rc=0
+  if [ -n "${_install_probe:-}" ]; then
+    case "$_install_probe" in
+    "$_install_root"/governa-swift-probe.*)
+      rm -rf -- "$_install_probe" 2>/dev/null || rc=1
+      ;;
+    *) rc=1 ;;
+    esac
+    [ "$rc" -ne 0 ] || _install_probe=''
+  fi
+  if [ "$_swift_stage_count" -gt 0 ]; then
+    for path in "${_swift_stages[@]}"; do
+      [ -n "$path" ] || continue
+      case "$path" in
+      "$_install_root"/governa-swift-stage.*)
+        rm -f -- "$path" 2>/dev/null || rc=1
+        ;;
+      *) rc=1 ;;
+      esac
+    done
+  fi
+  _swift_stages=()
+  _swift_stage_products=()
+  _swift_stage_count=0
+  return "$rc"
+}
+
+_cleanup_scratch() {
+  local target="${_swift_scratch:-}" home=''
+  [ -n "$target" ] || return 0
+  [ -n "${HOME:-}" ] && home=$(cd "$HOME" 2>/dev/null && pwd -P || true)
+  case "$target" in / | "$home") return 1 ;; esac
+  [ -n "$_repo_root" ] || return 1
+  _path_is_within "$target" "$_repo_root" && return 1
+  case "$(basename "$target")" in governa-swift-build.*) ;; *) return 1 ;; esac
+  rm -rf -- "$target" || return 1
+  _swift_scratch=''
+}
+
+_cleanup_all() {
+  local rc=0
+  _cleanup_staging || rc=1
+  _cleanup_scratch || rc=1
+  return "$rc"
+}
+
+_report_installed() {
+  local path
+  [ "$_swift_installed_count" -gt 0 ] || return 0
+  _fail 'build: executables installed before interruption or failure:'
+  for path in "${_swift_installed[@]}"; do
+    printf '    %s\n' "$(gra5 "$(_quote "$path")")" >&2
+  done
+}
+
+_swift_signal() {
+  local status="$1" scratch="${_swift_scratch:-}" probe="${_install_probe:-}"
+  trap - HUP INT TERM
+  if ! _cleanup_all; then
+    _fail "build: cleanup failed after signal; remove retained scratch or staging state manually: $(_quote "${scratch:-$probe}")"
+  fi
+  _report_installed
+  exit "$status"
+}
+
+_create_scratch() {
+  local parent="${TMPDIR:-/tmp}" resolved candidate home=''
+  _repo_root=$(pwd -P) ||
+    _fail 'build: resolve repository root: check directory access' ||
+    return 1
+  if ! resolved=$(cd "$parent" 2>/dev/null && pwd -P) ||
+     [ ! -w "$resolved" ] ||
+     _path_is_within "$resolved" "$_repo_root"; then
+    parent=/tmp
+    if ! resolved=$(cd "$parent" 2>/dev/null && pwd -P) ||
+       [ ! -w "$resolved" ] ||
+       _path_is_within "$resolved" "$_repo_root"; then
+      _fail 'build: create Swift scratch: set TMPDIR to a writable directory outside the repository'
+      return 1
+    fi
+  fi
+  candidate=$(mktemp -d "$resolved/governa-swift-build.XXXXXX") ||
+    _fail 'build: create Swift scratch: mktemp failed; check temporary-directory access' ||
+    return 1
+  candidate=$(cd "$candidate" 2>/dev/null && pwd -P) || {
+    rmdir "$candidate" 2>/dev/null || true
+    _fail 'build: resolve Swift scratch: remove the temporary directory manually'
+    return 1
+  }
+  [ -n "${HOME:-}" ] && home=$(cd "$HOME" 2>/dev/null && pwd -P || true)
+  case "$candidate" in / | "$home")
+    _fail 'build: unsafe Swift scratch path; refusing cleanup'
+    return 1
+    ;;
+  esac
+  _path_is_within "$candidate" "$_repo_root" && {
+    _fail 'build: Swift scratch resolved inside the repository; set a safe TMPDIR'
+    return 1
+  }
+  case "$(basename "$candidate")" in
+  governa-swift-build.*) ;;
+  *) _fail 'build: Swift scratch has an unsafe name; refusing cleanup'; return 1 ;;
+  esac
+  _swift_scratch="$candidate"
+}
+
+_write_product_parser() {
+  local parser="$_swift_scratch/product-parser.swift"
+  cat >"$parser" <<'SWIFT'
+import Foundation
+
+func fail(_ message: String) -> Never {
+  FileHandle.standardError.write(Data(("product metadata: " + message + "\n").utf8))
+  exit(2)
+}
+
+let data = FileHandle.standardInput.readDataToEndOfFile()
+let root: Any
+do {
+  root = try JSONSerialization.jsonObject(with: data)
+} catch {
+  fail("malformed JSON")
+}
+guard let object = root as? [String: Any],
+      let products = object["products"] as? [[String: Any]] else {
+  fail("missing products array")
+}
+var names: [String] = []
+var seen = Set<String>()
+for product in products {
+  guard let type = product["type"] as? [String: Any] else {
+    fail("malformed product type")
+  }
+  guard type.keys.contains("executable") else { continue }
+  guard let name = product["name"] as? String else {
+    fail("executable product has no name")
+  }
+  if name.isEmpty || name == "." || name == ".." || name.contains("/") {
+    fail("unsafe executable product name")
+  }
+  guard seen.insert(name).inserted else {
+    fail("duplicate executable product name")
+  }
+  names.append(name)
+}
+names.sort { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
+for name in names {
+  FileHandle.standardOutput.write(Data(name.utf8))
+  FileHandle.standardOutput.write(Data([0]))
+}
+SWIFT
+}
+
+_load_products() {
+  local json="$_swift_scratch/package.json"
+  local output="$_swift_scratch/products.nul"
+  local parser="$_swift_scratch/product-parser.swift"
+  local forced=''
+  forced=$(_force_resolved_args)
+  if [ -n "$forced" ]; then
+    swift package "$forced" describe --type json >"$json" ||
+      _fail 'build: inspect Swift products: fix Package.swift or resolved dependencies' ||
+      return 1
+  else
+    swift package describe --type json >"$json" ||
+      _fail 'build: inspect Swift products: fix Package.swift and retry' ||
+      return 1
+  fi
+  _write_product_parser
+  SWIFT_MODULECACHE_PATH="$_swift_scratch/swift-module-cache" \
+    CLANG_MODULE_CACHE_PATH="$_swift_scratch/clang-module-cache" \
+    swift "$parser" <"$json" >"$output" ||
+    _fail 'build: parse Swift product metadata: fix malformed or unsafe executable products' ||
+    return 1
+  _swift_products=()
+  _swift_product_count=0
+  local name
+  while IFS= read -r -d '' name; do
+    _swift_products+=("$name")
+    _swift_product_count=$((_swift_product_count + 1))
+  done <"$output"
+}
+
+_available_products() {
+  local item out=''
+  if [ "$_swift_product_count" -gt 0 ]; then
+    for item in "${_swift_products[@]}"; do out="${out}${out:+ }$(_quote "$item")"; done
+  fi
+  [ -n "$out" ] && printf '%s' "$out" || printf '%s' '(none)'
+}
+
+_normalize_selection() {
+  _swift_selected=()
+  _swift_selected_count=0
+  [ "$#" -gt 0 ] || return 0
+  local requested=("$@") item candidate found seen=''
+  for item in "${requested[@]}"; do
+    case "
+$seen
+" in *"
+$item
+"*) _fail "duplicate product $(_quote "$item"); list each product once"; return 2 ;; esac
+    seen="${seen}${seen:+
+}$item"
+    found=0
+    if [ "$_swift_product_count" -gt 0 ]; then
+      for candidate in "${_swift_products[@]}"; do
+        [ "$candidate" = "$item" ] && { found=1; break; }
+      done
+    fi
+    [ "$found" -eq 1 ] || {
+      if [ "$_swift_product_count" -eq 0 ]; then
+        _fail "unknown product $(_quote "$item"); this library-only package supports only a full build"
+      else
+        _fail "unknown product $(_quote "$item"); available products: $(_available_products)"
+      fi
+      return 2
+    }
+  done
+  for candidate in "${_swift_products[@]}"; do
+    for item in "${requested[@]}"; do
+      if [ "$candidate" = "$item" ]; then
+        _swift_selected+=("$candidate")
+        _swift_selected_count=$((_swift_selected_count + 1))
+        break
+      fi
+    done
+  done
+}
+
+_resolve_bin_path() {
+  local verbose="$1" output="$_swift_scratch/bin-path" forced=''
+  forced=$(_force_resolved_args)
+  local args=(swift build -c release --show-bin-path --scratch-path "$_swift_scratch")
+  [ "$verbose" -eq 1 ] && args+=(--verbose)
+  [ -n "$forced" ] && args+=("$forced")
+  printf '    %s\n' "$(yel5 "$(_command_text "${args[@]}")")"
+  "${args[@]}" >"$output" || {
+    local rc=$?
+    _fail 'build: resolve release binary path failed; fix the reported SwiftPM error and retry'
+    return "$rc"
+  }
+  local path extra
+  IFS= read -r path <"$output" || true
+  extra=$(sed -n '2p' "$output")
+  [ -n "$path" ] && [ -z "$extra" ] ||
+    _fail 'build: resolve release binary path: SwiftPM returned malformed output' ||
+    return 1
+  path=$(cd "$path" 2>/dev/null && pwd -P) ||
+    _fail 'build: resolve release binary path: reported directory is inaccessible' ||
+    return 1
+  _path_is_within "$path" "$_swift_scratch" ||
+    _fail 'build: release binary path resolved outside invocation scratch' ||
+    return 1
+  _swift_bin_path="$path"
+}
+
+_resolve_install_root() {
+  local root ancestor parent physical home=''
+  if [ -n "${SWIFT_BIN_HOME:-}" ]; then
+    root="$SWIFT_BIN_HOME"
+  elif [ -n "${HOME:-}" ]; then
+    root="$HOME/.local/bin"
+  else
+    _fail 'build: resolve Swift install directory: set SWIFT_BIN_HOME or HOME'
+    return 1
+  fi
+  case "$root" in /*) ;; *) _fail 'build: Swift install directory must be absolute'; return 1 ;; esac
+  ancestor="$root"
+  while [ ! -e "$ancestor" ]; do
+    parent=$(dirname "$ancestor")
+    [ "$parent" != "$ancestor" ] || break
+    ancestor="$parent"
+  done
+  physical=$(cd "$ancestor" 2>/dev/null && pwd -P) ||
+    _fail 'build: resolve Swift install ancestor: check directory access' ||
+    return 1
+  _path_is_within "$physical" "$_repo_root" && {
+    _fail 'build: Swift install directory resolves inside the repository; set SWIFT_BIN_HOME outside it'
+    return 1
+  }
+  mkdir -p "$root" ||
+    _fail 'build: create Swift install directory: check destination permissions' ||
+    return 1
+  physical=$(cd "$root" 2>/dev/null && pwd -P) ||
+    _fail 'build: resolve Swift install directory after creation' ||
+    return 1
+  [ -n "${HOME:-}" ] && home=$(cd "$HOME" 2>/dev/null && pwd -P || true)
+  case "$physical" in / | "$home")
+    _fail 'build: unsafe Swift install directory; choose a dedicated bin directory'
+    return 1
+    ;;
+  esac
+  _path_is_within "$physical" "$_repo_root" && {
+    _fail 'build: Swift install directory resolves inside the repository; set SWIFT_BIN_HOME outside it'
+    return 1
+  }
+  [ -d "$physical" ] && [ -w "$physical" ] ||
+    _fail 'build: Swift install directory is not a writable directory' ||
+    return 1
+  _install_root="$physical"
+}
+
+_install_products() {
+  local bin_path="$1"
+  shift
+  local products=("$@") product artifact destination stage
+  [ "${#products[@]}" -gt 0 ] || return 0
+  for product in "${products[@]}"; do
+    artifact="$bin_path/$product"
+    [ -f "$artifact" ] && [ ! -L "$artifact" ] && [ -x "$artifact" ] ||
+      _fail "build: validate release artifact $(_quote "$artifact"): require a regular executable file" ||
+      return 1
+  done
+  _resolve_install_root || return 1
+  _install_probe=$(mktemp -d "$_install_root/governa-swift-probe.XXXXXX") ||
+    _fail 'build: create destination collision probe: check install-directory permissions' ||
+    return 1
+  for product in "${products[@]}"; do
+    mkdir "$_install_probe/$product" 2>/dev/null || {
+      _fail "build: executable product names collide on the destination filesystem: $(_quote "$product")"
+      return 1
+    }
+  done
+  rm -rf -- "$_install_probe" ||
+    _fail "build: remove destination collision probe: remove it manually at $(_quote "$_install_probe")" ||
+    return 1
+  _install_probe=''
+  for product in "${products[@]}"; do
+    destination="$_install_root/$product"
+    if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
+      _fail "build: destination is not an absent or regular file: $(_quote "$destination")"
+      return 1
+    fi
+  done
+  for product in "${products[@]}"; do
+    artifact="$bin_path/$product"
+    stage=$(mktemp "$_install_root/governa-swift-stage.XXXXXX") ||
+      _fail 'build: create executable staging file: check install-directory permissions' ||
+      return 1
+    _swift_stages+=("$stage")
+    _swift_stage_products+=("$product")
+    _swift_stage_count=$((_swift_stage_count + 1))
+    cp -p "$artifact" "$stage" ||
+      _fail "build: stage executable $(_quote "$product"): check destination access" ||
+      return 1
+    [ -x "$stage" ] || chmod u+x "$stage" ||
+      _fail "build: preserve executable access for $(_quote "$product")" ||
+      return 1
+  done
+  local index=0
+  while [ "$index" -lt "${#products[@]}" ]; do
+    product="${products[$index]}"
+    stage="${_swift_stages[$index]}"
+    destination="$_install_root/$product"
+    if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
+      _fail "build: destination changed before install: $(_quote "$destination"); resolve it and retry"
+      _report_installed
+      return 1
+    fi
+    mv -f "$stage" "$destination" || {
+      _fail "build: atomically install $(_quote "$product"): resolve destination access and retry"
+      _report_installed
+      return 1
+    }
+    _swift_stages[$index]=''
+    _swift_installed+=("$destination")
+    _swift_installed_count=$((_swift_installed_count + 1))
+    printf '    %s %s\n' "$(grn5 'installed:')" "$(gra5 "$(_quote "$destination")")"
+    index=$((index + 1))
+  done
+}
+
+_build_pipeline() {
+  local verbose="$1" install="$2"
+  shift 2
+  local forced='' product bin_path
+  local selected_count=$#
+  local selected=()
+  [ "$selected_count" -eq 0 ] || selected=("$@")
+  forced=$(_force_resolved_args)
+  _load_products || return 1
+  if [ "$selected_count" -gt 0 ]; then
+    _normalize_selection "${selected[@]}" || return $?
+  else
+    _normalize_selection || return $?
+  fi
+  if [ "$selected_count" -gt 0 ]; then
+    local display=''
+    for product in "${_swift_selected[@]}"; do display="${display}${display:+ }$(_quote "$product")"; done
+    printf '%s %s\n' "$(yel7 'selected products:')" "$(grn3 "$display")"
+  fi
+  printf '%s\n' "$(yel7 '==> Check Swift formatting')"
+  _format || return $?
+  local common=(--scratch-path "$_swift_scratch" -Xswiftc -warnings-as-errors)
+  [ -n "$forced" ] && common+=("$forced")
+  local verbose_arg=()
+  [ "$verbose" -eq 1 ] && verbose_arg=(--verbose)
+  if [ "$_swift_selected_count" -eq 0 ]; then
+    printf '\n%s\n' "$(yel7 '==> Build Swift package')"
+    _run_swift 'debug build' swift build ${verbose_arg[@]+"${verbose_arg[@]}"} "${common[@]}" || return $?
+  else
+    printf '\n%s\n' "$(yel7 '==> Build selected Swift products')"
+    for product in "${_swift_selected[@]}"; do
+      _run_swift "debug build for $(_quote "$product")" \
+        swift build ${verbose_arg[@]+"${verbose_arg[@]}"} --product "$product" "${common[@]}" || return $?
+    done
+  fi
+  printf '\n%s\n' "$(yel7 '==> Run Swift tests')"
+  _run_swift 'tests' swift test ${verbose_arg[@]+"${verbose_arg[@]}"} "${common[@]}" || return $?
+  if [ "$_swift_selected_count" -eq 0 ]; then
+    printf '\n%s\n' "$(yel7 '==> Build Swift release artifacts')"
+    _run_swift 'release build' swift build ${verbose_arg[@]+"${verbose_arg[@]}"} -c release "${common[@]}" || return $?
+  else
+    printf '\n%s\n' "$(yel7 '==> Build selected Swift release artifacts')"
+    for product in "${_swift_selected[@]}"; do
+      _run_swift "release build for $(_quote "$product")" \
+        swift build ${verbose_arg[@]+"${verbose_arg[@]}"} -c release --product "$product" "${common[@]}" || return $?
+    done
+  fi
+  [ "$install" -eq 1 ] || return 0
+  local install_products=()
+  local install_count=0
+  if [ "$_swift_selected_count" -gt 0 ]; then
+    install_products=("${_swift_selected[@]}")
+    install_count=$_swift_selected_count
+  else
+    if [ "$_swift_product_count" -gt 0 ]; then
+      install_products=("${_swift_products[@]}")
+      install_count=$_swift_product_count
+    fi
+  fi
+  [ "$install_count" -gt 0 ] || return 0
+  _resolve_bin_path "$verbose" || return 1
+  bin_path="$_swift_bin_path"
+  if [ "$_swift_selected_count" -eq 0 ]; then
+    printf '\n%s\n' "$(yel7 '==> Install Swift executables')"
+  else
+    printf '\n%s\n' "$(yel7 '==> Install selected Swift executables')"
+  fi
+  _install_products "$bin_path" "${install_products[@]}"
+}
+
+_run_isolated() {
+  local rc=0 cleanup_rc=0
+  _create_scratch || return 1
+  trap '_swift_signal 129' HUP
+  trap '_swift_signal 130' INT
+  trap '_swift_signal 143' TERM
+  "$@" || rc=$?
+  trap - HUP INT TERM
+  _cleanup_all || cleanup_rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$cleanup_rc" -eq 0 ] ||
+      _fail "build: cleanup failed; remove retained scratch or staging state manually: $(_quote "${_swift_scratch:-$_install_probe}")"
+    return "$rc"
+  fi
+  if [ "$cleanup_rc" -ne 0 ]; then
+    _fail "build: cleanup failed; remove retained scratch or staging state manually: $(_quote "${_swift_scratch:-$_install_probe}")"
+    return "$cleanup_rc"
+  fi
 }
 
 build_usage() {
-  cat <<'EOF'
-Usage: build [-v|--verbose]
-
-  -v, --verbose   show verbose SwiftPM output
-  -h, -?, --help  show this help
-EOF
-}
-
-build_run() {
-  local verbose="$1" verbose_flag='' resolved_flag=''
-  [ "$verbose" -eq 1 ] && verbose_flag=-v
-  if [ -n "${GOVERNA_SWIFT_PREP:-}" ] && [ -f Package.resolved ]; then
-    resolved_flag=--force-resolved-versions
-  fi
-  _require_swift
-  _require_package
-  printf '%s\n' '==> Check Swift formatting'
-  _format
-  printf '\n%s\n' '==> Build Swift package'
-  _run_swift 'debug build' swift build \
-    ${verbose_flag:+"$verbose_flag"} ${resolved_flag:+"$resolved_flag"} \
-    -Xswiftc -warnings-as-errors
-  printf '\n%s\n' '==> Run Swift tests'
-  _run_swift 'tests' swift test \
-    ${verbose_flag:+"$verbose_flag"} ${resolved_flag:+"$resolved_flag"} \
-    -Xswiftc -warnings-as-errors
-  printf '\n%s\n' '==> Build Swift release artifacts'
-  _run_swift 'release build' swift build \
-    ${verbose_flag:+"$verbose_flag"} ${resolved_flag:+"$resolved_flag"} \
-    -c release -Xswiftc -warnings-as-errors
+  printf '%s %s\n' "$(bold "$(whi5 'Usage:')")" 'build [product ...] [-v|--verbose]'
+  _emit_usage_line '-v, --verbose' 'show verbose SwiftPM output'
+  _emit_usage_line '-h, -?, --help' 'show this help'
+  _emit_usage_line '--' 'treat every following argument as a product name'
+  printf '\n%s\n' 'With no products, validate the full package and install every executable product.
+With products, keep formatting and tests package-wide, build and install only those products.'
 }
 
 build_main() {
   if [ "$#" -eq 1 ]; then
-    case "$1" in -h|-\?|--help) build_usage; return 0 ;; esac
+    case "$1" in -h | -\? | --help) build_usage; return 0 ;; esac
   fi
-  local verbose=0 arg
-  for arg in "$@"; do
+  local verbose=0 end_options=0 saw_delimiter=0 arg
+  local requested=()
+  local requested_count=0
+  while [ "$#" -gt 0 ]; do
+    arg="$1"
+    shift
+    if [ "$end_options" -eq 1 ]; then
+      requested+=("$arg")
+      requested_count=$((requested_count + 1))
+      continue
+    fi
     case "$arg" in
-    -v|--verbose) verbose=1 ;;
-    -h|-\?|--help) _fail 'help flags must be used by themselves'; return 2 ;;
-    -*) _fail "unsupported option $(_quote "$arg"); use -v, --verbose, or --help"; return 2 ;;
-    *) _fail "unexpected product name $(_quote "$arg"); scoped Swift builds are not supported; rerun without product names"; return 2 ;;
+    -v | --verbose) verbose=1 ;;
+    -h | -\? | --help) _fail 'help flags must be used by themselves'; return 2 ;;
+    --) end_options=1; saw_delimiter=1 ;;
+    -*) _fail "unsupported option $(_quote "$arg"); use -v, --verbose, --, or --help"; return 2 ;;
+    '') _fail 'malformed empty product; use a declared executable-product name'; return 2 ;;
+    *','*) _fail "malformed product $(_quote "$arg"); use space-separated product names"; return 2 ;;
+    *) requested+=("$arg"); requested_count=$((requested_count + 1)) ;;
     esac
   done
-  build_run "$verbose"
+  if [ "$saw_delimiter" -eq 1 ] && [ "$end_options" -eq 1 ] && [ "$requested_count" -eq 0 ]; then
+    _fail 'end-of-options delimiter requires at least one following product name'
+    return 2
+  fi
+  local item
+  if [ "$requested_count" -gt 0 ]; then
+    for item in "${requested[@]}"; do
+      [ -n "$item" ] || { _fail 'malformed empty product; use a declared executable-product name'; return 2; }
+      case "$item" in *','*) _fail "malformed product $(_quote "$item"); use space-separated product names"; return 2 ;; esac
+    done
+  fi
+  _require_swift
+  _require_package
+  local install="${GOVERNA_SWIFT_INSTALL:-1}"
+  if [ "$requested_count" -gt 0 ]; then
+    _run_isolated _build_pipeline "$verbose" "$install" "${requested[@]}"
+  else
+    _run_isolated _build_pipeline "$verbose" "$install"
+  fi
 }
 
 _validate_release_inputs() {
@@ -187,23 +777,21 @@ EOF
 }
 
 prep_usage() {
-  cat <<'EOF'
-Usage: build prep [--dry-run|-n] [--no-build|-B] vX.Y.Z "release message"
-EOF
+  printf '%s %s\n' "$(bold "$(whi5 'Usage:')")" 'build prep [--dry-run|-n] [--no-build|-B] vX.Y.Z "release message"'
 }
 
 prep_main() {
   local dry=0 no_build=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
-    -h|-\?|--help) prep_usage; return 0 ;;
-    -n|--dry-run) dry=1; shift ;;
-    -B|--no-build) no_build=1; shift ;;
+    -h | -\? | --help) prep_usage; return 0 ;;
+    -n | --dry-run) dry=1; shift ;;
+    -B | --no-build) no_build=1; shift ;;
     *) break ;;
     esac
   done
   [ "$#" -eq 2 ] || { prep_usage >&2; return 2; }
-  local version="$1" message="$2"
+  local version="$1" message="$2" quoted_message
   _validate_release_inputs prep "$version" "$message"
   _validate_git_state prep "$version"
   _require_swift
@@ -212,37 +800,52 @@ prep_main() {
   if [ "$dry" -eq 1 ]; then
     local refs
     refs=$(_prep_refs "$message")
-    printf 'prep dry-run:\n  CHANGELOG.md: insert %s\n' "${version#v}"
+    printf '%s\n' "$(yel7 'prep dry-run:')"
+    printf '  CHANGELOG.md: insert %s\n' "${version#v}"
     if [ -n "$refs" ]; then
       printf '  AC files: delete referenced %s\n' "$(printf '%s' "$refs" | tr '\n' ' ')"
       printf '  plan.md: remove matching AC-pointer IE lines\n'
     fi
     printf '  Package.swift: unchanged\n  Package.resolved: unchanged\n'
   else
-    [ "$no_build" -eq 1 ] || GOVERNA_SWIFT_PREP=1 build_main
+    [ "$no_build" -eq 1 ] ||
+      GOVERNA_SWIFT_PREP=1 GOVERNA_SWIFT_INSTALL=0 build_main
     _prep_apply "$version" "$message"
-    [ "$no_build" -eq 1 ] || GOVERNA_SWIFT_PREP=1 build_main
+    [ "$no_build" -eq 1 ] ||
+      GOVERNA_SWIFT_PREP=1 GOVERNA_SWIFT_INSTALL=1 build_main
   fi
-  printf '\nrelease command:\n  ./build.sh %s %s\n' "$version" "$(_quote "$message")"
+  quoted_message=$(_quote "$message")
+  printf '\n%s\n' "$(yel7 'release command:')"
+  printf '  %s\n' "$(grn3 "./build.sh $version $quoted_message")"
 }
 
-release_usage() { printf 'Usage: build vX.Y.Z "release message"\n'; }
+release_usage() {
+  printf '%s %s\n' "$(bold "$(whi5 'Usage:')")" 'build vX.Y.Z "release message"'
+}
 
 release_main() {
   [ "$#" -eq 2 ] || { release_usage >&2; return 2; }
-  local version="$1" message="$2" answer
+  local version="$1" message="$2" answer quoted_message quoted_version line
   _validate_release_inputs release "$version" "$message"
   _validate_git_state release "$version"
   git status --short
-  printf '%s\n' \
-    "git add -A" \
-    "git commit -m $(_quote "$message")" \
-    "git tag $(_quote "$version")" \
-    "git push origin $(_quote "$version")" \
-    'git push origin HEAD'
-  printf 'Proceed? [y/N] '
+  printf '%s\n' "$(yel7 'release plan:')"
+  quoted_message=$(_quote "$message")
+  quoted_version=$(_quote "$version")
+  for line in \
+    'git add -A' \
+    "git commit -m $quoted_message" \
+    "git tag $quoted_version" \
+    "git push origin $quoted_version" \
+    'git push origin HEAD'; do
+    printf '  %s\n' "$(yel5 "$line")"
+  done
+  printf '%s ' "$(bold "$(whi5 'Proceed? [y/N]')")"
   IFS= read -r answer || true
-  case "$answer" in y|Y|yes|YES) ;; *) printf 'release cancelled\n'; return 0 ;; esac
+  case "$answer" in
+  y | Y | yes | YES) ;;
+  *) _fail 'release aborted'; return 1 ;;
+  esac
   git add -A
   git commit -m "$message" || { _fail 'release: commit failed; fix Git state and retry'; return 1; }
   git tag "$version" || { _fail 'release: tag failed; remove any partial tag and retry'; return 1; }
@@ -251,6 +854,7 @@ release_main() {
 }
 
 main() {
+  _color_init
   if [ "${1:-}" = prep ]; then shift; prep_main "$@"; return; fi
   case "${1:-}" in
   v[0-9]*.[0-9]*.[0-9]*) release_main "$@" ;;

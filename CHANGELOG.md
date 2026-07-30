@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.149.0 | AC161: complete Swift CODE build workflow |
 | 0.148.0 | AC160: add first-class Swift CODE stack |
 | 0.147.1 | AC159: inline coverage fixture in build self-test |
 | 0.147.0 | AC158: add scoped Rust builds |

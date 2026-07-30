@@ -56,7 +56,10 @@ Template improvements flow in the opposite direction through an out-of-band work
 - first-class CODE stacks emit one canonical stack-specific `build.sh`; unsupported stacks emit the generic CODE scaffold without a build script
 - Rust CODE builds isolate compilation in one invocation-owned temporary Cargo target, clean it on handled exits, and install all package binaries through Cargo into its selected external home
 - Rust release prep suppresses installation during pre-change validation, isolates Cargo.lock refresh, and installs binaries only after successful post-change validation
-- Swift CODE canon uses a SwiftPM backend for one root package; native Xcode projects and Apple application bundles remain a separate future backend
+- Swift CODE canon uses a SwiftPM backend for one root package, isolates build artifacts in invocation-owned external scratch state, discovers executable products through SwiftPM JSON parsed by the Swift toolchain, and installs full or selected release products into the configured external bin directory
+- Swift full and scoped builds share package-wide formatting and tests, while scoped debug builds, release builds, and installation operate on selected executable products
+- Swift build, prep, and release presentation follows the canonical CODE color and plain-text policy
+- native Xcode projects and Apple application bundles remain a separate future Swift backend
 - stack guidance is composed immediately above `## Project Practices`, leaving the boundary and consumer-owned tail outside stack canon
 
 ## Conventions

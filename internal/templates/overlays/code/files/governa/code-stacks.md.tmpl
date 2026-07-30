@@ -36,10 +36,13 @@ Use this reference for stack selection, canonical validation, artifacts, install
 - Prefer Go, Terraform, and Rust manifests over Swift; prefer Swift over Node, Python, and Java manifests.
 - Require Swift 6.0 or newer, Git, and one root SwiftPM package on macOS or Linux.
 - Run strict toolchain formatting, debug compilation, tests, and release compilation with compiler warnings as errors.
-- Keep initial Swift build artifacts in `.build/`.
+- Keep SwiftPM artifacts in one invocation-owned external scratch directory and clean it on success, failure, and handled signals.
 - Keep project-level `.swiftpm/` configuration trackable.
 - Keep `Package.resolved` tracked for leaf packages with dependencies; treat it as optional for dependency libraries.
 - Derive release versions from Git tags and leave `Package.swift` unchanged during release prep.
-- Defer external scratch isolation and `${SWIFT_BIN_HOME:-$HOME/.local/bin}` installation to the next Swift phase.
-- Defer presentation parity and executable-product scoped builds to later Swift phases.
+- Install executable products into `${SWIFT_BIN_HOME:-$HOME/.local/bin}` by atomically replacing regular destination files and refusing unsafe entries.
+- Let library-only packages complete without installation.
+- Use the canonical color and plain-text presentation policy for build, prep, and release output.
+- Accept executable-product names for scoped builds while retaining package-wide formatting and tests.
+- Build and install only selected executable products during scoped builds.
 - Treat native Xcode projects and Apple application bundles as a possible future backend.
