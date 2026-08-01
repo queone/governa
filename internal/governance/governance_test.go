@@ -819,6 +819,195 @@ func markdownH3Block(t *testing.T, content, heading string) string {
 	return strings.TrimSpace(block)
 }
 
+func TestFourPhaseWorkflowContractMatchesRenderedConsumers(t *testing.T) {
+	t.Parallel()
+	sourceBytes, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read source AGENTS.md: %v", err)
+	}
+	codeTemplate, err := templates.EmbeddedFS.ReadFile("base/AGENTS.md")
+	if err != nil {
+		t.Fatalf("read CODE AGENTS.md template: %v", err)
+	}
+	docTemplate, err := templates.EmbeddedFS.ReadFile("overlays/doc/files/AGENTS.md.tmpl")
+	if err != nil {
+		t.Fatalf("read DOC AGENTS.md template: %v", err)
+	}
+	codeDir := t.TempDir()
+	if err := RunWithFS(templates.EmbeddedFS, Config{
+		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
+		RepoName: "four-phase-code", Stack: "Unknown",
+	}); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	docDir := renderDocRepo(t)
+	renderedCode, err := os.ReadFile(filepath.Join(codeDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read rendered CODE AGENTS.md: %v", err)
+	}
+	renderedDoc, err := os.ReadFile(filepath.Join(docDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read rendered DOC AGENTS.md: %v", err)
+	}
+
+	contents := map[string]string{
+		"source":        string(sourceBytes),
+		"code template": string(codeTemplate),
+		"doc template":  string(docTemplate),
+		"rendered CODE": string(renderedCode),
+		"rendered DOC":  string(renderedDoc),
+	}
+	for _, heading := range []string{"Four-Phase Workflow", "Phase-Advancement Rules", "Primary And Ancillary Scope"} {
+		expected := markdownH3Block(t, contents["source"], heading)
+		for name, content := range contents {
+			if block := markdownH3Block(t, content, heading); block != expected {
+				t.Errorf("%s %s block drifted:\n%s", name, heading, block)
+			}
+		}
+	}
+	for _, phrase := range []string{
+		"adversarial review",
+		"explicit Director phase-advancement language",
+		"Start an AC cycle only when the Director identifies the active AC",
+		"sole AC under `governa/`",
+		"multiple ACs are present",
+		"Package",
+		"`package`, `pack`, and `prep`",
+		"Ratify acceptance",
+		"equivalent Package instructions",
+		"No commit or release command executed.",
+		"Run below to release:",
+		"package the binary",
+		"Require explicit operational wording such as `run ./build.sh`",
+		"`Ancillary work`",
+	} {
+		if !strings.Contains(contents["source"], phrase) {
+			t.Errorf("four-phase workflow contract is missing %q", phrase)
+		}
+	}
+}
+
+func TestACWorkflowDocumentationMatchesRenderedConsumers(t *testing.T) {
+	t.Parallel()
+	codeDir := t.TempDir()
+	if err := RunWithFS(templates.EmbeddedFS, Config{
+		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
+		RepoName: "workflow-doc-code", Stack: "Unknown",
+	}); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	docDir := renderDocRepo(t)
+
+	readSource := func(path string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join("..", "..", path))
+		if err != nil {
+			t.Fatalf("read source %s: %v", path, err)
+		}
+		return string(content)
+	}
+	readEmbedded := func(path string) string {
+		t.Helper()
+		content, err := templates.EmbeddedFS.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read embedded %s: %v", path, err)
+		}
+		return string(content)
+	}
+	readRendered := func(root, path string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			t.Fatalf("read rendered %s: %v", path, err)
+		}
+		return string(content)
+	}
+
+	documents := map[string]struct {
+		source, code, doc, renderedCode, renderedDoc string
+		phrases                                      []string
+	}{
+		"cycle": {
+			source:       readSource("governa/development-cycle.md"),
+			code:         readEmbedded("overlays/code/files/governa/development-cycle.md.tmpl"),
+			doc:          readEmbedded("overlays/doc/files/governa/editing-cycle.md.tmpl"),
+			renderedCode: readRendered(codeDir, "governa/development-cycle.md"),
+			renderedDoc:  readRendered(docDir, "governa/editing-cycle.md"),
+			phrases:      []string{"Scan", "Shape", "Forge", "Ratify", "Package", "multiple ACs"},
+		},
+		"release": {
+			source:       readSource("governa/build-release.md"),
+			code:         readEmbedded("overlays/code/files/governa/build-release.md.tmpl"),
+			doc:          readEmbedded("overlays/doc/files/governa/release.md.tmpl"),
+			renderedCode: readRendered(codeDir, "governa/build-release.md"),
+			renderedDoc:  readRendered(docDir, "governa/release.md"),
+			phrases: []string{
+				"Pre-Release Checklist (`Package`, `package`, `pack`, or `prep`)",
+				"explicitly requests standalone",
+				"./build.sh prep ...",
+			},
+		},
+		"roles": {
+			source:       readSource("governa/roles.md"),
+			code:         readEmbedded("overlays/code/files/governa/roles.md.tmpl"),
+			doc:          readEmbedded("overlays/doc/files/governa/roles.md.tmpl"),
+			renderedCode: readRendered(codeDir, "governa/roles.md"),
+			renderedDoc:  readRendered(docDir, "governa/roles.md"),
+			phrases: []string{
+				"Ratify",
+				"Package",
+				"plain, unbulleted, unindented",
+				"exactly one blank line",
+				"Run below to release:",
+			},
+		},
+		"guidelines": {
+			source:       readSource("governa/development-guidelines.md"),
+			code:         readEmbedded("overlays/code/files/governa/development-guidelines.md.tmpl"),
+			doc:          readEmbedded("overlays/doc/files/governa/editing-guidelines.md.tmpl"),
+			renderedCode: readRendered(codeDir, "governa/development-guidelines.md"),
+			renderedDoc:  readRendered(docDir, "governa/editing-guidelines.md"),
+			phrases:      []string{"AC workflow", "Package"},
+		},
+	}
+
+	for name, document := range documents {
+		for _, phrase := range document.phrases {
+			for variant, content := range map[string]string{
+				"source":        document.source,
+				"CODE template": document.code,
+				"DOC template":  document.doc,
+				"rendered CODE": document.renderedCode,
+				"rendered DOC":  document.renderedDoc,
+			} {
+				if !strings.Contains(content, phrase) {
+					t.Errorf("%s %s is missing %q", variant, name, phrase)
+				}
+			}
+		}
+	}
+}
+
+func TestPackageCompletionReportHeadingFormat(t *testing.T) {
+	t.Parallel()
+	const valid = "Package complete.\n\nVerified:\n"
+	if !strings.HasPrefix(valid, "Package complete.\n\nVerified:\n") {
+		t.Fatal("valid Package completion heading does not match the required format")
+	}
+	for name, invalid := range map[string]string{
+		"bullet":        "- Package complete.\n\nVerified:\n",
+		"heading":       "# Package complete.\n\nVerified:\n",
+		"indentation":   " Package complete.\n\nVerified:\n",
+		"preamble":      "Done.\n\nPackage complete.\n\nVerified:\n",
+		"two blanks":    "Package complete.\n\n\nVerified:\n",
+		"missing blank": "Package complete.\nVerified:\n",
+	} {
+		if strings.HasPrefix(invalid, "Package complete.\n\nVerified:\n") {
+			t.Errorf("%s incorrectly matches the Package completion heading", name)
+		}
+	}
+}
+
 func TestCanonicalBuildVerificationMatchesSourceTemplateAndRenderedCode(t *testing.T) {
 	t.Parallel()
 	const expected = `### Build Verification

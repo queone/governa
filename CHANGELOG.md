@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.151.0 | AC163+AC164+AC165: four-phase workflow + Package report |
 | 0.150.0 | AC162: independent utility versions |
 | 0.149.0 | AC161: complete Swift CODE build workflow |
 | 0.148.0 | AC160: add first-class Swift CODE stack |

@@ -52,9 +52,12 @@ Run `./build.sh` without targets for repository-wide validation. Release-prep pr
 - Reject missing, empty, malformed, duplicate, orphaned, and mis-mapped records with a non-zero error that names the utility and recovery action.
 - Preserve all independent utility declarations and outputs during repository release prep.
 
-## Pre-Release Checklist
+## Pre-Release Checklist (`Package`, `package`, `pack`, or `prep`)
 
-Do not start this checklist unless the user explicitly asks to prep for release or equivalent.
+Do not start this checklist unless the director explicitly requests standalone
+`Package`, `package`, `pack`, or `prep` in the active Ratified AC context.
+Do not treat `./build.sh prep ...` or ordinary build-preparation language as a
+workflow request.
 
 The operator flow is two steps:
 
