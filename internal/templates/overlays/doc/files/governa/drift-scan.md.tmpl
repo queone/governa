@@ -94,7 +94,7 @@ This protects in-progress consumer Operator critique edits from accidental clobb
 
 ## Divergence classification
 
-The tool emits one of the classifications below for every file. The Operator can override a route by editing the emitted AC stub before commit and routing the file in `## In Scope` / `## Out Of Scope` accordingly. For an `ambiguity` item that the Director resolves as `sync`, apply the effective-scope exception in the Consumer Operator workflow and leave the emitted stub unchanged.
+The tool emits one of the classifications below for every file. The Operator can override a route by editing the emitted AC stub before commit and routing the file in `## In Scope` / `## Out Of Scope` accordingly. When an `ambiguity` item is present, the emitted Summary carries this exact sentence: `Routing resolution: a Director-resolved \`sync\` for an \`ambiguity\` item authorizes editing the named target even when it is absent from \`## In Scope\`; leave this emitted stub unchanged through sync and post-sync verification.`
 
 - **`match`** — canon and target byte-equal (or canon-zone-equal for mixed-content paths; see `## Mixed-content classification`). Not listed in the AC stub by default.
 - **`expected-divergence`** — canon is a per-repo stub by design and the file's path is in the `ExpectedDivergencePaths` registry (see `## Expected-divergence registry`); the tool skips the byte-compare and lists the file under `## Out Of Scope`. Treated as no-action.

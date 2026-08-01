@@ -63,6 +63,8 @@ const (
 // ReachabilityHeaderReminder is shared verbatim with the "Reachability of canon-only branches" section in governa/drift-scan.md; tests reference this constant directly to enforce byte-equality between both surfaces.
 const ReachabilityHeaderReminder = "Reachability check: verify divergent canon-code branches reach this consumer's structure before treating as drift."
 
+const routingResolutionReminder = "Routing resolution: a Director-resolved `sync` for an `ambiguity` item authorizes editing the named target even when it is absent from `## In Scope`; leave this emitted stub unchanged through sync and post-sync verification."
+
 const repoTypeMarkerPath = "governa/repo-type.txt"
 
 // Config holds drift-scan invocation parameters.
@@ -1021,6 +1023,7 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	// the raw classification would have been preserve, ambiguity, etc.
 	// See governa/drift-scan.md `## Format-defining files`.
 	var syncEntries, oosEntries, reviewEntries, formatDefiningForced []FileResult
+	var hasAmbiguity bool
 	for _, f := range r.Files {
 		if isFormatDefining(f.Relpath) && f.Classification != ClassMatch && f.Classification != ClassExpectedDivergence {
 			syncEntries = append(syncEntries, f)
@@ -1036,6 +1039,9 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 			oosEntries = append(oosEntries, f)
 		case ClassAmbiguity, ClassTargetNoCanon:
 			reviewEntries = append(reviewEntries, f)
+			if f.Classification == ClassAmbiguity {
+				hasAmbiguity = true
+			}
 		}
 	}
 
@@ -1049,6 +1055,10 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Sync this repo to governa @ %s canon as part of the recurring drift-scan cycle. Drift-scan surfaced %s. Use `governa render-canon` to render canon and standard `diff -ru` to inspect per-file changes (see AGENTS.md `### Drift-Scan Adoption`).\n\n",
 		canonVersion, tallyClassifications(r.Files))
+	if hasAmbiguity {
+		fmt.Fprintln(&b, routingResolutionReminder)
+		fmt.Fprintln(&b)
+	}
 
 	if r.Header.Flavor == "code" {
 		fmt.Fprintln(&b, ReachabilityHeaderReminder)

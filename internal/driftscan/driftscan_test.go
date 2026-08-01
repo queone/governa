@@ -838,6 +838,45 @@ func TestTallyClassifications(t *testing.T) {
 	}
 }
 
+func TestBuildACStubEmitsAmbiguityRoutingResolution(t *testing.T) {
+	r := Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "v0.0.0-test"},
+		Files: []FileResult{
+			{Relpath: "governa/drift-scan.md", Classification: ClassAmbiguity},
+		},
+	}
+	body := buildACStub(r, 1, "v0.0.0-test")
+	if !strings.Contains(body, routingResolutionReminder) {
+		t.Fatalf("ambiguity stub missing routing-resolution reminder: %s", body)
+	}
+	inScopeStart := strings.Index(body, "\n## In Scope\n")
+	inScopeEnd := strings.Index(body, "\n## Out Of Scope\n")
+	if inScopeStart < 0 || inScopeEnd < 0 {
+		t.Fatalf("ambiguity stub missing scope sections: %s", body)
+	}
+	if strings.Contains(body[inScopeStart:inScopeEnd], "governa/drift-scan.md") {
+		t.Fatalf("ambiguity target must remain outside ## In Scope: %s", body)
+	}
+}
+
+func TestBuildACStubDoesNotApplyAmbiguityReminderToTargetOnly(t *testing.T) {
+	r := Report{
+		Header: ReportHeader{Flavor: "doc", CanonSHA: "v0.0.0-test"},
+		Files: []FileResult{
+			{Relpath: "cmd/foo/color.go", Classification: ClassTargetNoCanon},
+		},
+	}
+	body := buildACStub(r, 1, "v0.0.0-test")
+	if strings.Contains(body, routingResolutionReminder) {
+		t.Fatalf("target-only stub must not contain ambiguity routing reminder: %s", body)
+	}
+	for _, choice := range []string{"keep", "delete", "migrate to canon"} {
+		if !strings.Contains(body, choice) {
+			t.Fatalf("target-only stub missing %q routing choice: %s", choice, body)
+		}
+	}
+}
+
 // Pure-function test for previewCanonContent.
 func TestPreviewCanonContent(t *testing.T) {
 	short := "a\nb\nc\n"

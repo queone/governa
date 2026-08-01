@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.153.0 | AC168: self-contained drift-scan routing scope |
 | 0.152.1 | AC167: fix drift-scan routing scope |
 | 0.152.0 | AC166: repo-type marker and automatic flavor detection |
 | 0.151.0 | AC163+AC164+AC165: four-phase workflow + Package report |
