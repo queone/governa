@@ -73,12 +73,11 @@ func mustWrite(t *testing.T, path, content string) {
 }
 
 // findStagedACs returns the AC file paths under dir/governa/ matching the
-// drift-scan staging pattern. The `-diffs.md` suffix filter is retained as
-// defense-in-depth; AC139 retired the sister-diffs emission so no files
-// match the suffix in current runs.
+// drift-scan emission pattern. The `-diffs.md` suffix filter is retained as
+// defense-in-depth; AC139 retired the sister-diffs emission.
 func findStagedACs(t *testing.T, dir string) []string {
 	t.Helper()
-	all, _ := filepath.Glob(filepath.Join(dir, "governa/ac*-drift-scan-from-*.md"))
+	all, _ := filepath.Glob(filepath.Join(dir, "governa/ac*-drift-scan-v*.md"))
 	var acs []string
 	for _, m := range all {
 		if strings.HasSuffix(m, "-diffs.md") {
@@ -140,6 +139,125 @@ func TestJSONOutput(t *testing.T) {
 	}
 	if len(r.Files) == 0 {
 		t.Errorf("expected files in JSON, got none")
+	}
+	if r.Header.FlavorSource != "explicit" {
+		t.Errorf("expected explicit flavor source, got %q", r.Header.FlavorSource)
+	}
+}
+
+func TestRepoTypeMarkerResolutionAndFallback(t *testing.T) {
+	t.Parallel()
+	markerDir := t.TempDir()
+	mustWrite(t, filepath.Join(markerDir, "governa", "repo-type.txt"), "CODE\n")
+	mustWrite(t, filepath.Join(markerDir, "_config.yml"), "title: test\n")
+	flavor, source, err := detectFlavorWithSource(markerDir)
+	if err != nil || flavor != "code" || source != "marker" {
+		t.Fatalf("marker resolution: flavor=%q source=%q err=%v", flavor, source, err)
+	}
+	markerRunDir := codeFixture(t)
+	mustWrite(t, filepath.Join(markerRunDir, "governa", "repo-type.txt"), "CODE\n")
+	markerJSON := captureOut(t, func(f *os.File) {
+		exit, runErr := Run(Config{Target: markerRunDir, JSON: true, DiffLines: 50, OverrideCanonID: "v0.0.0-test"}, EmbeddedFS, f)
+		if exit != ExitOK || runErr != nil {
+			t.Fatalf("marker scan: exit=%d err=%v", exit, runErr)
+		}
+	})
+	var markerReport Report
+	if err := json.Unmarshal([]byte(markerJSON), &markerReport); err != nil {
+		t.Fatalf("marker report: %v", err)
+	}
+	if markerReport.Header.Flavor != "code" || markerReport.Header.FlavorSource != "marker" {
+		t.Fatalf("marker report resolution: flavor=%q source=%q", markerReport.Header.Flavor, markerReport.Header.FlavorSource)
+	}
+
+	overrideDir := docFixture(t)
+	mustWrite(t, filepath.Join(overrideDir, "governa", "repo-type.txt"), "CODE\n")
+	overrideJSON := captureOut(t, func(f *os.File) {
+		exit, runErr := Run(Config{Target: overrideDir, Flavor: "doc", JSON: true, DiffLines: 50, OverrideCanonID: "v0.0.0-test"}, EmbeddedFS, f)
+		if exit != ExitOK || runErr != nil {
+			t.Fatalf("explicit flavor override: exit=%d err=%v", exit, runErr)
+		}
+	})
+	var overrideReport Report
+	if err := json.Unmarshal([]byte(overrideJSON), &overrideReport); err != nil {
+		t.Fatalf("override report: %v", err)
+	}
+	if overrideReport.Header.Flavor != "doc" || overrideReport.Header.FlavorSource != "explicit" {
+		t.Fatalf("override report resolution: flavor=%q source=%q", overrideReport.Header.Flavor, overrideReport.Header.FlavorSource)
+	}
+
+	for name, setup := range map[string]func(string){
+		"Cargo":          func(dir string) { mustWrite(t, filepath.Join(dir, "Cargo.toml"), "[package]\nname = \"test\"\n") },
+		"Swift":          func(dir string) { mustWrite(t, filepath.Join(dir, "Package.swift"), "// swift-tools-version: 6.0\n") },
+		"Terraform lock": func(dir string) { mustWrite(t, filepath.Join(dir, ".terraform.lock.hcl"), "") },
+		"Terraform file": func(dir string) { mustWrite(t, filepath.Join(dir, "main.tf"), "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			setup(dir)
+			flavor, source, err := detectFlavorWithSource(dir)
+			if err != nil || flavor != "code" || source != "fallback" {
+				t.Fatalf("fallback resolution: flavor=%q source=%q err=%v", flavor, source, err)
+			}
+		})
+	}
+
+	for name, setup := range map[string]func(string){
+		"DOC": func(dir string) { mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n") },
+		"conflict": func(dir string) {
+			mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n")
+			mustWrite(t, filepath.Join(dir, "Cargo.toml"), "[package]\nname = \"test\"\n")
+		},
+		"unknown": func(string) {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			setup(dir)
+			flavor, source, err := detectFlavorWithSource(dir)
+			if name == "DOC" {
+				if err != nil || flavor != "doc" || source != "fallback" {
+					t.Fatalf("DOC fallback: flavor=%q source=%q err=%v", flavor, source, err)
+				}
+				return
+			}
+			if err == nil || flavor != "" || source != "fallback" {
+				t.Fatalf("expected fail-closed fallback: flavor=%q source=%q err=%v", flavor, source, err)
+			}
+		})
+	}
+}
+
+func TestInvalidRepoTypeMarkerFailsBeforeEmission(t *testing.T) {
+	t.Parallel()
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "governa", "repo-type.txt"), "MAYBE\n")
+	exit, err := Run(Config{Target: dir, Flavor: "doc", DiffLines: 50}, EmbeddedFS, devNull(t))
+	if exit != ExitEnvError || err == nil || !strings.Contains(err.Error(), "invalid governa/repo-type.txt") {
+		t.Fatalf("invalid marker: exit=%d err=%v", exit, err)
+	}
+	if acs := findStagedACs(t, dir); len(acs) != 0 {
+		t.Fatalf("invalid marker emitted ACs: %v", acs)
+	}
+}
+
+func TestMissingRepoTypeMarkerEmitsReviewableAC(t *testing.T) {
+	t.Parallel()
+	dir := docFixture(t)
+	mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n")
+	exit, err := Run(Config{Target: dir, DiffLines: 50, OverrideCanonID: "v0.0.0-test"}, EmbeddedFS, devNull(t))
+	if exit != ExitOK || err != nil {
+		t.Fatalf("missing marker scan: exit=%d err=%v", exit, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "governa", "repo-type.txt")); statErr == nil {
+		t.Fatal("drift-scan wrote the missing marker directly")
+	}
+	acs := findStagedACs(t, dir)
+	if len(acs) != 1 {
+		t.Fatalf("expected one emitted AC, got %v", acs)
+	}
+	emitted := mustRead(t, acs[0])
+	if !strings.Contains(emitted, "governa/repo-type.txt") || !strings.Contains(emitted, "missing-in-target") {
+		t.Fatalf("missing-marker AC lacks classification: %s", emitted)
 	}
 }
 
@@ -396,6 +514,9 @@ func TestStackSelectorValidationEmitsNothing(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := docFixture(t)
+			if name != "unresolved CODE" {
+				mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n")
+			}
 			cfg.Target = dir
 			cfg.DiffLines = 50
 			var exit int
@@ -485,8 +606,12 @@ func TestAutomaticGoAndDocFlavorInferenceRemainsAvailable(t *testing.T) {
 		fixture func(*testing.T) string
 		flavor  string
 	}{
-		"Go":  {codeFixture, "code"},
-		"DOC": {docFixture, "doc"},
+		"Go": {codeFixture, "code"},
+		"DOC": {func(t *testing.T) string {
+			dir := docFixture(t)
+			mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n")
+			return dir
+		}, "doc"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := testCase.fixture(t)
@@ -546,7 +671,7 @@ func TestFlavorAmbiguityStillNamesFlavorSelector(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n")
 	exit, err := Run(Config{Target: dir, DiffLines: 50}, EmbeddedFS, devNull(t))
 	if exit != ExitEnvError || err == nil ||
-		!strings.Contains(err.Error(), "-f|--flavor code|doc") {
+		!strings.Contains(err.Error(), "pass --flavor code or --flavor doc") {
 		t.Fatalf("flavor ambiguity: exit=%d err=%v", exit, err)
 	}
 }
@@ -564,9 +689,12 @@ func TestStackSelectionDocumentationStaysSynchronized(t *testing.T) {
 	}
 	for _, want := range []string{
 		"governa drift-scan --flavor code --stack Rust",
-		"`--stack` does not imply CODE",
+		"`governa/repo-type.txt`",
+		"resolved report header identifies the flavor source",
+		"`go.mod`, `Cargo.toml`, `Package.swift`, `.terraform.lock.hcl`",
+		"No recognized signal fails closed",
 		"remove `--stack` or add `--flavor code`",
-		"another non-empty name selects generic CODE canon",
+		"Without the marker, use fallback resolution",
 	} {
 		if !strings.Contains(source, want) {
 			t.Errorf("drift-scan docs missing %q", want)

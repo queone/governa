@@ -1008,6 +1008,41 @@ func TestPackageCompletionReportHeadingFormat(t *testing.T) {
 	}
 }
 
+func TestRepoTypeMarkerTemplatesMatchRenderedConsumers(t *testing.T) {
+	t.Parallel()
+	codeMarker, err := templates.EmbeddedFS.ReadFile("overlays/code/files/governa/repo-type.txt")
+	if err != nil {
+		t.Fatalf("read CODE repo-type marker: %v", err)
+	}
+	docMarker, err := templates.EmbeddedFS.ReadFile("overlays/doc/files/governa/repo-type.txt")
+	if err != nil {
+		t.Fatalf("read DOC repo-type marker: %v", err)
+	}
+	if string(codeMarker) != "CODE\n" || string(docMarker) != "DOC\n" {
+		t.Fatalf("marker templates drifted: CODE=%q DOC=%q", codeMarker, docMarker)
+	}
+
+	codeDir := t.TempDir()
+	if err := RunWithFS(templates.EmbeddedFS, Config{
+		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
+		RepoName: "marker-code", Stack: "Rust",
+	}); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	docDir := renderDocRepo(t)
+	renderedCode, err := os.ReadFile(filepath.Join(codeDir, "governa", "repo-type.txt"))
+	if err != nil {
+		t.Fatalf("read rendered CODE marker: %v", err)
+	}
+	renderedDoc, err := os.ReadFile(filepath.Join(docDir, "governa", "repo-type.txt"))
+	if err != nil {
+		t.Fatalf("read rendered DOC marker: %v", err)
+	}
+	if string(renderedCode) != "CODE\n" || string(renderedDoc) != "DOC\n" {
+		t.Fatalf("rendered markers drifted: CODE=%q DOC=%q", renderedCode, renderedDoc)
+	}
+}
+
 func TestCanonicalBuildVerificationMatchesSourceTemplateAndRenderedCode(t *testing.T) {
 	t.Parallel()
 	const expected = `### Build Verification

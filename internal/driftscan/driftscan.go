@@ -63,6 +63,8 @@ const (
 // ReachabilityHeaderReminder is shared verbatim with the "Reachability of canon-only branches" section in governa/drift-scan.md; tests reference this constant directly to enforce byte-equality between both surfaces.
 const ReachabilityHeaderReminder = "Reachability check: verify divergent canon-code branches reach this consumer's structure before treating as drift."
 
+const repoTypeMarkerPath = "governa/repo-type.txt"
+
 // Config holds drift-scan invocation parameters.
 type Config struct {
 	Target     string // resolved absolute path to target repo
@@ -245,10 +247,20 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	// report construction so invalid combinations cannot emit partial output.
 	flavor := strings.TrimSpace(cfg.Flavor)
 	stack := strings.TrimSpace(cfg.Stack)
-	flavorInferred := flavor == ""
+	flavorSource := "explicit"
+	markerFlavor, markerPresent, markerErr := readRepoTypeMarker(cfg.Target)
+	if markerErr != nil {
+		return ExitEnvError, markerErr
+	}
 	if flavor == "" {
 		var err error
-		flavor, err = detectFlavor(cfg.Target)
+		if markerPresent {
+			flavor = markerFlavor
+			flavorSource = "marker"
+		} else {
+			flavor, err = detectFallbackFlavor(cfg.Target)
+			flavorSource = "fallback"
+		}
 		if err != nil {
 			return ExitEnvError, fmt.Errorf("drift-scan: %w", err)
 		}
@@ -261,7 +273,7 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	}
 	if flavor == "doc" && stack != "" {
 		exit := ExitUsage
-		if flavorInferred {
+		if flavorSource != "explicit" {
 			exit = ExitEnvError
 		}
 		return exit, fmt.Errorf(
@@ -328,11 +340,12 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	// Walk canon, classify each.
 	report := Report{
 		Header: ReportHeader{
-			Invocation: invocation,
-			CanonSHA:   sha,
-			Target:     cfg.Target,
-			Flavor:     flavor,
-			RepoName:   repoName,
+			Invocation:   invocation,
+			CanonSHA:     sha,
+			Target:       cfg.Target,
+			Flavor:       flavor,
+			FlavorSource: flavorSource,
+			RepoName:     repoName,
 		},
 	}
 	for _, relpath := range sortedKeys(canon) {
@@ -444,28 +457,69 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	return ExitOK, nil
 }
 
-// DetectFlavor reports the consumer flavor inferred from target's repo
-// shape: "code" if go.mod present, "doc" if _config.yml present (or
-// neither), and an error when both are present (ambiguous).
+// DetectFlavor reports the consumer flavor resolved from the repo-type marker
+// or fallback repo shape. Explicit command-line overrides are handled by the
+// caller before this function is used.
 // Exported so cmd/governa's render-canon subcommand reuses the same
 // inference logic drift-scan uses.
 func DetectFlavor(target string) (string, error) {
-	return detectFlavor(target)
+	flavor, _, err := detectFlavorWithSource(target)
+	return flavor, err
 }
 
-func detectFlavor(target string) (string, error) {
-	hasGoMod := fileExists(filepath.Join(target, "go.mod"))
+func detectFlavorWithSource(target string) (string, string, error) {
+	marker, present, err := readRepoTypeMarker(target)
+	if err != nil {
+		return "", "", err
+	}
+	if present {
+		return marker, "marker", nil
+	}
+	flavor, err := detectFallbackFlavor(target)
+	return flavor, "fallback", err
+}
+
+func readRepoTypeMarker(target string) (string, bool, error) {
+	content, err := os.ReadFile(filepath.Join(target, repoTypeMarkerPath))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("read %s: %w", repoTypeMarkerPath, err)
+	}
+	switch string(content) {
+	case "CODE\n":
+		return "code", true, nil
+	case "DOC\n":
+		return "doc", true, nil
+	default:
+		return "", false, fmt.Errorf("invalid %s: expected exactly CODE or DOC followed by a newline", repoTypeMarkerPath)
+	}
+}
+
+func detectFallbackFlavor(target string) (string, error) {
 	hasJekyll := fileExists(filepath.Join(target, "_config.yml"))
+	hasStrongCode := hasStrongCodeManifest(target)
 	switch {
-	case hasGoMod && !hasJekyll:
+	case hasStrongCode && hasJekyll:
+		return "", fmt.Errorf("conflicting flavor signals: target has _config.yml and a strong CODE manifest; pass --flavor code or --flavor doc")
+	case hasStrongCode:
 		return "code", nil
-	case !hasGoMod && hasJekyll:
-		return "doc", nil
-	case !hasGoMod && !hasJekyll:
+	case hasJekyll:
 		return "doc", nil
 	default:
-		return "", fmt.Errorf("ambiguous flavor: target has both go.mod and _config.yml — pass -f|--flavor code|doc to disambiguate")
+		return "", fmt.Errorf("could not infer flavor: add governa/repo-type.txt, pass --flavor code|doc, or add a recognized flavor manifest")
 	}
+}
+
+func hasStrongCodeManifest(target string) bool {
+	for _, name := range []string{"go.mod", "Cargo.toml", "Package.swift", ".terraform.lock.hcl"} {
+		if fileExists(filepath.Join(target, name)) {
+			return true
+		}
+	}
+	matches, _ := filepath.Glob(filepath.Join(target, "*.tf"))
+	return len(matches) > 0
 }
 
 // FileResult captures per-file scan outcome.
@@ -500,11 +554,12 @@ type FileResult struct {
 
 // ReportHeader is the report's self-identifying header.
 type ReportHeader struct {
-	Invocation string `json:"invocation"`
-	CanonSHA   string `json:"canon_sha"`
-	Target     string `json:"target"`
-	Flavor     string `json:"flavor"`
-	RepoName   string `json:"repo_name"`
+	Invocation   string `json:"invocation"`
+	CanonSHA     string `json:"canon_sha"`
+	Target       string `json:"target"`
+	Flavor       string `json:"flavor"`
+	FlavorSource string `json:"flavor_source"`
+	RepoName     string `json:"repo_name"`
 }
 
 // Report is the full scan output.

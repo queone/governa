@@ -13,15 +13,41 @@ The tool is consumer-run. Install the binary (`go install github.com/queone/gove
 - Before any canon→cwd walk, the tool runs the `## Canon-coherence precondition` check. If canon is internally incoherent on a registered cross-file rule, the tool refuses to emit and reports the incoherence on stdout. No file writes occur.
 - One repo per invocation. The tool makes no commits in the cwd and does not modify `plan.md`. Writes under `<cwd>/governa/` are limited to the AC stub.
 
-## Stack selection
+## Flavor and stack selection
 
-Use `-s, --stack <name>` to select CODE canon when the consumer has no language manifest yet:
+Adopted repositories carry the authoritative flavor in
+`governa/repo-type.txt`, containing exactly `CODE` or `DOC` followed by a
+newline. Drift-scan reads this marker before any repo-shape inference. The
+resolved report header identifies the flavor source as `marker`, `explicit`,
+or `fallback`.
+
+An explicit `--flavor code|doc` selector overrides the marker intentionally.
+An invalid marker is an error even when an explicit selector is supplied, so a
+corrupt marker cannot remain hidden.
+
+When the marker is absent and no explicit selector is supplied, fallback
+resolution uses these exact signals:
+
+- `go.mod`, `Cargo.toml`, `Package.swift`, `.terraform.lock.hcl`, or a root
+  `*.tf` file selects CODE.
+- `_config.yml` alone selects DOC.
+- `_config.yml` together with a strong CODE signal is a conflict and fails
+  with recovery guidance.
+- No recognized signal fails closed and asks for `--flavor` or the marker.
+
+Use `-s, --stack <name>` to select CODE canon when the consumer has no stack
+manifest yet:
 
 ```bash
 governa drift-scan --flavor code --stack Rust
 ```
 
-Explicit selectors override their corresponding inference independently: `--flavor` overrides flavor inference, and `--stack` overrides manifest-based stack inference. `--stack` does not imply CODE; when flavor inference resolves to DOC, remove `--stack` or add `--flavor code`. Passing `--stack` with explicit DOC flavor is invalid. When CODE flavor is selected without a recognized manifest, pass `-s, --stack <name>`.
+Explicit `--stack` overrides stack-manifest inference and applies only to CODE.
+It does not imply CODE; when flavor resolves to DOC, remove `--stack` or add `--flavor code`. When CODE flavor is selected without a recognized stack
+manifest, pass `-s, --stack <name>`.
+
+New `governa apply` output includes the marker. Without the marker, use fallback resolution; drift-scan surfaces the missing marker as the normal
+`missing-in-target` AC item and never writes it directly.
 
 Stack names remain free-form. First-class names such as `Go`, `Rust`, `Terraform`, and `Swift` select their stack overlays; another non-empty name selects generic CODE canon.
 
