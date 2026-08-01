@@ -201,6 +201,12 @@ Note: `CLAUDE.md` is an example of an exempt identifier — it names the Claude 
 
 ## Project Rules
 
+- Keep the repository/package release version separate from each installable utility version in multi-utility repositories.
+- Declare exactly one explicit strict stable SemVer version for each installable utility in multi-utility repositories.
+- Require each installable utility's `--version` invocation to exit 0, write exactly `<utility-id> <MAJOR.MINOR.PATCH>` plus its newline to stdout, and write nothing to stderr.
+- Validate every utility declaration and `--version` result before compiling, installing, or writing release metadata.
+- Preserve independent utility versions during repository release prep; never overwrite them automatically.
+- End every successful build with the actionable `==> To release, run:` heading and the canonical release command when the repository has a next release tag.
 - Propagate every source-level change to `internal/` Go code (not governance text) to two sites in the same pass — the source file and its overlay template under `internal/templates/overlays/`; validate with `./build.sh`.
 - Mirror every AGENTS.md change that applies to consumer repos across governa source `AGENTS.md`, `internal/templates/base/AGENTS.md`, and `internal/templates/overlays/doc/files/AGENTS.md.tmpl` (CODE consumer inherits base unchanged) before staging the commit.
 - Mirror every change to a doc referenced from AGENTS.md across governa source `governa/`, `internal/templates/overlays/code/files/governa/`, and `internal/templates/overlays/doc/files/governa/` before staging the commit.

@@ -42,6 +42,16 @@ Use space-separated target names. Supported CODE stacks may retain package-wide 
 
 Run `./build.sh` without targets for repository-wide validation. Release-prep pre-change and post-change validation always use this package-wide form.
 
+## Independent Utility Versions
+
+- Treat the repository/package version as the version input and release metadata governed by the existing release mechanism.
+- Require one normalized record for each installable utility with its canonical target name, declaration location, declared version, and `--version` invocation.
+- Accept only `^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$` as a strict stable SemVer declaration.
+- Require `--version` to exit 0, print exactly `<utility-id> <MAJOR.MINOR.PATCH>` plus its newline to stdout, and write nothing to stderr.
+- Validate every normalized record before compilation, installation, or release-metadata writes.
+- Reject missing, empty, malformed, duplicate, orphaned, and mis-mapped records with a non-zero error that names the utility and recovery action.
+- Preserve all independent utility declarations and outputs during repository release prep.
+
 ## Pre-Release Checklist
 
 Do not start this checklist unless the user explicitly asks to prep for release or equivalent.
@@ -59,8 +69,8 @@ Present only the release command after prep; do not add trailing commentary abou
 
 1. **Validate inputs.** Semver pattern (`vX.Y.Z`), message non-empty and ≤ 80 characters.
 2. **Validate git state.** Inside a git work tree, target tag does not exist yet, HEAD is not at the latest tag with a clean working tree.
-3. **Pre-check build.** `./build.sh` run before any writes; skipped with `--no-build`/`-B` or `--dry-run`/`-n`.
-4. **Detect version targets.** Scans `cmd/*/main.go` for `programVersion` and `internal/templates/version.go` (each presence-gated). The `programVersion` regex matches both inline (`const programVersion = "..."`) and grouped (`const ( ... programVersion = "..." ... )`) forms. Safe auto-detect filter: 1 `programVersion` target → bump (single-utility repo, repo-tracked). >1 targets → drop all and log a multi-utility warning (per-utility-independent default; each utility owns its own version per its own AC). The skip prevents clobbering independent per-utility SemVers in multi-utility repos.
+3. **Pre-check build.** `./build.sh` runs before any writes; skip it with `--no-build`/`-B` only for single-utility repositories or with `--dry-run`/`-n`.
+4. **Detect and validate version targets.** Scan `cmd/*/main.go` for `programVersion` and `internal/templates/version.go` (each presence-gated). Match both inline and grouped declarations. Bump one detected utility target in a single-utility repository. In a multi-utility repository, validate exactly one strict stable SemVer declaration and successful exact `--version` output for every utility, skip all individual utility bumps, and fail before any write when validation fails.
 5. **Detect CHANGELOG targets + fail-fast idempotency guard.** Root `CHANGELOG.md` and `internal/templates/CHANGELOG.md` (template-repo case). If any target already contains a row for the target version, prep exits with a fatal error before any writes.
 6. **Parse AC refs.** `AC[0-9]+` scan on the release message; composites like `AC60+AC61` yield multiple refs.
 7. **Apply writes.** Version bumps (per-file idempotent no-op when the file already has the target value); CHANGELOG row insertion under `| Unreleased | |`; AC file deletions (AC files are deleted whole; there are no separate companion files); AC-pointer IE-line sweep from `plan.md` (lines matching `→ governa/ac<N>-` for each released AC). Skipped when `--dry-run`/`-n`. Idempotent re-runs leave already-swept lines alone.

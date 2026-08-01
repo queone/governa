@@ -350,6 +350,52 @@ _prep_detect_version_targets "$_MULTI_TMP"
 [ -z "$_prep_vtargets" ] && _ok "prep: multi-utility: no bump targets (ambiguous)" \
   || _fail "prep: multi-utility: unexpected bump targets: $_prep_vtargets"
 
+# Strict stable SemVer accepts only numeric MAJOR.MINOR.PATCH components.
+for _semver in 0.0.0 1.2.3 10.20.30; do
+  _is_strict_stable_semver "$_semver" && _ok "version: accepts $_semver" \
+    || _fail "version: rejects valid $_semver"
+done
+for _semver in '' 01.2.3 1.02.3 1.2.03 1.2 1.2.3-beta 1.2.3+build ' 1.2.3'; do
+  _is_strict_stable_semver "$_semver" && _fail "version: accepts invalid $_semver" \
+    || _ok "version: rejects invalid ${_semver:-empty}"
+done
+
+# Exact utility --version output is checked without allowing stderr or a second line.
+_VERSION_PROBE="$_TMPD/version-probe"
+cat >"$_VERSION_PROBE" <<'VERSION_PROBE'
+#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then printf 'widget 0.1.0\n'; fi
+VERSION_PROBE
+chmod +x "$_VERSION_PROBE"
+_validate_utility_version_output "$_VERSION_PROBE" widget 0.1.0 \
+  && _ok "version: exact --version output accepted" \
+  || _fail "version: exact --version output rejected"
+
+# Multi-utility prep rejects malformed declarations before any write and rejects -B,
+# which would skip the required binary-output validation.
+printf 'package main\n\nconst programVersion = "01.2.3"\n\nfunc main() {}\n' \
+  >"$_MULTI_TMP/cmd/widget/main.go"
+_MULTI_BEFORE=$(cksum "$_MULTI_TMP/cmd/widget/main.go")
+_prep_validate_multi_utility_versions "$_MULTI_TMP" 0 \
+  && _fail "prep: malformed multi-utility declaration accepted" \
+  || _ok "prep: malformed multi-utility declaration rejected"
+[ "$_MULTI_BEFORE" = "$(cksum "$_MULTI_TMP/cmd/widget/main.go")" ] \
+  && _ok "prep: invalid declaration leaves fixture unchanged" \
+  || _fail "prep: invalid declaration changed fixture"
+cp "$_FIXT/preprepo-multi/cmd/widget/main.go" "$_MULTI_TMP/cmd/widget/main.go"
+_prep_validate_multi_utility_versions "$_MULTI_TMP" 1 \
+  && _fail "prep: multi-utility -B accepted" \
+  || _ok "prep: multi-utility -B rejected"
+
+printf 'package main\n\nconst programVersion = "0.1.0"\nconst duplicateVersion = "0.1.1"\nconst programVersion = "0.1.2"\n\nfunc main() {}\n' \
+  >"$_MULTI_TMP/cmd/widget/main.go"
+[ "$(_count_program_version_declarations "$_MULTI_TMP/cmd/widget/main.go")" = 2 ] \
+  && _ok "version: duplicate declarations counted" \
+  || _fail "version: duplicate declarations count incorrect"
+_prep_validate_multi_utility_versions "$_MULTI_TMP" 0 \
+  && _fail "prep: duplicate multi-utility declarations accepted" \
+  || _ok "prep: duplicate multi-utility declarations rejected"
+
 # _prep_detect_changelog_targets
 _prep_detect_changelog_targets "$_PREP_TMP" v0.2.0
 [ -z "$_prep_cl_err" ] && _ok "prep: cl-detect: no error" \

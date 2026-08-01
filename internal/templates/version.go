@@ -1,4 +1,4 @@
 package templates
 
 // TemplateVersion is the embedded template version; bumped during release prep.
-const TemplateVersion = "0.149.0"
+const TemplateVersion = "0.150.0"

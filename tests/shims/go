@@ -105,7 +105,23 @@ version)
   printf '\tbuild\tvcs.revision=aabbccdd1122334455667788990011223344556677\n' ;;
 
 build)
-  # go build -o PATH -ldflags ... ./cmd/NAME → succeed silently
+  # go build -o PATH -ldflags ... ./cmd/NAME → emit a probeable test binary.
+  _out='' _target=''
+  _next=0
+  for _a in "$@"; do
+    if [ "$_next" = 1 ]; then _out="$_a"; _next=0; continue; fi
+    case "$_a" in
+    -o) _next=1 ;;
+    ./cmd/*) _target="${_a#./cmd/}" ;;
+    esac
+  done
+  if [ -n "$_out" ] && [ -n "$_target" ]; then
+    printf '#!/usr/bin/env bash\n' >"$_out"
+    printf 'if [ "$1" = "--version" ]; then printf "%s %s\\n" %s %s; exit 0; fi\n' \
+      "$_target" "$([ "$_target" = gadget ] && printf 0.5.0 || printf 0.1.0)" \
+      "$_target" "$([ "$_target" = gadget ] && printf 0.5.0 || printf 0.1.0)" >>"$_out"
+    chmod +x "$_out"
+  fi
   exit 0 ;;
 
 run)

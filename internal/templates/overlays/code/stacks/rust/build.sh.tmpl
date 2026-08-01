@@ -585,6 +585,25 @@ build_run() {
   else
     _run_isolated _build_scoped_phases "$verbose" "${targets[@]}"
   fi
+  local next_tag
+  if next_tag=$(_next_patch_tag) && [ -n "$next_tag" ]; then
+    printf '\n%s\n\n    ./build.sh %s %s\n' \
+      "$(yel7 '==> To release, run:')" "$next_tag" '"<release message>"'
+  fi
+}
+
+_next_patch_tag() {
+  local tags
+  tags=$(git tag --list 2>/dev/null) || return 1
+  printf '%s\n' "$tags" | awk '
+    /^v[0-9]+\.[0-9]+\.[0-9]+$/ {
+      split(substr($0, 2), a, ".")
+      mj=a[1]+0; mn=a[2]+0; pt=a[3]+0
+      if (!found || mj>bj || (mj==bj && (mn>bn || (mn==bn && pt>bp)))) {
+        bj=mj; bn=mn; bp=pt; found=1
+      }
+    }
+    END { if (found) printf "v%d.%d.%d", bj, bn, bp+1 }'
 }
 
 _refresh_cargo_lock() {

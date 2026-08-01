@@ -2,13 +2,23 @@
 
 Use this reference for stack selection, canonical validation, artifacts, installation, release prep, and scoped-build behavior.
 
+## Multi-Utility Versioning
+
+- Keep the repository/package release version separate from each installable utility version.
+- Identify each installable utility by the canonical target name selected by the stack's existing build/install mechanism.
+- Require one explicit strict stable SemVer declaration per installable utility.
+- Require each utility's `--version` result to be exactly `<utility-id> <MAJOR.MINOR.PATCH>` plus its newline on stdout with no stderr output.
+- Let each stack adapter choose declaration syntax and source layout while reporting the normalized utility contract.
+- Validate normalized declarations and version results before compilation, installation, or release-metadata writes.
+- Preserve independent utility versions during repository release prep.
+
 ## Go
 
 - Infer Go from `go.mod`; select it explicitly with `--stack Go`.
 - Require the Go toolchain and the pinned staticcheck version installed by `build.sh`.
 - Run dependency tidying, formatting, fixes, vetting, tests with coverage, staticcheck, and compilation.
 - Install command binaries into `$(go env GOPATH)/bin`.
-- Bump the single detected `programVersion` during release prep; skip ambiguous multi-utility version bumps.
+- Bump the single detected `programVersion` during release prep; validate and preserve independent utility versions in multi-utility repositories.
 - Accept command names for scoped builds while retaining package-wide shared validation.
 
 ## Rust

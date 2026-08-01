@@ -325,11 +325,31 @@ EOF
 
   if [ "${#install_targets[@]}" -gt 0 ]; then
     printf '\n%s\n' "$(yel7 '==> Validate programVersion declarations')"
-    local target ver
+    local target ver decls
+    local multi_utility=0
+    local cmd_dir_count=0
+    local cmd_dir
+    for cmd_dir in cmd/*/; do
+      [ -d "$cmd_dir" ] && cmd_dir_count=$((cmd_dir_count + 1))
+    done
+    [ "$cmd_dir_count" -gt 1 ] && multi_utility=1
     for target in "${install_targets[@]}"; do
       ver=$(_extract_program_version "cmd/$target/main.go")
       if [ -z "$ver" ]; then
         printf 'cmd/%s/main.go must declare a non-empty const programVersion string literal\n' "$target" >&2
+        return 1
+      fi
+      if [ "$multi_utility" -eq 1 ]; then
+        decls=$(_count_program_version_declarations "cmd/$target/main.go")
+        if [ "$decls" -ne 1 ]; then
+          printf 'cmd/%s/main.go must declare exactly one programVersion value; found %s declarations\n' \
+            "$target" "$decls" >&2
+          return 1
+        fi
+      fi
+      if [ "$multi_utility" -eq 1 ] && ! _is_strict_stable_semver "$ver"; then
+        printf 'cmd/%s/main.go declares invalid utility version %s; use MAJOR.MINOR.PATCH with no leading zeroes, prerelease, or build metadata\n' \
+          "$target" "$(_go_quote "$ver")" >&2
         return 1
       fi
       printf '    %s: programVersion = %s\n' "$(cya4 "cmd/$target")" "$(grn3 "\"$ver\"")"
@@ -341,6 +361,10 @@ EOF
     local output_path="$bin_dir/$target$ext"
     printf '\n%s %s\n' "$(yel7 '==> Building and installing')" "$(grn3 "$target")"
     run_streaming grn3 go build -o "$output_path" -ldflags '-s -w' "./cmd/$target"
+    if [ "$multi_utility" -eq 1 ]; then
+      _validate_utility_version_output "$output_path" "$target" \
+        "$(_extract_program_version "cmd/$target/main.go")" || return 1
+    fi
     printf '    installed: %s\n' "$(cya4 "$output_path")"
   done
 
@@ -422,6 +446,41 @@ _extract_program_version() { # $1=main.go path -> version or empty
     }
     ingroup && /\)/ { ingroup=0 }' "$1")
   printf '%s' "$v"
+}
+
+_is_strict_stable_semver() { # $1=version -> success when MAJOR.MINOR.PATCH
+  printf '%s' "$1" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+}
+
+_validate_utility_version_output() { # $1=binary $2=utility ID $3=declared version
+  local binary="$1" utility_id="$2" declared="$3" probe_dir rc actual
+  probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/governa-version.XXXXXX") || {
+    printf 'utility %s: create version probe workspace: check temporary-directory permissions and retry\n' "$utility_id" >&2
+    return 1
+  }
+  printf '%s\n' "$utility_id $declared" >"$probe_dir/expected"
+  rc=0
+  "$binary" --version >"$probe_dir/stdout" 2>"$probe_dir/stderr" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'utility %s: --version failed with exit status %d; implement --version to print %s\n' \
+      "$utility_id" "$rc" "$utility_id $declared" >&2
+    rm -rf "$probe_dir"
+    return 1
+  fi
+  if ! cmp -s "$probe_dir/expected" "$probe_dir/stdout"; then
+    actual=$(LC_ALL=C tr '\n' ' ' <"$probe_dir/stdout")
+    printf 'utility %s: --version output %s; expected exactly %s on stdout\n' \
+      "$utility_id" "$(_go_quote "$actual")" "$(_go_quote "$utility_id $declared")" >&2
+    rm -rf "$probe_dir"
+    return 1
+  fi
+  if [ -s "$probe_dir/stderr" ]; then
+    printf 'utility %s: --version wrote diagnostics to stderr; write only %s to stdout\n' \
+      "$utility_id" "$utility_id $declared" >&2
+    rm -rf "$probe_dir"
+    return 1
+  fi
+  rm -rf "$probe_dir"
 }
 
 _ensure_staticcheck() { # $1=bin_dir $2=ext -> sets _staticcheck_path; stdout msgs
@@ -851,6 +910,7 @@ prep_run() {
   # Phase 4: detect version targets (+ warning). Called directly (not in a
   # command substitution) so the _prep_warning/_prep_vtargets globals propagate.
   _prep_detect_version_targets "$root"
+  _prep_validate_multi_utility_versions "$root" "$nobuild" || return 1
   local vtargets="$_prep_vtargets"
   [ -n "$_prep_warning" ] && printf '%s\n' "$_prep_warning"
 
@@ -1057,6 +1117,45 @@ _prep_detect_version_targets() {
   else
     _prep_vtargets=''
   fi
+}
+
+_count_program_version_declarations() { # $1=main.go path -> declaration count
+  awk '
+    /^[[:space:]]*const[[:space:]]+programVersion[[:space:]]*(string[[:space:]]*)?=/ { count++ }
+    /const[[:space:]]*\(/ { grouped=1; next }
+    grouped && /programVersion[[:space:]]*(string[[:space:]]*)?=/ { count++ }
+    grouped && /^[[:space:]]*\)/ { grouped=0 }
+    END { print count+0 }' "$1"
+}
+
+_prep_validate_multi_utility_versions() { # $1=root $2=no-build flag
+  local root="$1" nobuild="$2" cmd_dir mainp count=0 version decls
+  for cmd_dir in "$root"/cmd/*/; do
+    [ -d "$cmd_dir" ] || continue
+    [ -f "$cmd_dir/main.go" ] || continue
+    count=$((count + 1))
+  done
+  [ "$count" -gt 1 ] || return 0
+  if [ "$nobuild" -eq 1 ]; then
+    printf 'prep: cannot use --no-build/-B for a multi-utility repository; build validation is required for independent utility versions\n' >&2
+    return 1
+  fi
+ for cmd_dir in "$root"/cmd/*/; do
+   [ -f "$cmd_dir/main.go" ] || continue
+    mainp="${cmd_dir}main.go"
+   decls=$(_count_program_version_declarations "$mainp")
+   version=$(_extract_program_version "$mainp")
+   if [ "$decls" -ne 1 ] || [ -z "$version" ]; then
+      printf 'prep: %s must contain exactly one non-empty programVersion declaration; add one explicit utility version and retry\n' \
+        "$mainp" >&2
+     return 1
+   fi
+   if ! _is_strict_stable_semver "$version"; then
+      printf 'prep: %s declares invalid utility version %s; use MAJOR.MINOR.PATCH with no leading zeroes, prerelease, or build metadata\n' \
+        "$mainp" "$(_go_quote "$version")" >&2
+      return 1
+    fi
+  done
 }
 
 _join_comma_space() {
