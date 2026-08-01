@@ -94,7 +94,7 @@ This protects in-progress consumer Operator critique edits from accidental clobb
 
 ## Divergence classification
 
-The tool emits one of the classifications below for every file. The Operator can override by editing the emitted AC stub before commit, routing the file in `## In Scope` / `## Out Of Scope` accordingly.
+The tool emits one of the classifications below for every file. The Operator can override a route by editing the emitted AC stub before commit and routing the file in `## In Scope` / `## Out Of Scope` accordingly. For an `ambiguity` item that the Director resolves as `sync`, apply the effective-scope exception in the Consumer Operator workflow and leave the emitted stub unchanged.
 
 - **`match`** — canon and target byte-equal (or canon-zone-equal for mixed-content paths; see `## Mixed-content classification`). Not listed in the AC stub by default.
 - **`expected-divergence`** — canon is a per-repo stub by design and the file's path is in the `ExpectedDivergencePaths` registry (see `## Expected-divergence registry`); the tool skips the byte-compare and lists the file under `## Out Of Scope`. Treated as no-action.
@@ -223,6 +223,7 @@ The consumer-repo Operator handles drift-scan as a self-contained loop. The Dire
 - **Post-emission review.** Immediately after the AC stub is emitted, the Operator performs a high-level review of the stub and reports a concise summary to the Director — without waiting for a separate "review the drift-scan report" request.
 - **Summary content.** The summary names: main drift categories (counts of `clear-sync`, `ambiguity`, `preserve`, `expected-divergence`, etc.); routing decisions surfaced by the emission; obvious canon-owned issues that warrant upstream feedback rather than local sync; whether the emitted AC stub appears ready for critique and iteration.
 - **Scope discipline.** The summary is high-level; the emitted AC stub remains the source of truth. The Operator's role is to surface the report at a glance, not to recapitulate it.
+- **Effective scope.** Treat the named target as effective implementation scope when the Director resolves an `ambiguity` item as `sync`, even when it is absent from `## In Scope`.
 - **Not a governa-source handoff.** This is consumer-repo Operator behavior after a local scan. It does not require any action on the governa source side.
 - **Lifecycle symmetry.** When the Director wants to extricate Governa rather than refresh canon, run `governa rm` from the consumer repo root; it emits a cleanup AC stub plus a targeted sister diffs file for hybrid-file removal decisions.
-- **Sync-resolution stub discipline.** Sync routing-decision resolutions land in the target file, mirroring how preserve resolutions land in CHANGELOG markers (see `## Preserve-marker phrase set`). The emitted AC stub stays as-emitted from emission through release-prep deletion; the implementation IS the resolution. This keeps the edit-detection guard (see `## Re-run behavior and edit-detection guard`) from firing on the post-sync re-run that verifies the AT.
+- **Sync-resolution stub discipline.** Apply sync routing-decision resolutions to the target file, mirroring how preserve resolutions land in CHANGELOG markers (see `## Preserve-marker phrase set`). Leave the emitted AC stub as-emitted from emission through release-prep deletion; the implementation IS the resolution. This keeps the edit-detection guard (see `## Re-run behavior and edit-detection guard`) from firing on the post-sync re-run that verifies the AT.
