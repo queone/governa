@@ -1864,10 +1864,21 @@ func TestRustPrepAndReleasePresentationParity(t *testing.T) {
 	for _, want := range []string{
 		"\x1b[38;5;227mrelease tag:\x1b[0m \x1b[38;5;34mv0.2.0\x1b[0m",
 		"\x1b[38;5;227mremote:\x1b[0m \x1b[38;5;44morigin\x1b[0m",
-		"\x1b[38;5;227mplan:\x1b[0m",
+		"\x1b[38;5;227m\nplan:\x1b[0m",
+		"\x1b[38;5;227mrunning:\x1b[0m \x1b[38;5;34mgit status --short\x1b[0m",
 	} {
 		if !strings.Contains(colorOut, want) {
 			t.Errorf("colored release missing %q:\n%s", want, colorOut)
+		}
+	}
+	plainRelease := stripBuildANSI(colorOut)
+	for _, want := range []string{
+		"\n\nFiles that will be staged (git status):\n",
+		"\n\nplan:\n",
+		"running: git status --short\n",
+	} {
+		if !strings.Contains(plainRelease, want) {
+			t.Errorf("release spacing or command preview missing %q:\n%s", want, plainRelease)
 		}
 	}
 	if !strings.Contains(colorErr, "\x1b[38;5;124mrelease aborted\x1b[0m") {
@@ -2526,6 +2537,9 @@ func TestRustReleaseCancelsOrPushesLightweightTag(t *testing.T) {
 		"\x1b[38;5;227mrelease tag:\x1b[0m \x1b[38;5;34mv0.2.0\x1b[0m",
 		"\x1b[38;5;227mremote:\x1b[0m \x1b[38;5;44morigin\x1b[0m",
 		"\x1b[38;5;227mReview the file list above. Proceed with release? (y/N): \x1b[0m",
+		"\x1b[38;5;227mrunning:\x1b[0m \x1b[38;5;34mgit add .\x1b[0m",
+		"\x1b[38;5;227mrunning:\x1b[0m \x1b[38;5;34mgit commit -m Rust release\x1b[0m",
+		"\x1b[38;5;227mrunning:\x1b[0m \x1b[38;5;34mgit tag v0.2.0\x1b[0m",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("confirmed release presentation missing %q:\n%s", want, out)
@@ -2560,6 +2574,34 @@ func TestRustReleaseCancelsOrPushesLightweightTag(t *testing.T) {
 	))
 	if remoteTag != localHead {
 		t.Fatalf("remote tag target = %s; want %s", remoteTag, localHead)
+	}
+
+	failureDir := renderRustRepo(t)
+	initializeRustFixtureRepo(t, failureDir, cargo)
+	missingRemote := filepath.Join(t.TempDir(), "missing.git")
+	mustRunRepoCommand(t, failureDir, "", "git", "remote", "add", "origin", missingRemote)
+	failureBin, failureLog := writeFakeCargo(t, failureDir)
+	failureOut, failureErr, failureRunErr := runRustPresentation(
+		t,
+		failureDir,
+		failureBin,
+		failureLog,
+		"y\n",
+		[]string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color"},
+		"v0.2.0",
+		"Rust release",
+	)
+	if failureRunErr == nil {
+		t.Fatal("release with an unavailable remote succeeded")
+	}
+	for _, want := range []string{
+		"release: git push tag failed",
+		"release: completed before failure: git add, git commit, git tag",
+		"release: tag exists locally but was not pushed",
+	} {
+		if !strings.Contains(failureErr, want) {
+			t.Errorf("release failure guidance missing %q:\nstdout:\n%s\nstderr:\n%s", want, failureOut, failureErr)
+		}
 	}
 }
 

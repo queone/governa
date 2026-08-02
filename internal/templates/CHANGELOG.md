@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.155.0 | AC170: align Rust release output with Go |
 | 0.154.0 | AC169: Forge Verify closure audit |
 | 0.153.0 | AC168: self-contained drift-scan routing scope |
 | 0.152.1 | AC167: fix drift-scan routing scope |
