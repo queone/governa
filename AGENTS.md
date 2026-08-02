@@ -95,17 +95,25 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Edit the AC during Shape; do not begin implementation during Shape.
 - Pause after Shape and await explicit Director implementation-ready confirmation to Forge.
 - Implement only the settled AC scope during Forge.
-- Return to Shape when Forge reveals a contract, scope, or Director decision change; return to Forge for implementation-only corrections.
+- Return to Shape when Forge reveals a contract, scope, or Director decision change.
+- Return to Forge when Forge reveals an implementation-only correction.
 - Include tests, adversarial verification, and defect correction in Forge.
 - Run one exhaustive, non-mutating closure audit after Forge implementation, validation, adversarial verification, and defect correction.
+- Keep the closure-audit working record in the active agent's session.
+- Do not create a separate closure-audit artifact.
 - Map every in-scope command entry point, provider/API fetch, normalized-table write, durable snapshot, stale fallback, freshness gate, and complete-snapshot reconciliation path in the closure audit.
+- Check every in-scope governance instruction against `## Instruction Style` during the closure audit.
+- Map every referenced governance document across applicable source, template, and rendered-consumer paths in the closure audit.
 - Compare every discovered path with the active AC `## In Scope`, `## Out Of Scope`, and `## Acceptance Tests` sections.
 - Record `Not applicable` with repository evidence when a path category is absent.
 - Record every acceptance-test disposition and residual risk in the closure audit.
 - Block Forge completion when any required implementation path is unmapped or unverified or any implementation finding remains open.
 - Record pending Director review for manual acceptance tests without treating that pending review as an implementation finding or a Forge-blocking path gap.
-- Return to Forge for implementation defects and return to Shape for scope, contract, or Director decision changes found by the closure audit.
-- Link the closure-audit artifact in the Forge completion report and state zero unresolved implementation findings before Ratify.
+- Return to Forge for implementation defects found by the closure audit.
+- Return to Shape for scope, contract, or Director decision changes found by the closure audit.
+- Report every acceptance-test disposition in the Forge completion report.
+- Report every residual risk in the Forge completion report.
+- State zero unresolved implementation findings in the Forge completion report before Ratify.
 - Pause after Forge and await Ratify.
 - Treat Ratify as the Director's final review of the delivered AC.
 - Return Ratify feedback to Shape for contract or scope changes.
@@ -269,7 +277,6 @@ Note: `CLAUDE.md` is an example of an exempt identifier — it names the Claude 
 - Validate every utility declaration and `--version` result before compiling, installing, or writing release metadata.
 - Preserve independent utility versions during repository release prep; never overwrite them automatically.
 - End every successful build with the actionable `==> To release, run:` heading and the canonical release command when the repository has a next release tag.
-- Propagate every source-level change to `internal/` Go code (not governance text) to two sites in the same pass — the source file and its overlay template under `internal/templates/overlays/`; validate with `./build.sh`.
 - Mirror every AGENTS.md change that applies to consumer repos across governa source `AGENTS.md`, `internal/templates/base/AGENTS.md`, and `internal/templates/overlays/doc/files/AGENTS.md.tmpl` (CODE consumer inherits base unchanged) before staging the commit.
 - Mirror every change to a doc referenced from AGENTS.md across governa source `governa/`, `internal/templates/overlays/code/files/governa/`, and `internal/templates/overlays/doc/files/governa/` before staging the commit.
 - Keep generated repos self-contained — every dependency lives in the generated repo itself.

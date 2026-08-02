@@ -867,6 +867,13 @@ func TestFourPhaseWorkflowContractMatchesRenderedConsumers(t *testing.T) {
 	}
 	for _, phrase := range []string{
 		"adversarial review",
+		"Keep the closure-audit working record in the active agent's session.",
+		"Do not create a separate closure-audit artifact.",
+		"Check every in-scope governance instruction against `## Instruction Style` during the closure audit.",
+		"Map every referenced governance document across applicable source, template, and rendered-consumer paths in the closure audit.",
+		"Report every acceptance-test disposition in the Forge completion report.",
+		"Report every residual risk in the Forge completion report.",
+		"State zero unresolved implementation findings in the Forge completion report before Ratify.",
 		"explicit Director phase-advancement language",
 		"Start an AC cycle only when the Director identifies the active AC",
 		"sole AC under `governa/`",
@@ -884,6 +891,25 @@ func TestFourPhaseWorkflowContractMatchesRenderedConsumers(t *testing.T) {
 		if !strings.Contains(contents["source"], phrase) {
 			t.Errorf("four-phase workflow contract is missing %q", phrase)
 		}
+	}
+	for _, forbidden := range []string{
+		"Return to Forge for implementation defects and return to Shape",
+		"Link the closure-audit artifact in the Forge completion report and state",
+		"Propagate every source-level change to `internal/` Go code",
+	} {
+		for name, content := range contents {
+			if strings.Contains(content, forbidden) {
+				t.Errorf("%s contains obsolete instruction %q", name, forbidden)
+			}
+		}
+	}
+	for _, dir := range []string{codeDir, docDir} {
+		if _, err := os.Stat(filepath.Join(dir, "governa", "forge-verify-closure-audit.md")); !os.IsNotExist(err) {
+			t.Errorf("rendered consumer contains standalone closure-audit file: %v", err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join("..", "..", "governa", "forge-verify-closure-audit.md")); !os.IsNotExist(err) {
+		t.Errorf("repository contains standalone closure-audit file: %v", err)
 	}
 }
 

@@ -999,15 +999,6 @@ func previewCanonContent(s string, maxLines int) string {
 
 const driftScanMarkerPrefix = "<!-- drift-scan: emitted-by governa "
 
-// classCounts tallies per-classification file counts for the report.
-func classCounts(files []FileResult) map[Classification]int {
-	counts := map[Classification]int{}
-	for _, f := range files {
-		counts[f.Classification]++
-	}
-	return counts
-}
-
 // buildACStub renders the emitted AC stub body (without the line-1 marker).
 // Conforms to governa/ac-template.md shape minus the copy-instruction preamble.
 // Per-file diffs are not snapshotted — adopters re-render canon with
@@ -1015,7 +1006,6 @@ func classCounts(files []FileResult) map[Classification]int {
 // (see AGENTS.md `### Drift-Scan Adoption`).
 func buildACStub(r Report, acNum int, canonVersion string) string {
 	var b strings.Builder
-	counts := classCounts(r.Files)
 
 	// Route files to sections. Format-defining files override the raw
 	// classification: any divergence (anything except match / expected-
@@ -1047,9 +1037,9 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 
 	fmt.Fprintf(&b, "# AC%d Drift-Scan Adoption from governa %s\n\n", acNum, canonVersion)
 	fmt.Fprintf(&b, "Adopt %d canon-owned changes from governa %s; %d entries require routing decisions.\n\n",
-		counts[ClassClearSync]+counts[ClassMissingTarget],
+		len(syncEntries),
 		canonVersion,
-		counts[ClassAmbiguity]+counts[ClassTargetNoCanon])
+		len(reviewEntries))
 
 	fmt.Fprintln(&b, "## Summary")
 	fmt.Fprintln(&b)

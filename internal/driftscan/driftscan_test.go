@@ -1234,6 +1234,54 @@ func TestFormatDefiningOverrideRoutesToInScope(t *testing.T) {
 	}
 }
 
+func TestACStubIntroductionCountsEffectiveRouting(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		files []FileResult
+		want  string
+	}{
+		{
+			name: "format-defining ambiguity is adopted",
+			files: []FileResult{
+				{Relpath: "governa/ac-template.md", Classification: ClassAmbiguity},
+			},
+			want: "Adopt 1 canon-owned changes from governa v0.0.0-test; 0 entries require routing decisions.",
+		},
+		{
+			name: "format-defining preserve is adopted",
+			files: []FileResult{
+				{Relpath: "governa/ac-template.md", Classification: ClassPreserve},
+			},
+			want: "Adopt 1 canon-owned changes from governa v0.0.0-test; 0 entries require routing decisions.",
+		},
+		{
+			name: "ordinary ambiguity and target-only entries require decisions",
+			files: []FileResult{
+				{Relpath: "governa/other.md", Classification: ClassAmbiguity},
+				{Relpath: "local.md", Classification: ClassTargetNoCanon},
+			},
+			want: "Adopt 0 canon-owned changes from governa v0.0.0-test; 2 entries require routing decisions.",
+		},
+		{
+			name: "clear and missing target entries are adopted",
+			files: []FileResult{
+				{Relpath: "governa/clear.md", Classification: ClassClearSync},
+				{Relpath: "governa/missing.md", Classification: ClassMissingTarget},
+			},
+			want: "Adopt 2 canon-owned changes from governa v0.0.0-test; 0 entries require routing decisions.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := buildACStub(Report{Files: tt.files}, 1, "v0.0.0-test")
+			if !strings.Contains(body, tt.want) {
+				t.Fatalf("AC introduction missing %q:\n%s", tt.want, body)
+			}
+		})
+	}
+}
+
 // governa/ is created on emission if missing. Adoption check can pass on
 // AGENTS.md + CHANGELOG row alone; emission must still succeed.
 func TestEmissionCreatesDocsDir(t *testing.T) {

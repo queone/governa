@@ -17,7 +17,7 @@ import (
 	"github.com/queone/governa/internal/updatecheck"
 )
 
-const programVersion = "0.155.0"
+const programVersion = "0.156.0"
 
 const sourceRepo = "github.com/queone/governa"
 
