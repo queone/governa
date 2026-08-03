@@ -36,6 +36,10 @@ A user runs `governa apply` from inside a target repo or empty directory. Govern
 
 Post-adoption commands provide bounded maintenance paths. `governa drift-scan` compares a consumer with embedded canon and writes an adoption AC. `governa rm` writes a cleanup AC plus targeted diffs. `governa deps` performs read-only Go dependency inspection. `governa render-canon` writes canon only to its explicit target for inspection, adoption, and validation.
 
+## AC Lifecycle Control Flow
+
+The governed change path is `Draft → Audit → Refine → Implement → Ratify → Package`. Draft creates the AC; Audit, Refine, Implement, and Ratify are the four AC phases; Package is post-Ratify release preparation and is not a fifth phase.
+
 Acceptance Criteria are non-runtime control artifacts for non-trivial changes. An AC carries Director intent through bounded Operator implementation and verification, then is deleted during release prep after durable decisions land elsewhere. Trivial changes may proceed directly when authorized, but they do not bypass approval, validation, or self-review rules. `AGENTS.md` is authoritative for the AC threshold and gates.
 
 Template improvements flow in the opposite direction through an out-of-band workflow documented in `governa/governance-model.md`: the Operator reviewing the governa repo reads consumer repos' governance files and AC history directly, then proposes template changes through the normal AC workflow. There is no CLI subcommand for this.

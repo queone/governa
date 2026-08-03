@@ -880,10 +880,10 @@ func TestFourPhaseWorkflowContractMatchesRenderedConsumers(t *testing.T) {
 		"Do not create a separate closure-audit artifact.",
 		"Check every in-scope governance instruction against `## Instruction Style` during the closure audit.",
 		"Map every referenced governance document across applicable source, template, and rendered-consumer paths in the closure audit.",
-		"Report every acceptance-test disposition in the Forge completion report.",
-		"Report every residual risk in the Forge completion report.",
-		"State zero unresolved implementation findings in the Forge completion report before Ratify.",
-		"explicit Director phase-advancement language",
+		"Report every acceptance-test disposition in the Implement completion report.",
+		"Report every residual risk in the Implement completion report.",
+		"State zero unresolved implementation findings in the Implement completion report before Ratify.",
+		"explicit Director action language",
 		"Start an AC cycle only when the Director identifies the active AC",
 		"sole AC under `governa/`",
 		"multiple ACs are present",
@@ -902,7 +902,7 @@ func TestFourPhaseWorkflowContractMatchesRenderedConsumers(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"Return to Forge for implementation defects and return to Shape",
+		"Return to Implement for implementation defects and return to Refine",
 		"Link the closure-audit artifact in the Forge completion report and state",
 		"Propagate every source-level change to `internal/` Go code",
 	} {
@@ -985,6 +985,92 @@ func TestDelegationContractMatchesRenderedConsumers(t *testing.T) {
 	}
 }
 
+func TestWorkflowActionVocabularyMatchesRenderedConsumers(t *testing.T) {
+	t.Parallel()
+	codeDir := t.TempDir()
+	if err := RunWithFS(templates.EmbeddedFS, Config{
+		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
+		RepoName: "workflow-vocabulary-code", Stack: "Node",
+	}); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	docDir := renderDocRepo(t)
+	readSource := func(path string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join("..", "..", path))
+		if err != nil {
+			t.Fatalf("read source %s: %v", path, err)
+		}
+		return string(content)
+	}
+	readEmbedded := func(path string) string {
+		t.Helper()
+		content, err := templates.EmbeddedFS.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read embedded %s: %v", path, err)
+		}
+		return string(content)
+	}
+	readRendered := func(root, path string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			t.Fatalf("read rendered %s: %v", path, err)
+		}
+		return string(content)
+	}
+
+	const lifecycle = "Draft → Audit → Refine → Implement → Ratify → Package"
+	const acMeaning = "AC” names both the acceptance-criteria document"
+	readmeDocs := map[string]string{
+		"source README": readSource("README.md"),
+		"CODE README":   readEmbedded("overlays/code/files/README.md.tmpl"),
+		"DOC README":    readEmbedded("overlays/doc/files/README.md.tmpl"),
+		"rendered CODE": readRendered(codeDir, "README.md"),
+		"rendered DOC":  readRendered(docDir, "README.md"),
+	}
+	for name, content := range readmeDocs {
+		if !strings.Contains(content, lifecycle) {
+			t.Errorf("%s missing lifecycle %q", name, lifecycle)
+		}
+		if !strings.Contains(content, acMeaning) {
+			t.Errorf("%s missing dual AC meaning", name)
+		}
+		if !strings.Contains(content, "Package is post-Ratify release preparation") {
+			t.Errorf("%s missing Package boundary", name)
+		}
+	}
+
+	architectureDocs := map[string]string{
+		"source arch":   readSource("arch.md"),
+		"CODE arch":     readEmbedded("overlays/code/files/arch.md.tmpl"),
+		"rendered CODE": readRendered(codeDir, "arch.md"),
+	}
+	for name, content := range architectureDocs {
+		if !strings.Contains(content, lifecycle) || !strings.Contains(content, "not a fifth phase") {
+			t.Errorf("%s missing lifecycle architecture boundary", name)
+		}
+	}
+
+	cycleDocs := map[string]string{
+		"source cycle":  readSource("governa/development-cycle.md"),
+		"CODE cycle":    readEmbedded("overlays/code/files/governa/development-cycle.md.tmpl"),
+		"DOC cycle":     readEmbedded("overlays/doc/files/governa/editing-cycle.md.tmpl"),
+		"rendered CODE": readRendered(codeDir, "governa/development-cycle.md"),
+		"rendered DOC":  readRendered(docDir, "governa/editing-cycle.md"),
+	}
+	for name, content := range cycleDocs {
+		for _, phrase := range []string{lifecycle, "standalone `Draft` or `draft`", "standalone `Package`, `package`, `pack`, and `prep`", "Pause after each lifecycle action"} {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("%s missing cycle phrase %q", name, phrase)
+			}
+		}
+		if strings.Contains(content, "four phases in order: Scan, Shape, Forge") {
+			t.Errorf("%s retains obsolete phase vocabulary", name)
+		}
+	}
+}
+
 func TestACWorkflowDocumentationMatchesRenderedConsumers(t *testing.T) {
 	t.Parallel()
 	codeDir := t.TempDir()
@@ -1031,7 +1117,7 @@ func TestACWorkflowDocumentationMatchesRenderedConsumers(t *testing.T) {
 			doc:          readEmbedded("overlays/doc/files/governa/editing-cycle.md.tmpl"),
 			renderedCode: readRendered(codeDir, "governa/development-cycle.md"),
 			renderedDoc:  readRendered(docDir, "governa/editing-cycle.md"),
-			phrases:      []string{"Scan", "Shape", "Forge", "Ratify", "Package", "multiple ACs"},
+			phrases:      []string{"Audit", "Refine", "Implement", "Ratify", "Package", "multiple ACs"},
 		},
 		"release": {
 			source:       readSource("governa/build-release.md"),

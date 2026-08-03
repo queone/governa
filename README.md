@@ -28,6 +28,12 @@ An AC records the change summary, authoritative scope, exclusions, acceptance te
 
 Trivial changes may proceed without an AC when explicitly authorized; size alone does not make a change trivial. The direct path still requires scoped authorization, appropriate tests, documentation alignment, file-change discipline, and Operator self-review.
 
+Here, “AC” names both the acceptance-criteria document—the change blueprint—and the governed change it tracks from Draft through Package.
+
+## Workflow at a glance
+
+Use the standalone action vocabulary `Draft → Audit → Refine → Implement → Ratify → Package` for an active AC. Draft creates the AC; Audit, Refine, Implement, and Ratify are the four AC phases; Package is post-Ratify release preparation. Accept lowercase forms for the phase actions and `package`, `pack`, or `prep` for Package. Ordinary coding phrases such as `build`, `prepare the build`, and `package the binary` do not advance the workflow.
+
 ## Usage
 
 Install the binary:
