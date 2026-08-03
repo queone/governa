@@ -441,7 +441,16 @@ func TestPremanifestRustReportCarriesBuildPreview(t *testing.T) {
 		t.Fatalf("report flavor = %q", report.Header.Flavor)
 	}
 	found := false
+	foundBuildCLI := false
 	for _, file := range report.Files {
+		if file.Relpath == filepath.Join("tests", "build_cli.sh") {
+			foundBuildCLI = true
+			if file.Classification != ClassMissingTarget ||
+				!strings.Contains(file.Diff, "test_compiled_version_output") {
+				t.Fatalf("Rust build CLI preview: class=%s diff=%s", file.Classification, file.Diff)
+			}
+			continue
+		}
 		if file.Relpath != "build.sh" {
 			continue
 		}
@@ -462,6 +471,9 @@ func TestPremanifestRustReportCarriesBuildPreview(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Rust report omitted build.sh")
+	}
+	if !foundBuildCLI {
+		t.Fatal("Rust report omitted tests/build_cli.sh")
 	}
 	matches, err := filepath.Glob(
 		filepath.Join(dir, "governa", "ac*-drift-scan-v*.md"),

@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.157.0 | AC172: enforce Rust utility version contracts |
 | 0.156.0 | AC171: tighten session closure audit and drift-scan summaries |
 | 0.155.0 | AC170: align Rust release output with Go |
 | 0.154.0 | AC169: Forge Verify closure audit |

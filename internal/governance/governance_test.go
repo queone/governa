@@ -346,6 +346,14 @@ func TestRustStackEmitsBuildIgnoreAndGuidance(t *testing.T) {
 			t.Errorf("Rust build.sh contains %q", unwanted)
 		}
 	}
+	buildCLIPath := filepath.Join(dir, "tests", "build_cli.sh")
+	buildCLI, err := os.ReadFile(buildCLIPath)
+	if err != nil {
+		t.Fatalf("Rust build CLI suite not emitted: %v", err)
+	}
+	if !strings.Contains(string(buildCLI), "test_compiled_version_output") {
+		t.Fatal("Rust build CLI suite omitted compiled version coverage")
+	}
 
 	gitignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if err != nil {
@@ -402,7 +410,8 @@ func TestRustStackEmitsBuildIgnoreAndGuidance(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Install binaries only during successful post-change release validation.",
-		"Skip binary installation during pre-change validation and `--no-build` release prep.",
+		"Skip binary installation during pre-change validation.",
+		"Reject `--no-build` release prep when independent utility validation is required.",
 	} {
 		if !strings.Contains(guidelineContent, want) {
 			t.Errorf("Rust guidance missing release-path rule %q", want)
@@ -1183,8 +1192,8 @@ name = "alpha"
 path = "src/bin/alpha.rs"
 `)
 	writeRepoFile(t, dir, "src/lib.rs", "pub fn shared() {}\n")
-	writeRepoFile(t, dir, "src/bin/alpha.rs", "fn main() {}\n")
-	writeRepoFile(t, dir, "tools/zeta.rs", "fn main() {}\n")
+	writeRepoFile(t, dir, "src/bin/alpha.rs", "const PROGRAM_VERSION: &str = \"1.2.3\";\nfn main() {}\n")
+	writeRepoFile(t, dir, "tools/zeta.rs", "const PROGRAM_VERSION: &str = \"2.3.4\";\nfn main() {}\n")
 	writeRepoFile(t, dir, "tests/alpha_cli.rs", "#[test]\nfn alpha_cli() {}\n")
 	writeRepoFile(t, dir, "tests/zeta_cli.rs", "#[test]\nfn zeta_cli() {}\n")
 	return dir
@@ -1217,6 +1226,56 @@ fi
 if [ "${1:-}" = check ]; then
   printf '%s\n' 'refreshed lock' >Cargo.lock
 fi
+if [ "${1:-}" = build ] && printf '%s' "$*" | grep -Fq -- '--release'; then
+  selected=''
+  previous=''
+  for argument in "$@"; do
+    [ "$previous" = --bin ] && selected="${selected}${selected:+,}$argument"
+    previous="$argument"
+  done
+  if [ -z "$selected" ]; then
+    selected=$(awk '
+      /^[[:space:]]*\[\[bin\]\][[:space:]]*($|#)/ { in_bin=1; next }
+      /^[[:space:]]*\[/ { in_bin=0 }
+      in_bin && /^[[:space:]]*name[[:space:]]*=/ {
+        line=$0
+        sub(/^[[:space:]]*name[[:space:]]*=[[:space:]]*"/, "", line)
+        sub(/".*/, "", line)
+        printf "%s%s", separator, line
+        separator=","
+      }' Cargo.toml)
+  fi
+  old_ifs=$IFS
+  IFS=,
+  for binary in $selected; do
+    path=$(awk -v target="$binary" '
+      function flush() { if (name == target) { print path; done=1; exit } }
+      /^[[:space:]]*\[\[bin\]\][[:space:]]*($|#)/ { flush(); name=""; path=""; in_bin=1; next }
+      /^[[:space:]]*\[/ { flush(); in_bin=0 }
+      in_bin && /^[[:space:]]*name[[:space:]]*=/ {
+        name=$0; sub(/^[^=]*=[[:space:]]*"/, "", name); sub(/".*/, "", name)
+      }
+      in_bin && /^[[:space:]]*path[[:space:]]*=/ {
+        path=$0; sub(/^[^=]*=[[:space:]]*"/, "", path); sub(/".*/, "", path)
+      }
+      END { if (!done && name == target) print path }' Cargo.toml)
+    version=$(awk '
+      match($0, /PROGRAM_VERSION[[:space:]]*:[[:space:]]*&str[[:space:]]*=[[:space:]]*"[^"]*"/) {
+        value=substr($0, RSTART, RLENGTH)
+        sub(/^[^"]*"/, "", value)
+        sub(/".*$/, "", value)
+        print value
+        exit
+      }' "$path")
+    mkdir -p "$CARGO_TARGET_DIR/release"
+    {
+      printf '%s\n' '#!/usr/bin/env bash'
+      printf "printf '%%s\\n' '%s %s'\n" "$binary" "$version"
+    } >"$CARGO_TARGET_DIR/release/$binary"
+    chmod +x "$CARGO_TARGET_DIR/release/$binary"
+  done
+  IFS=$old_ifs
+fi
 if [ "${1:-}" = install ]; then
   if [ "${CARGO_FAKE_REQUIRE_LOCK:-0}" = 1 ] && [ ! -f Cargo.lock ]; then
     printf '%s\n' 'Cargo.lock needs to be updated but --locked was passed' >&2
@@ -1243,7 +1302,7 @@ if [ "${1:-}" = install ]; then
   old_ifs=$IFS
   IFS=,
   binaries=${CARGO_FAKE_BINS:-example}
-  if [ "${CARGO_FAKE_MODEL_SELECTION:-0}" = 1 ] && [ -n "$selected" ]; then
+  if [ -n "$selected" ]; then
     binaries=$selected
   fi
   for binary in $binaries; do
@@ -1443,15 +1502,13 @@ func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
 		"clippy --all-targets --all-features --target-dir <target> -- -D warnings",
 		"test --all-targets --all-features --target-dir <target>",
 		"build --release --target-dir <target>",
-		"install --path . --bins --all-features --locked --root " +
-			filepath.Join(filepath.Dir(filepath.Dir(target)), "cargo-home") +
-			" --target-dir <target>",
 	}
-	if len(got) != len(want) ||
-		!slices.Equal(got[:4], want[:4]) ||
-		!strings.HasPrefix(got[4], "install --path . --bins --all-features --locked --root ") ||
+	if len(got) != len(want)+2 || !slices.Equal(got[:4], want) ||
+		!strings.HasPrefix(got[4], "install --path . --bin alpha --all-features --locked --root ") ||
+		!strings.HasPrefix(got[5], "install --path . --bin zeta --all-features --locked --root ") ||
 		!strings.HasSuffix(got[4], " --target-dir <target>") ||
-		strings.Contains(got[4], "--force") {
+		!strings.HasSuffix(got[5], " --target-dir <target>") ||
+		strings.Contains(got[4], "--force") || strings.Contains(got[5], "--force") {
 		t.Fatalf("cargo calls = %#v; want %#v", got, want)
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -1476,8 +1533,9 @@ func TestRustBuildScriptSyntaxAndCargoDispatch(t *testing.T) {
 		"test --verbose --all-targets --all-features --target-dir <target>",
 		"build --verbose --release --target-dir <target>",
 	}
-	if len(got) != 5 || !slices.Equal(got[:4], want) ||
-		!strings.HasPrefix(got[4], "install --verbose --path . --bins ") {
+	if len(got) != 6 || !slices.Equal(got[:4], want) ||
+		!strings.HasPrefix(got[4], "install --verbose --path . --bin alpha ") ||
+		!strings.HasPrefix(got[5], "install --verbose --path . --bin zeta ") {
 		t.Fatalf("verbose cargo calls = %#v; want %#v", got, want)
 	}
 }
@@ -1502,8 +1560,9 @@ func TestRustScopedBuildRoutingAndParser(t *testing.T) {
 			"--test alpha_cli --test zeta_cli --target-dir <target>",
 		"build --verbose --release --bin alpha --bin zeta --target-dir <target>",
 	}
-	if len(got) != 5 || !slices.Equal(got[:4], want) ||
-		!strings.Contains(got[4], "install --verbose --path . --no-track --force --bin alpha --bin zeta") {
+	if len(got) != 6 || !slices.Equal(got[:4], want) ||
+		!strings.Contains(got[4], "install --verbose --path . --no-track --force --bin alpha") ||
+		!strings.Contains(got[5], "install --verbose --path . --no-track --force --bin zeta") {
 		t.Fatalf("scoped Cargo calls = %#v; want prefix %#v", got, want)
 	}
 
@@ -1748,6 +1807,9 @@ path = "src/bin/alpha.rs" # arbitrary safe path
 	if err := os.Remove(filepath.Join(dir, "src", "lib.rs")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Remove(filepath.Join(dir, "tools", "zeta.rs")); err != nil {
+		t.Fatal(err)
+	}
 	binDir, logPath := writeFakeCargo(t, dir)
 	out, err := runRustBuild(t, dir, binDir, logPath, "alpha")
 	if err != nil {
@@ -1777,7 +1839,7 @@ func TestRustBuildPresentationColorPolicyAndFailures(t *testing.T) {
 		"\x1b[38;5;227m==> Check Rust formatting\x1b[0m",
 		"\x1b[38;5;34mcargo fmt --check\x1b[0m",
 		"\x1b[38;5;227m==> Run tests\x1b[0m",
-		"\x1b[38;5;227m==> Install package binaries\x1b[0m",
+		"\x1b[38;5;227m==> Building and installing\x1b[0m",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("colored output missing %q:\n%s", want, stdout)
@@ -1986,7 +2048,7 @@ func TestRustBuildInstallsAllBinariesAndPreservesRepositoryTarget(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Rust build failed: %v\n%s", err, out)
 	}
-	for _, binary := range []string{"declared", "auto", "feature-gated"} {
+	for _, binary := range []string{"alpha", "zeta"} {
 		if _, err := os.Stat(filepath.Join(cargoHome, "bin", binary)); err != nil {
 			t.Errorf("installed binary %q: %v", binary, err)
 		}
@@ -2013,7 +2075,7 @@ func TestRustBuildRejectsMissingBinariesAndRepositoryCargoHome(t *testing.T) {
 			logPath,
 			[]string{"CARGO_FAKE_NO_BINS=1"},
 		)
-		if err == nil || !strings.Contains(out, "declare at least one Cargo binary target") {
+		if err == nil || !strings.Contains(out, "cargo install failed with exit status 101") {
 			t.Fatalf("missing-binary guidance: err=%v out=%s", err, out)
 		}
 	})
@@ -2074,7 +2136,7 @@ func TestRustBuildPreservesInstallConflictsAndRequiresLock(t *testing.T) {
 		dir := renderRustRepo(t)
 		binDir, logPath := writeFakeCargo(t, dir)
 		cargoHome := t.TempDir()
-		binary := filepath.Join(cargoHome, "bin", "example")
+		binary := filepath.Join(cargoHome, "bin", "alpha")
 		if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -2240,8 +2302,10 @@ func TestRustBuildOverridesCargoDestinationsAndUsesDefaultHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default-home build failed: %v\n%s", err, out)
 	}
-	if _, err := os.Stat(filepath.Join(isolatedHome, ".cargo", "bin", "example")); err != nil {
-		t.Fatalf("default Cargo binary missing: %v", err)
+	for _, utility := range []string{"alpha", "zeta"} {
+		if _, err := os.Stat(filepath.Join(isolatedHome, ".cargo", "bin", utility)); err != nil {
+			t.Fatalf("default Cargo binary %s missing: %v", utility, err)
+		}
 	}
 	if entries, err := os.ReadDir(installRoot); err != nil || len(entries) != 0 {
 		t.Fatalf("CARGO_INSTALL_ROOT was modified: err=%v entries=%v", err, entries)
@@ -2415,7 +2479,6 @@ func TestRustReleasePrepUpdatesOwnedArtifacts(t *testing.T) {
 		"",
 		[]string{"GOVERNA_FORCE_TTY=1", "TERM=xterm-256color"},
 		"prep",
-		"--no-build",
 		"v0.2.0",
 		"AC7: Rust release",
 	)
@@ -2446,9 +2509,8 @@ func TestRustReleasePrepUpdatesOwnedArtifacts(t *testing.T) {
 		t.Fatalf("Cargo.lock not refreshed: err=%v content=%q", err, lockBytes)
 	}
 	got, target := normalizedCargoCalls(t, logPath)
-	want := []string{"check --all-targets --all-features --target-dir <target>"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("--no-build Cargo calls = %#v; want %#v", got, want)
+	if len(got) != 11 || got[4] != "check --all-targets --all-features --target-dir <target>" {
+		t.Fatalf("release-prep Cargo calls = %#v", got)
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("release-prep Cargo target remains: %v", err)
@@ -2505,8 +2567,9 @@ func TestRustReleasePrepRunsPreAndPostValidation(t *testing.T) {
 		"test --all-targets --all-features --target-dir <target>",
 		"build --release --target-dir <target>",
 	}
-	if len(got) != len(want)+1 || !slices.Equal(got[:len(want)], want) ||
-		!strings.HasPrefix(got[len(want)], "install --path . --bins ") {
+	if len(got) != len(want)+2 || !slices.Equal(got[:len(want)], want) ||
+		!strings.HasPrefix(got[len(want)], "install --path . --bin alpha ") ||
+		!strings.HasPrefix(got[len(want)+1], "install --path . --bin zeta ") {
 		t.Fatalf("prep Cargo calls = %#v; want %#v", got, want)
 	}
 }

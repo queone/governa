@@ -239,8 +239,10 @@ Note: `CLAUDE.md` is an example of an exempt identifier — it names the Claude 
 
 - Keep the repository/package release version separate from each installable utility version in multi-utility repositories.
 - Declare exactly one explicit strict stable SemVer version for each installable utility in multi-utility repositories.
-- Require each installable utility's `--version` invocation to exit 0, write exactly `<utility-id> <MAJOR.MINOR.PATCH>` plus its newline to stdout, and write nothing to stderr.
-- Validate every utility declaration and `--version` result before compiling, installing, or writing release metadata.
+- Require each installable utility's `--version` invocation to exit 0, write exactly `<utility-id> [v]<MAJOR.MINOR.PATCH>` plus its newline to stdout, and write nothing to stderr.
+- Validate every utility declaration before compiling.
+- Validate each compiled utility's `--version` result before installing that utility.
+- Validate every compiled utility's `--version` result before writing release metadata.
 - Preserve independent utility versions during repository release prep; never overwrite them automatically.
 - End every successful build with the actionable `==> To release, run:` heading and the canonical release command when the repository has a next release tag.
 - Track forward-looking work in `plan.md` only via IE entries (pre-rubric IEs or AC-pointers, per `plan.md`'s docstring).

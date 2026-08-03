@@ -281,6 +281,15 @@ func TestRenderCanonInfersRustAndAcceptsStackOverride(t *testing.T) {
 			t.Errorf("inferred Rust canon missing scoped-build marker %q", want)
 		}
 	}
+	buildCLI, err := os.ReadFile(filepath.Join(target, "tests", "build_cli.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"test_compiled_version_output", "test_prep_no_build_rejection"} {
+		if !strings.Contains(string(buildCLI), want) {
+			t.Errorf("inferred Rust canon build CLI suite missing %q", want)
+		}
+	}
 
 	goDir := t.TempDir()
 	if err := os.WriteFile(
@@ -309,6 +318,9 @@ func TestRenderCanonInfersRustAndAcceptsStackOverride(t *testing.T) {
 		}
 		if !strings.Contains(string(rendered), "_build_scoped_phases") {
 			t.Fatal("explicit Rust override omitted scoped-build routing")
+		}
+		if _, err := os.Stat(filepath.Join(args[len(args)-1], "tests", "build_cli.sh")); err != nil {
+			t.Fatalf("explicit Rust override omitted build CLI suite: %v", err)
 		}
 	}
 }
