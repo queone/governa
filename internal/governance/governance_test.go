@@ -922,6 +922,69 @@ func TestFourPhaseWorkflowContractMatchesRenderedConsumers(t *testing.T) {
 	}
 }
 
+func TestDelegationContractMatchesRenderedConsumers(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read source AGENTS.md: %v", err)
+	}
+	codeTemplate, err := templates.EmbeddedFS.ReadFile("base/AGENTS.md")
+	if err != nil {
+		t.Fatalf("read CODE AGENTS.md template: %v", err)
+	}
+	docTemplate, err := templates.EmbeddedFS.ReadFile("overlays/doc/files/AGENTS.md.tmpl")
+	if err != nil {
+		t.Fatalf("read DOC AGENTS.md template: %v", err)
+	}
+	codeDir := t.TempDir()
+	if err := RunWithFS(templates.EmbeddedFS, Config{
+		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
+		RepoName: "delegation-code", Stack: "Node",
+	}); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	docDir := renderDocRepo(t)
+	renderedCode, err := os.ReadFile(filepath.Join(codeDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read rendered CODE AGENTS.md: %v", err)
+	}
+	renderedDoc, err := os.ReadFile(filepath.Join(docDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read rendered DOC AGENTS.md: %v", err)
+	}
+
+	contents := map[string]string{
+		"source":        string(source),
+		"CODE template": string(codeTemplate),
+		"DOC template":  string(docTemplate),
+		"rendered CODE": string(renderedCode),
+		"rendered DOC":  string(renderedDoc),
+	}
+	want := markdownH3Block(t, contents["source"], "Delegation and sub-agent use")
+	for name, content := range contents {
+		if got := markdownH3Block(t, content, "Delegation and sub-agent use"); got != want {
+			t.Errorf("%s delegation subsection drifted:\n%s", name, got)
+		}
+		if strings.Contains(content, "\n## Delegation and sub-agent use\n") {
+			t.Errorf("%s promoted delegation subsection to a new governed section", name)
+		}
+	}
+	for _, instruction := range []string{
+		"- Make inline work the default",
+		"- Do not spawn or delegate",
+		"- State the inline constraint",
+		"- Ask the Director to narrow",
+		"- Limit authorized delegation",
+		"- Treat tool availability",
+		"- Keep primary-agent ownership",
+		"- Distinguish parallel shell commands",
+	} {
+		if !strings.Contains(want, instruction) {
+			t.Errorf("delegation subsection missing imperative instruction %q", instruction)
+		}
+	}
+}
+
 func TestACWorkflowDocumentationMatchesRenderedConsumers(t *testing.T) {
 	t.Parallel()
 	codeDir := t.TempDir()

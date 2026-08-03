@@ -78,6 +78,17 @@ Note: prefer wording that is easiest for an LLM to follow, while staying simple 
 - Treat an explicit standalone `Package`, `package`, `pack`, or `prep` request in an active Ratified AC context as the trigger for release-prep bookkeeping (CHANGELOG row insertion, release-tag drafting, commit-command drafting, release-command presentation).
 - Follow the Pre-Release Checklist in `governa/build-release.md` when executing release-prep bookkeeping.
 
+### Delegation and sub-agent use
+
+- Make inline work the default for every AC phase and implementation task.
+- Do not spawn or delegate to sub-agents without explicit Director authorization for the active AC.
+- State the inline constraint, proposed bounded task split, agent count, and token/time tradeoff before requesting delegation.
+- Ask the Director to narrow the task or split the AC before proposing delegation when the task exceeds practical inline capacity.
+- Limit authorized delegation to the active AC's named scope and prevent recursive or unbounded sub-agent spawning.
+- Treat tool availability, time pressure, and task size alone as insufficient delegation authorization.
+- Keep primary-agent ownership of integration, validation, adversarial verification, and closure reporting.
+- Distinguish parallel shell commands from sub-agent spawning; this rule does not prohibit batching independent commands.
+
 ### AC-First Workflow
 
 - Treat every non-trivial change as AC-first work.
