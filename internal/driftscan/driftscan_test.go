@@ -227,6 +227,57 @@ func TestRepoTypeMarkerResolutionAndFallback(t *testing.T) {
 	}
 }
 
+func TestMetadataResolutionAndStrictValidation(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "governa", "metadata.txt"), "schema_version = 1\ngoverna_version = v0.157.0\nrepo_type = CODE\ncode_stack = rust\n")
+	flavor, source, err := detectFlavorWithSource(dir)
+	if err != nil || flavor != "code" || source != "metadata" {
+		t.Fatalf("metadata resolution: flavor=%q source=%q err=%v", flavor, source, err)
+	}
+	if _, _, err := readRepoMetadata(dir); err != nil {
+		t.Fatalf("valid metadata rejected: %v", err)
+	}
+	reportDir := docFixture(t)
+	mustWrite(t, filepath.Join(reportDir, "governa", "metadata.txt"), "schema_version = 1\ngoverna_version = v0.157.0\nrepo_type = DOC\n")
+	jsonReport := captureOut(t, func(f *os.File) {
+		exit, runErr := Run(Config{Target: reportDir, JSON: true, DiffLines: 50, OverrideCanonID: "v0.0.0-test"}, EmbeddedFS, f)
+		if exit != ExitOK || runErr != nil {
+			t.Fatalf("metadata report: exit=%d err=%v", exit, runErr)
+		}
+	})
+	var report Report
+	if err := json.Unmarshal([]byte(jsonReport), &report); err != nil {
+		t.Fatalf("metadata report JSON: %v", err)
+	}
+	if report.Header.FlavorSource != "metadata" || report.Header.GovernaVersion != "v0.157.0" {
+		t.Fatalf("metadata report header: source=%q version=%q", report.Header.FlavorSource, report.Header.GovernaVersion)
+	}
+
+	for name, content := range map[string]string{
+		"unknown key":       "schema_version = 1\ngoverna_version = v0.157.0\nrepo_type = DOC\nextra = nope\n",
+		"duplicate key":     "schema_version = 1\nschema_version = 1\ngoverna_version = v0.157.0\nrepo_type = DOC\n",
+		"bad version":       "schema_version = 1\ngoverna_version = 0.157.0\nrepo_type = DOC\n",
+		"doc stack":         "schema_version = 1\ngoverna_version = v0.157.0\nrepo_type = DOC\ncode_stack = Go\n",
+		"unsupported stack": "schema_version = 1\ngoverna_version = v0.157.0\nrepo_type = CODE\ncode_stack = Kotlin\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := t.TempDir()
+			mustWrite(t, filepath.Join(bad, "governa", "metadata.txt"), content)
+			if _, _, err := detectFlavorWithSource(bad); err == nil {
+				t.Fatal("malformed metadata accepted")
+			}
+		})
+	}
+
+	conflict := t.TempDir()
+	mustWrite(t, filepath.Join(conflict, "governa", "metadata.txt"), "schema_version = 1\ngoverna_version = v0.157.0\nrepo_type = DOC\n")
+	mustWrite(t, filepath.Join(conflict, "governa", "repo-type.txt"), "CODE\n")
+	if _, _, err := detectFlavorWithSource(conflict); err == nil || !strings.Contains(err.Error(), "conflict") {
+		t.Fatalf("metadata/marker conflict: %v", err)
+	}
+}
+
 func TestInvalidRepoTypeMarkerFailsBeforeEmission(t *testing.T) {
 	t.Parallel()
 	dir := docFixture(t)
@@ -240,7 +291,7 @@ func TestInvalidRepoTypeMarkerFailsBeforeEmission(t *testing.T) {
 	}
 }
 
-func TestMissingRepoTypeMarkerEmitsReviewableAC(t *testing.T) {
+func TestMissingMetadataEmitsMigrationAC(t *testing.T) {
 	t.Parallel()
 	dir := docFixture(t)
 	mustWrite(t, filepath.Join(dir, "_config.yml"), "title: test\n")
@@ -248,16 +299,16 @@ func TestMissingRepoTypeMarkerEmitsReviewableAC(t *testing.T) {
 	if exit != ExitOK || err != nil {
 		t.Fatalf("missing marker scan: exit=%d err=%v", exit, err)
 	}
-	if _, statErr := os.Stat(filepath.Join(dir, "governa", "repo-type.txt")); statErr == nil {
-		t.Fatal("drift-scan wrote the missing marker directly")
+	if _, statErr := os.Stat(filepath.Join(dir, "governa", "metadata.txt")); statErr == nil {
+		t.Fatal("drift-scan wrote missing metadata directly")
 	}
 	acs := findStagedACs(t, dir)
 	if len(acs) != 1 {
 		t.Fatalf("expected one emitted AC, got %v", acs)
 	}
 	emitted := mustRead(t, acs[0])
-	if !strings.Contains(emitted, "governa/repo-type.txt") || !strings.Contains(emitted, "missing-in-target") {
-		t.Fatalf("missing-marker AC lacks classification: %s", emitted)
+	if !strings.Contains(emitted, "governa/metadata.txt") || !strings.Contains(emitted, "migration-required") {
+		t.Fatalf("missing-metadata AC lacks migration classification: %s", emitted)
 	}
 }
 
@@ -565,12 +616,12 @@ func TestStackSelectorValidationEmitsNothing(t *testing.T) {
 	}
 }
 
-func TestUnknownStackUsesGenericCodeCanon(t *testing.T) {
+func TestNodeStackUsesGenericCodeCanon(t *testing.T) {
 	dir := docFixture(t)
 	cfg := Config{
 		Target:          dir,
 		Flavor:          "code",
-		Stack:           "FutureLang",
+		Stack:           "Node",
 		DiffLines:       50,
 		OverrideCanonID: "v0.0.0-test",
 	}
@@ -706,7 +757,7 @@ func TestStackSelectionDocumentationStaysSynchronized(t *testing.T) {
 		"`go.mod`, `Cargo.toml`, `Package.swift`, `.terraform.lock.hcl`",
 		"No recognized signal fails closed",
 		"remove `--stack` or add `--flavor code`",
-		"Without the marker, use fallback resolution",
+		"When metadata and the legacy marker are absent and no explicit selector is",
 	} {
 		if !strings.Contains(source, want) {
 			t.Errorf("drift-scan docs missing %q", want)

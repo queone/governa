@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.158.0 | AC173: adopt versioned governa metadata and retire repo-type marker |
 | 0.157.0 | AC172: enforce Rust utility version contracts |
 | 0.156.0 | AC171: tighten session closure audit and drift-scan summaries |
 | 0.155.0 | AC170: align Rust release output with Go |

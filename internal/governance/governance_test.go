@@ -845,7 +845,7 @@ func TestFourPhaseWorkflowContractMatchesRenderedConsumers(t *testing.T) {
 	codeDir := t.TempDir()
 	if err := RunWithFS(templates.EmbeddedFS, Config{
 		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
-		RepoName: "four-phase-code", Stack: "Unknown",
+		RepoName: "four-phase-code", Stack: "Node",
 	}); err != nil {
 		t.Fatalf("render CODE repo: %v", err)
 	}
@@ -927,7 +927,7 @@ func TestACWorkflowDocumentationMatchesRenderedConsumers(t *testing.T) {
 	codeDir := t.TempDir()
 	if err := RunWithFS(templates.EmbeddedFS, Config{
 		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
-		RepoName: "workflow-doc-code", Stack: "Unknown",
+		RepoName: "workflow-doc-code", Stack: "Node",
 	}); err != nil {
 		t.Fatalf("render CODE repo: %v", err)
 	}
@@ -1043,18 +1043,20 @@ func TestPackageCompletionReportHeadingFormat(t *testing.T) {
 	}
 }
 
-func TestRepoTypeMarkerTemplatesMatchRenderedConsumers(t *testing.T) {
+func TestMetadataTemplatesMatchRenderedConsumers(t *testing.T) {
 	t.Parallel()
-	codeMarker, err := templates.EmbeddedFS.ReadFile("overlays/code/files/governa/repo-type.txt")
+	codeMetadata, err := templates.EmbeddedFS.ReadFile("overlays/code/files/governa/metadata.txt")
 	if err != nil {
-		t.Fatalf("read CODE repo-type marker: %v", err)
+		t.Fatalf("read CODE metadata: %v", err)
 	}
-	docMarker, err := templates.EmbeddedFS.ReadFile("overlays/doc/files/governa/repo-type.txt")
+	docMetadata, err := templates.EmbeddedFS.ReadFile("overlays/doc/files/governa/metadata.txt")
 	if err != nil {
-		t.Fatalf("read DOC repo-type marker: %v", err)
+		t.Fatalf("read DOC metadata: %v", err)
 	}
-	if string(codeMarker) != "CODE\n" || string(docMarker) != "DOC\n" {
-		t.Fatalf("marker templates drifted: CODE=%q DOC=%q", codeMarker, docMarker)
+	if !strings.Contains(string(codeMetadata), "governa_version = {{GOVERNA_VERSION}}") ||
+		!strings.Contains(string(codeMetadata), "code_stack = {{CODE_STACK}}") ||
+		strings.Contains(string(docMetadata), "code_stack") {
+		t.Fatalf("metadata templates drifted: CODE=%q DOC=%q", codeMetadata, docMetadata)
 	}
 
 	codeDir := t.TempDir()
@@ -1065,16 +1067,35 @@ func TestRepoTypeMarkerTemplatesMatchRenderedConsumers(t *testing.T) {
 		t.Fatalf("render CODE repo: %v", err)
 	}
 	docDir := renderDocRepo(t)
-	renderedCode, err := os.ReadFile(filepath.Join(codeDir, "governa", "repo-type.txt"))
+	renderedCode, err := os.ReadFile(filepath.Join(codeDir, "governa", "metadata.txt"))
 	if err != nil {
-		t.Fatalf("read rendered CODE marker: %v", err)
+		t.Fatalf("read rendered CODE metadata: %v", err)
 	}
-	renderedDoc, err := os.ReadFile(filepath.Join(docDir, "governa", "repo-type.txt"))
+	renderedDoc, err := os.ReadFile(filepath.Join(docDir, "governa", "metadata.txt"))
 	if err != nil {
-		t.Fatalf("read rendered DOC marker: %v", err)
+		t.Fatalf("read rendered DOC metadata: %v", err)
 	}
-	if string(renderedCode) != "CODE\n" || string(renderedDoc) != "DOC\n" {
-		t.Fatalf("rendered markers drifted: CODE=%q DOC=%q", renderedCode, renderedDoc)
+	if string(renderedCode) != "schema_version = 1\ngoverna_version = v"+templates.TemplateVersion+"\nrepo_type = CODE\ncode_stack = Rust\n" ||
+		string(renderedDoc) != "schema_version = 1\ngoverna_version = v"+templates.TemplateVersion+"\nrepo_type = DOC\n" {
+		t.Fatalf("rendered metadata drifted: CODE=%q DOC=%q", renderedCode, renderedDoc)
+	}
+	for _, dir := range []string{codeDir, docDir} {
+		if _, err := os.Stat(filepath.Join(dir, "governa", "repo-type.txt")); !os.IsNotExist(err) {
+			t.Errorf("rendered consumer retained retired repo-type marker: %v", err)
+		}
+	}
+}
+
+func TestExpectedArtifactsTrackMetadataAndRetiredMarker(t *testing.T) {
+	t.Parallel()
+	for _, repoType := range []RepoType{RepoTypeCode, RepoTypeDoc} {
+		artifacts := expectedArtifactPaths(repoType)
+		if !slices.Contains(artifacts, filepath.Join("governa", "metadata.txt")) {
+			t.Errorf("%s expected artifacts omit metadata", repoType)
+		}
+		if slices.Contains(artifacts, filepath.Join("governa", "repo-type.txt")) {
+			t.Errorf("%s expected artifacts retain retired marker", repoType)
+		}
 	}
 }
 
@@ -1111,7 +1132,7 @@ func TestCanonicalBuildVerificationMatchesSourceTemplateAndRenderedCode(t *testi
 		Target:   dir,
 		Type:     RepoTypeCode,
 		RepoName: "build-verification-test",
-		Stack:    "Unknown",
+		Stack:    "Node",
 	}
 	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
 		t.Fatalf("render CODE repo: %v", err)
@@ -1136,7 +1157,7 @@ func TestCanonicalBuildVerificationMatchesSourceTemplateAndRenderedCode(t *testi
 	}
 }
 
-func TestUnsupportedStackKeepsGenericCanon(t *testing.T) {
+func TestUnsupportedStackIsRejected(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfg := Config{
@@ -1146,20 +1167,8 @@ func TestUnsupportedStackKeepsGenericCanon(t *testing.T) {
 		RepoName: "test-repo",
 		Stack:    "Unknown",
 	}
-	if err := RunWithFS(templates.EmbeddedFS, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "build.sh")); !os.IsNotExist(err) {
-		t.Fatalf("unsupported stack build.sh stat error = %v; want not-exist", err)
-	}
-	contentBytes, err := os.ReadFile(filepath.Join(dir, "governa", "development-guidelines.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(contentBytes)
-	if strings.Contains(content, "## Go Practices") ||
-		strings.Contains(content, "## Rust Practices") {
-		t.Error("unsupported stack received stack-specific guidance")
+	if err := RunWithFS(templates.EmbeddedFS, cfg); err == nil || !strings.Contains(err.Error(), "unsupported CODE stack") {
+		t.Fatalf("unsupported stack error = %v", err)
 	}
 }
 

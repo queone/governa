@@ -185,6 +185,22 @@ var stackManifests = []struct {
 	{"build.gradle", "Java"},
 }
 
+var canonicalStacks = map[string]string{
+	"go":        "Go",
+	"rust":      "Rust",
+	"swift":     "Swift",
+	"terraform": "Terraform",
+	"node":      "Node",
+	"python":    "Python",
+	"java":      "Java",
+}
+
+// CanonicalStack normalizes a supported CODE stack name for metadata.
+func CanonicalStack(stack string) (string, bool) {
+	canonical, ok := canonicalStacks[strings.ToLower(strings.TrimSpace(stack))]
+	return canonical, ok
+}
+
 func inferStack(targetDir string) string {
 	// Preserve legacy precedence while allowing a Swift package to outrank
 	// generic language-tooling manifests.
@@ -263,6 +279,11 @@ func validateConfig(cfg Config) error {
 		}
 		if cfg.Type == RepoTypeCode && cfg.Stack == "" {
 			return errors.New("stack/platform is required for CODE repos: use -s or --stack")
+		}
+		if cfg.Type == RepoTypeCode {
+			if _, ok := CanonicalStack(cfg.Stack); !ok {
+				return fmt.Errorf("unsupported CODE stack %q: use Go, Rust, Swift, Terraform, Node, Python, or Java", cfg.Stack)
+			}
 		}
 	default:
 		return errors.New("unsupported mode")
@@ -564,9 +585,10 @@ func expectedArtifactPaths(repoType RepoType) []string {
 			filepath.Join("governa", "development-cycle.md"),
 			filepath.Join("governa", "ac-template.md"),
 			filepath.Join("governa", "build-release.md"),
+			filepath.Join("governa", "metadata.txt"),
 		)
 	case RepoTypeDoc:
-		return append(base, "plan.md")
+		return append(base, "plan.md", filepath.Join("governa", "metadata.txt"))
 	default:
 		return base
 	}
@@ -653,6 +675,14 @@ func readModulePath(targetRoot string) string {
 }
 
 func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error) {
+	canonicalStack := strings.TrimSpace(cfg.Stack)
+	if cfg.Type == RepoTypeCode {
+		var ok bool
+		canonicalStack, ok = CanonicalStack(cfg.Stack)
+		if !ok {
+			return nil, fmt.Errorf("unsupported CODE stack %q: use Go, Rust, Swift, Terraform, Node, Python, or Java", cfg.Stack)
+		}
+	}
 	modulePath := cfg.ModulePath
 	if modulePath == "" {
 		modulePath = readModulePath(targetRoot)
@@ -663,8 +693,10 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 	}
 	placeholders := map[string]string{
 		"{{REPO_NAME}}":         cfg.RepoName,
-		"{{STACK_OR_PLATFORM}}": valueOrDefault(cfg.Stack, "TBD"),
+		"{{STACK_OR_PLATFORM}}": valueOrDefault(canonicalStack, "TBD"),
 		"{{MODULE_PATH}}":       modulePath,
+		"{{GOVERNA_VERSION}}":   "v" + templates.TemplateVersion,
+		"{{CODE_STACK}}":        valueOrDefault(canonicalStack, "TBD"),
 	}
 
 	agentsContent, err := readAndRender(tfs, "base/AGENTS.md", placeholders)
@@ -705,12 +737,12 @@ func planCanonical(tfs fs.FS, cfg Config, targetRoot string) ([]operation, error
 		// stacks so Go repos (and future stacks) get language-appropriate
 		// ignore patterns without requiring a Standing Divergence.
 		if targetRel == ".gitignore" {
-			if block, ok := stackIgnoreBlock(tfs, cfg.Stack); ok {
+			if block, ok := stackIgnoreBlock(tfs, canonicalStack); ok {
 				content = content + "\n" + block
 			}
 		}
 		if targetRel == filepath.Join("governa", "development-guidelines.md") {
-			if block, ok := stackGuidelineBlock(tfs, cfg.Stack); ok {
+			if block, ok := stackGuidelineBlock(tfs, canonicalStack); ok {
 				content, err = insertStackGuidelines(content, block)
 				if err != nil {
 					return err

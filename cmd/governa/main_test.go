@@ -272,6 +272,18 @@ func TestRenderCanonInfersRustAndAcceptsStackOverride(t *testing.T) {
 	if !strings.Contains(string(build), "cargo clippy") {
 		t.Fatal("inferred Rust canon did not emit Rust build.sh")
 	}
+	metadata, err := os.ReadFile(filepath.Join(target, "governa", "metadata.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(metadata); !strings.Contains(got, "repo_type = CODE\n") ||
+		!strings.Contains(got, "code_stack = Rust\n") ||
+		!strings.Contains(got, "governa_version = v") {
+		t.Fatalf("rendered CODE metadata is incomplete: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(target, "governa", "repo-type.txt")); !os.IsNotExist(err) {
+		t.Fatalf("rendered CODE canon retained retired marker: %v", err)
+	}
 	for _, want := range []string{
 		"Usage: build [target ...] [-v|--verbose]",
 		"_build_scoped_phases",
@@ -386,6 +398,24 @@ func TestRenderCanonStackHelpAndFlavorValidation(t *testing.T) {
 	out, err = cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "--stack applies only to CODE canon") {
 		t.Fatalf("DOC stack rejection: err=%v out=%s", err, out)
+	}
+	docTarget := filepath.Join(t.TempDir(), "doc-valid")
+	cmd = exec.Command(bin, "render-canon", "--flavor", "doc", docTarget)
+	cmd.Dir = docDir
+	cmd.Env = append(os.Environ(), "GOVERNA_NO_UPDATE_CHECK=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("DOC render failed: %v\n%s", err, out)
+	}
+	docMetadata, err := os.ReadFile(filepath.Join(docTarget, "governa", "metadata.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(docMetadata); !strings.Contains(got, "repo_type = DOC\n") ||
+		strings.Contains(got, "code_stack") || !strings.Contains(got, "governa_version = v") {
+		t.Fatalf("rendered DOC metadata is incomplete: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(docTarget, "governa", "repo-type.txt")); !os.IsNotExist(err) {
+		t.Fatalf("rendered DOC canon retained retired marker: %v", err)
 	}
 
 	for name, args := range map[string][]string{

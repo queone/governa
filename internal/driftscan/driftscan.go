@@ -57,6 +57,7 @@ const (
 	ClassClearSync          Classification = "clear-sync"
 	ClassMissingTarget      Classification = "missing-in-target"
 	ClassTargetNoCanon      Classification = "target-has-no-canon"
+	ClassMigrationRequired  Classification = "migration-required"
 	ClassExpectedDivergence Classification = "expected-divergence" // per-repo content files (e.g., plan.md)
 )
 
@@ -65,7 +66,16 @@ const ReachabilityHeaderReminder = "Reachability check: verify divergent canon-c
 
 const routingResolutionReminder = "Routing resolution: a Director-resolved `sync` for an `ambiguity` item authorizes editing the named target even when it is absent from `## In Scope`; leave this emitted stub unchanged through sync and post-sync verification."
 
-const repoTypeMarkerPath = "governa/repo-type.txt"
+const (
+	repoMetadataPath   = "governa/metadata.txt"
+	repoTypeMarkerPath = "governa/repo-type.txt"
+)
+
+type repoMetadata struct {
+	Version   string
+	RepoType  string
+	CodeStack string
+}
 
 // Config holds drift-scan invocation parameters.
 type Config struct {
@@ -250,13 +260,23 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	flavor := strings.TrimSpace(cfg.Flavor)
 	stack := strings.TrimSpace(cfg.Stack)
 	flavorSource := "explicit"
+	metadata, metadataPresent, metadataErr := readRepoMetadata(cfg.Target)
+	if metadataErr != nil {
+		return ExitEnvError, metadataErr
+	}
 	markerFlavor, markerPresent, markerErr := readRepoTypeMarker(cfg.Target)
 	if markerErr != nil {
 		return ExitEnvError, markerErr
 	}
+	if metadataPresent && markerPresent && metadata.RepoType != markerFlavor {
+		return ExitEnvError, fmt.Errorf("drift-scan: %s conflicts with legacy %s; repository types disagree", repoMetadataPath, repoTypeMarkerPath)
+	}
 	if flavor == "" {
 		var err error
-		if markerPresent {
+		if metadataPresent {
+			flavor = metadata.RepoType
+			flavorSource = "metadata"
+		} else if markerPresent {
 			flavor = markerFlavor
 			flavorSource = "marker"
 		} else {
@@ -300,6 +320,9 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 		gcfg.Type = governance.RepoTypeCode
 		if stack == "" {
 			stack = governance.InferStack(cfg.Target)
+			if stack == "" && metadataPresent {
+				stack = metadata.CodeStack
+			}
 		}
 		if stack == "" {
 			return ExitEnvError, fmt.Errorf(
@@ -307,7 +330,12 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 				cfg.Target,
 			)
 		}
-		gcfg.Stack = stack
+		canonical, ok := governance.CanonicalStack(stack)
+		if !ok {
+			return ExitEnvError, fmt.Errorf("drift-scan: unsupported CODE stack %q; use Go, Rust, Swift, Terraform, Node, Python, or Java", stack)
+		}
+		stack = canonical
+		gcfg.Stack = canonical
 	case "doc":
 		gcfg.Type = governance.RepoTypeDoc
 	}
@@ -342,18 +370,32 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	// Walk canon, classify each.
 	report := Report{
 		Header: ReportHeader{
-			Invocation:   invocation,
-			CanonSHA:     sha,
-			Target:       cfg.Target,
-			Flavor:       flavor,
-			FlavorSource: flavorSource,
-			RepoName:     repoName,
+			Invocation:     invocation,
+			CanonSHA:       sha,
+			Target:         cfg.Target,
+			Flavor:         flavor,
+			FlavorSource:   flavorSource,
+			RepoName:       repoName,
+			GovernaVersion: metadata.Version,
+			CodeStack:      metadata.CodeStack,
 		},
 	}
 	for _, relpath := range sortedKeys(canon) {
 		canonContent := canon[relpath]
 		fr := classifyFile(cfg, relpath, canonContent, sha)
+		if relpath == repoMetadataPath && !metadataPresent {
+			fr.Classification = ClassMigrationRequired
+			fr.CompareCommand = fmt.Sprintf("metadata absent; migration required (canon @ %s)", sha)
+		}
 		report.Files = append(report.Files, fr)
+	}
+	if markerPresent {
+		report.Files = append(report.Files, FileResult{
+			Relpath:        repoTypeMarkerPath,
+			Classification: ClassMigrationRequired,
+			CanonRef:       "retired legacy routing marker",
+			CompareCommand: "remove after adopting the emitted migration AC",
+		})
 	}
 
 	// C4: surface target-has-no-canon files for the chosen flavor.
@@ -459,9 +501,9 @@ func Run(cfg Config, tfs fs.FS, out io.Writer) (int, error) {
 	return ExitOK, nil
 }
 
-// DetectFlavor reports the consumer flavor resolved from the repo-type marker
-// or fallback repo shape. Explicit command-line overrides are handled by the
-// caller before this function is used.
+// DetectFlavor reports the consumer flavor resolved from metadata, the legacy
+// repo-type marker, or fallback repo shape. Explicit command-line overrides
+// are handled by the caller before this function is used.
 // Exported so cmd/governa's render-canon subcommand reuses the same
 // inference logic drift-scan uses.
 func DetectFlavor(target string) (string, error) {
@@ -470,9 +512,19 @@ func DetectFlavor(target string) (string, error) {
 }
 
 func detectFlavorWithSource(target string) (string, string, error) {
+	metadata, metadataPresent, err := readRepoMetadata(target)
+	if err != nil {
+		return "", "", err
+	}
 	marker, present, err := readRepoTypeMarker(target)
 	if err != nil {
 		return "", "", err
+	}
+	if metadataPresent && present && metadata.RepoType != marker {
+		return "", "", fmt.Errorf("%s conflicts with legacy %s; repository types disagree", repoMetadataPath, repoTypeMarkerPath)
+	}
+	if metadataPresent {
+		return metadata.RepoType, "metadata", nil
 	}
 	if present {
 		return marker, "marker", nil
@@ -499,6 +551,60 @@ func readRepoTypeMarker(target string) (string, bool, error) {
 	}
 }
 
+var metadataVersionPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+
+func readRepoMetadata(target string) (repoMetadata, bool, error) {
+	content, err := os.ReadFile(filepath.Join(target, repoMetadataPath))
+	if errors.Is(err, fs.ErrNotExist) {
+		return repoMetadata{}, false, nil
+	}
+	if err != nil {
+		return repoMetadata{}, false, fmt.Errorf("read %s: %w", repoMetadataPath, err)
+	}
+	if len(content) == 0 || content[len(content)-1] != '\n' {
+		return repoMetadata{}, false, fmt.Errorf("invalid %s: require a final newline", repoMetadataPath)
+	}
+	values := map[string]string{}
+	for line := range strings.SplitSeq(strings.TrimSuffix(string(content), "\n"), "\n") {
+		key, value, ok := strings.Cut(line, " = ")
+		if !ok || key == "" || value == "" || strings.TrimSpace(key) != key || strings.TrimSpace(value) != value {
+			return repoMetadata{}, false, fmt.Errorf("invalid %s: each line must use `key = value`", repoMetadataPath)
+		}
+		if _, exists := values[key]; exists {
+			return repoMetadata{}, false, fmt.Errorf("invalid %s: duplicate key %q", repoMetadataPath, key)
+		}
+		values[key] = value
+	}
+	for key := range values {
+		if key != "schema_version" && key != "governa_version" && key != "repo_type" && key != "code_stack" {
+			return repoMetadata{}, false, fmt.Errorf("invalid %s: unknown key %q", repoMetadataPath, key)
+		}
+	}
+	if values["schema_version"] != "1" {
+		return repoMetadata{}, false, fmt.Errorf("invalid %s: schema_version must be 1", repoMetadataPath)
+	}
+	version := values["governa_version"]
+	if !metadataVersionPattern.MatchString(version) {
+		return repoMetadata{}, false, fmt.Errorf("invalid %s: governa_version must be vMAJOR.MINOR.PATCH", repoMetadataPath)
+	}
+	repoType := values["repo_type"]
+	if repoType != "CODE" && repoType != "DOC" {
+		return repoMetadata{}, false, fmt.Errorf("invalid %s: repo_type must be CODE or DOC", repoMetadataPath)
+	}
+	stack, hasStack := values["code_stack"]
+	if repoType == "DOC" && hasStack {
+		return repoMetadata{}, false, fmt.Errorf("invalid %s: DOC metadata must not define code_stack", repoMetadataPath)
+	}
+	if repoType == "CODE" {
+		canonical, ok := governance.CanonicalStack(stack)
+		if !hasStack || !ok {
+			return repoMetadata{}, false, fmt.Errorf("invalid %s: CODE metadata requires a supported code_stack", repoMetadataPath)
+		}
+		stack = canonical
+	}
+	return repoMetadata{Version: version, RepoType: strings.ToLower(repoType), CodeStack: stack}, true, nil
+}
+
 func detectFallbackFlavor(target string) (string, error) {
 	hasJekyll := fileExists(filepath.Join(target, "_config.yml"))
 	hasStrongCode := hasStrongCodeManifest(target)
@@ -510,7 +616,7 @@ func detectFallbackFlavor(target string) (string, error) {
 	case hasJekyll:
 		return "doc", nil
 	default:
-		return "", fmt.Errorf("could not infer flavor: add governa/repo-type.txt, pass --flavor code|doc, or add a recognized flavor manifest")
+		return "", fmt.Errorf("could not infer flavor: add governa/metadata.txt, pass --flavor code|doc, or add a recognized flavor manifest")
 	}
 }
 
@@ -556,12 +662,14 @@ type FileResult struct {
 
 // ReportHeader is the report's self-identifying header.
 type ReportHeader struct {
-	Invocation   string `json:"invocation"`
-	CanonSHA     string `json:"canon_sha"`
-	Target       string `json:"target"`
-	Flavor       string `json:"flavor"`
-	FlavorSource string `json:"flavor_source"`
-	RepoName     string `json:"repo_name"`
+	Invocation     string `json:"invocation"`
+	CanonSHA       string `json:"canon_sha"`
+	Target         string `json:"target"`
+	Flavor         string `json:"flavor"`
+	FlavorSource   string `json:"flavor_source"`
+	RepoName       string `json:"repo_name"`
+	GovernaVersion string `json:"governa_version,omitempty"`
+	CodeStack      string `json:"code_stack,omitempty"`
 }
 
 // Report is the full scan output.
@@ -936,7 +1044,7 @@ func sortedKeys(m map[string]string) []string {
 func tallyClassifications(files []FileResult) string {
 	order := []Classification{
 		ClassMatch, ClassExpectedDivergence, ClassPreserve, ClassAmbiguity,
-		ClassClearSync, ClassMissingTarget, ClassTargetNoCanon,
+		ClassClearSync, ClassMissingTarget, ClassTargetNoCanon, ClassMigrationRequired,
 	}
 	counts := map[Classification]int{}
 	for _, f := range files {
@@ -1012,7 +1120,7 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	// divergence) routes to In Scope as a sync item, regardless of whether
 	// the raw classification would have been preserve, ambiguity, etc.
 	// See governa/drift-scan.md `## Format-defining files`.
-	var syncEntries, oosEntries, reviewEntries, formatDefiningForced []FileResult
+	var syncEntries, migrationEntries, oosEntries, reviewEntries, formatDefiningForced []FileResult
 	var hasAmbiguity bool
 	for _, f := range r.Files {
 		if isFormatDefining(f.Relpath) && f.Classification != ClassMatch && f.Classification != ClassExpectedDivergence {
@@ -1025,6 +1133,8 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 		switch f.Classification {
 		case ClassClearSync, ClassMissingTarget:
 			syncEntries = append(syncEntries, f)
+		case ClassMigrationRequired:
+			migrationEntries = append(migrationEntries, f)
 		case ClassPreserve, ClassExpectedDivergence:
 			oosEntries = append(oosEntries, f)
 		case ClassAmbiguity, ClassTargetNoCanon:
@@ -1036,10 +1146,13 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	}
 
 	fmt.Fprintf(&b, "# AC%d Drift-Scan Adoption from governa %s\n\n", acNum, canonVersion)
-	fmt.Fprintf(&b, "Adopt %d canon-owned changes from governa %s; %d entries require routing decisions.\n\n",
-		len(syncEntries),
-		canonVersion,
-		len(reviewEntries))
+	if len(migrationEntries) == 0 {
+		fmt.Fprintf(&b, "Adopt %d canon-owned changes from governa %s; %d entries require routing decisions.\n\n",
+			len(syncEntries), canonVersion, len(reviewEntries))
+	} else {
+		fmt.Fprintf(&b, "Adopt %d canon-owned changes from governa %s; %d migration items and %d entries require routing decisions.\n\n",
+			len(syncEntries), canonVersion, len(migrationEntries), len(reviewEntries))
+	}
 
 	fmt.Fprintln(&b, "## Summary")
 	fmt.Fprintln(&b)
@@ -1065,6 +1178,16 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 		}
 		fmt.Fprintln(&b)
 	}
+	if len(migrationEntries) > 0 {
+		fmt.Fprintln(&b, "### Migration Required")
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "The following metadata migration items require explicit consumer work; drift-scan does not modify them:")
+		fmt.Fprintln(&b)
+		for _, f := range migrationEntries {
+			fmt.Fprintf(&b, "- `%s` — %s. %s\n", f.Relpath, f.Classification, f.CompareCommand)
+		}
+		fmt.Fprintln(&b)
+	}
 
 	fmt.Fprintln(&b, "### Routing Decisions")
 	fmt.Fprintln(&b)
@@ -1085,7 +1208,9 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 	fmt.Fprintln(&b, "## In Scope")
 	fmt.Fprintln(&b)
 	if len(syncEntries) == 0 {
-		fmt.Fprintln(&b, "No sync items.")
+		if len(migrationEntries) == 0 {
+			fmt.Fprintln(&b, "No sync items.")
+		}
 	} else {
 		fmt.Fprintln(&b, "Sync to canon:")
 		fmt.Fprintln(&b)
@@ -1095,6 +1220,13 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 				suffix = " (format-defining)"
 			}
 			fmt.Fprintf(&b, "- `%s` — %s%s\n", f.Relpath, f.Classification, suffix)
+		}
+	}
+	if len(migrationEntries) > 0 {
+		fmt.Fprintln(&b, "Migration items:")
+		fmt.Fprintln(&b)
+		for _, f := range migrationEntries {
+			fmt.Fprintf(&b, "- `%s` — migration-required\n", f.Relpath)
 		}
 	}
 	fmt.Fprintln(&b)
@@ -1125,7 +1257,10 @@ func buildACStub(r Report, acNum int, canonVersion string) string {
 			fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` matches canon byte-for-byte after sync.\n\n", i+2, f.Relpath)
 		}
 	}
-	fmt.Fprintf(&b, "**AT%d** [Automated] — Re-running `governa drift-scan` after this AC's sync produces a new AC stub whose `## In Scope` list does not name any file synced under this AC.\n\n", len(syncEntries)+2)
+	for i, f := range migrationEntries {
+		fmt.Fprintf(&b, "**AT%d** [Automated] — `%s` is explicitly migrated to the metadata contract (and any legacy marker disposition is recorded) before the next drift-scan.\n\n", len(syncEntries)+i+2, f.Relpath)
+	}
+	fmt.Fprintf(&b, "**AT%d** [Automated] — Re-running `governa drift-scan` after this AC's sync and migration produces a new AC stub whose `## In Scope` list does not name any file completed under this AC.\n\n", len(syncEntries)+len(migrationEntries)+2)
 
 	fmt.Fprintln(&b, "## Status")
 	fmt.Fprintln(&b)
