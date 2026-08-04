@@ -3,6 +3,7 @@
 | Version | Summary |
 |---------|---------|
 | Unreleased | |
+| 0.160.1 | AC176: split delegation-scope bullet for Instruction Style |
 | 0.160.0 | AC175: adopt explicit AC workflow action vocabulary |
 | 0.159.0 | AC174: require Director approval for agent delegation |
 | 0.158.0 | AC173: adopt versioned governa metadata and retire repo-type marker |
