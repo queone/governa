@@ -92,7 +92,7 @@ One file under the consumer repo's `governa/`, plus a single-line stdout summary
 The tool determines `N` per `governa/ac-template.md` line 3:
 
 - If a same-canon-version stub already exists at `governa/ac<M>-drift-scan-v<X.Y.Z>.md`, the tool reuses `M` (subject to the edit-detection guard, below). No bump on re-run against the same canon version.
-- Otherwise, `N = max((a) AC numbers in governa/ac*.md filenames, (b) AC references anywhere in 'git log --all --pretty=%B' output covering subject and body, counting composites like "AC53+AC54") + 1`.
+- Otherwise, `N = max((a) AC numbers in governa/ac*.md filenames, (b) AC references anywhere in 'git log --all --pretty=%B' output covering subject and body, counting composites like "AC<m>+AC<n>") + 1`.
 
 ## Re-run behavior and edit-detection guard
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -3198,6 +3199,131 @@ func TestDocPrepStagesReleaseWithoutVersionBump(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(changelogPath); string(got) != stableChangelog {
 		t.Error("duplicate-row failure modified CHANGELOG.md")
+	}
+}
+
+func TestACMechanicsDocProseRuleMatchesRenderedConsumers(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read source AGENTS.md: %v", err)
+	}
+	codeTemplate, err := templates.EmbeddedFS.ReadFile("base/AGENTS.md")
+	if err != nil {
+		t.Fatalf("read CODE AGENTS.md template: %v", err)
+	}
+	docTemplate, err := templates.EmbeddedFS.ReadFile("overlays/doc/files/AGENTS.md.tmpl")
+	if err != nil {
+		t.Fatalf("read DOC AGENTS.md template: %v", err)
+	}
+	codeDir := t.TempDir()
+	if err := RunWithFS(templates.EmbeddedFS, Config{
+		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
+		RepoName: "ac-mechanics-code", Stack: "Node",
+	}); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	docDir := renderDocRepo(t)
+	renderedCode, err := os.ReadFile(filepath.Join(codeDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read rendered CODE AGENTS.md: %v", err)
+	}
+	renderedDoc, err := os.ReadFile(filepath.Join(docDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read rendered DOC AGENTS.md: %v", err)
+	}
+
+	const newBullet = "- Treat every Markdown documentation file as out of bounds for bare AC, AT, Class, Part, and Round numbers."
+
+	// CODE overlay keeps a dedicated "### AC Mechanics" subsection; require it
+	// byte-identical across source, template, and rendered output.
+	codeContents := map[string]string{
+		"source":        string(source),
+		"CODE template": string(codeTemplate),
+		"rendered CODE": string(renderedCode),
+	}
+	want := markdownH3Block(t, codeContents["source"], "AC Mechanics")
+	for name, content := range codeContents {
+		if got := markdownH3Block(t, content, "AC Mechanics"); got != want {
+			t.Errorf("%s AC Mechanics subsection drifted:\n%s", name, got)
+		}
+	}
+	if !strings.Contains(want, newBullet) {
+		t.Error("CODE AC Mechanics subsection missing the doc-prose reservation bullet")
+	}
+
+	// DOC overlay flattens Base Rules into one unheaded list (no AC Mechanics
+	// heading exists there); check the bullet by substring instead.
+	for name, content := range map[string]string{
+		"DOC template": string(docTemplate),
+		"rendered DOC": string(renderedDoc),
+	} {
+		if !strings.Contains(content, newBullet) {
+			t.Errorf("%s missing the doc-prose reservation bullet", name)
+		}
+	}
+}
+
+func TestACReferenceReservationExamplesUseGenericPlaceholders(t *testing.T) {
+	t.Parallel()
+	codeDir := t.TempDir()
+	if err := RunWithFS(templates.EmbeddedFS, Config{
+		Mode: ModeApply, Target: codeDir, Type: RepoTypeCode,
+		RepoName: "ac-ref-placeholder-code", Stack: "Node",
+	}); err != nil {
+		t.Fatalf("render CODE repo: %v", err)
+	}
+	docDir := renderDocRepo(t)
+
+	readSource := func(path string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join("..", "..", path))
+		if err != nil {
+			t.Fatalf("read source %s: %v", path, err)
+		}
+		return string(content)
+	}
+	readEmbedded := func(path string) string {
+		t.Helper()
+		content, err := templates.EmbeddedFS.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read embedded %s: %v", path, err)
+		}
+		return string(content)
+	}
+	readRendered := func(root, path string) string {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			t.Fatalf("read rendered %s: %v", path, err)
+		}
+		return string(content)
+	}
+
+	variants := map[string]string{
+		"source drift-scan":           readSource("governa/drift-scan.md"),
+		"CODE template drift-scan":    readEmbedded("overlays/code/files/governa/drift-scan.md.tmpl"),
+		"DOC template drift-scan":     readEmbedded("overlays/doc/files/governa/drift-scan.md.tmpl"),
+		"rendered CODE drift-scan":    readRendered(codeDir, "governa/drift-scan.md"),
+		"rendered DOC drift-scan":     readRendered(docDir, "governa/drift-scan.md"),
+		"source build-release":        readSource("governa/build-release.md"),
+		"CODE template build-release": readEmbedded("overlays/code/files/governa/build-release.md.tmpl"),
+		"rendered CODE build-release": readRendered(codeDir, "governa/build-release.md"),
+		"source ac-template":          readSource("governa/ac-template.md"),
+		"CODE template ac-template":   readEmbedded("overlays/code/files/governa/ac-template.md.tmpl"),
+		"DOC template ac-template":    readEmbedded("overlays/doc/files/governa/ac-template.md.tmpl"),
+		"rendered CODE ac-template":   readRendered(codeDir, "governa/ac-template.md"),
+		"rendered DOC ac-template":    readRendered(docDir, "governa/ac-template.md"),
+	}
+
+	composite := regexp.MustCompile(`AC[0-9]+\+AC[0-9]+`)
+	for name, content := range variants {
+		if composite.MatchString(content) {
+			t.Errorf("%s still contains a concrete AC-number composite example", name)
+		}
+		if !strings.Contains(content, "AC<m>+AC<n>") {
+			t.Errorf("%s missing the genericized AC<m>+AC<n> placeholder example", name)
+		}
 	}
 }
 

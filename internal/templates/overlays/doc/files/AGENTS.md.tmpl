@@ -245,6 +245,7 @@ Note: `CLAUDE.md` is an example of an exempt identifier — it names the Claude 
 
 - Name test identifiers, output labels, comments, and errors by behavior.
 - Reserve AC, AT, Class, Part, and Round numbers for CHANGELOG rows, commit messages, and `Historical:` comments.
+- Treat every Markdown documentation file as out of bounds for bare AC, AT, Class, Part, and Round numbers.
 - Use the `Historical:` prefix on a comment only when it references a shipped AC and the context aids the reader; delete the reference if no longer relevant.
 - Reach for `rg` (not `grep`/`ack`), `fd` (not `find`), `jq` (not `awk`/`python -c` on JSON), `sd` (not `sed -i`), and `pup` (not regex on HTML).
 - Send independent shell calls in a single message so they run in parallel.
