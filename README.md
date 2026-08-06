@@ -5,6 +5,12 @@ Template repo that bootstraps governance into new repositories and helps existin
 - a repo-type overlay in `internal/templates/overlays/code/` or `internal/templates/overlays/doc/`
 - a deterministic Go CLI that renders templates into target repos
 
+## Frozen
+
+governa is feature-frozen at `v0.160.3` (this release) and superseded by [`govna`](https://github.com/queone/govna), a from-scratch Rust rewrite that has reached functional parity for governa's core commands (`apply`, `drift-scan`, `rm`, `render-canon`) and is now the canonical implementation. This repo takes no new features going forward.
+
+Existing governa-managed consumer repos migrate automatically: running `govna apply` against a repo that still carries `governa/metadata.txt` auto-detects it, carries the legacy repo type and stack forward, and emits a migration-tracking AC under `govna/` — no manual bookkeeping required.
+
 ## Why
 
 AI-assisted coding is here to stay. Teams that code alone, teams that work entirely with human contributors, and teams that work with a mix of humans and agents all continue to exist — often in the same repo across different phases. **governa** is not a prerequisite for any of them. If you prefer to code without agents, governa stays out of the way. What governa does is add a little order to the new paradigm: when you choose to bring a coding agent into a repo, the collaboration contract is already explicit, versioned, and reproducible — not reinvented prompt by prompt.

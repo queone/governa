@@ -303,3 +303,5 @@ Note: `CLAUDE.md` is an example of an exempt identifier — it names the Claude 
 - Draft skeleton AC stubs first for every multi-AC track, then register one AC-pointer IE per stub.
 - Remove each AC-pointer IE when its AC ships and the AC file is deleted at release prep.
 - Skip the IE entirely (at Director's discretion) when an AC is drafted and implemented inside a single cycle.
+- Treat this repository as feature-frozen at `v0.160.3`.
+- Direct new governance-tooling work to `govna` (`https://github.com/queone/govna`).

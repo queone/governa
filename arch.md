@@ -1,5 +1,9 @@
 # governa Architecture
 
+## Frozen
+
+This repo is feature-frozen at `v0.160.3`; `govna` (`https://github.com/queone/govna`) is the canonical implementation going forward. The architecture below describes governa's frozen state, not an active target for further development.
+
 ## Purpose
 
 Provide a self-contained template repo for governed `CODE` and `DOC` repositories, plus a deterministic bootstrap tool (`governa apply`) that renders the template into target repos.
